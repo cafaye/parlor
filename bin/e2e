@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+# The end-to-end tier: the whole stack, in a real browser, in one command.
+#
+#   bin/e2e                 bring the stack up, run the suite, take it down
+#   bin/e2e --keep          same, and leave the stack up afterwards
+#   bin/e2e --no-stack      run the suite against a stack that is already up
+#   bin/e2e -- <args>       pass the rest to `playwright test`
+#
+# ---------------------------------------------------------------------------
+# WHY THIS IS NOT IN bin/prime
+# ---------------------------------------------------------------------------
+# `bin/prime` is a pre-commit hook and a per-commit gate: npm ci, the unit
+# suite, the gate self-test. A whole stack of containers, three image builds and
+# a browser download do not belong in either. A gate that takes four minutes is
+# a gate people stop running, and a gate people stop running is a gate that is
+# not a gate.
+#
+# So the E2E tier is its own script and its own CI job, and the two rules the
+# fleet keeps getting wrong are handled explicitly rather than by good intentions:
+#
+#   1. THERE IS NO SKIP. Nothing in this script, in playwright.config.ts or in
+#      the specs has a `test.skip`, a conditional `test.fixme` or an
+#      "if the stack is not available" branch. The browser is installed or the
+#      run fails; the stack comes up or the run fails. A tier that can be
+#      skipped must be able to fail for skipping, and this one is built so it
+#      cannot be skipped in the first place.
+#   2. A GREEN EXIT CODE WITH NOTHING IN IT IS A FAILURE. `playwright test`
+#      can exit 0 having collected and run fewer tests than the tier claims to
+#      have — a `testMatch` that stopped matching, a filter, a renamed file. So
+#      the JSON report is read on the way out and the run fails unless it
+#      records at least MINIMUM tests passed and zero skipped. The same floor is
+#      asserted again in e2e/no-token-artifacts.ts, so it holds for a developer
+#      running `npx playwright test` directly.
+#
+# That is guard's live-Redis mechanism (GUARD_REDIS_REQUIRED plus a job that
+# parses the summary and fails on zero passes) applied to a tier that cannot
+# skip in the first place: the belt, and then the braces.
+set -euo pipefail
+
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+cd "$ROOT"
+
+# `playwright test` reads its config, not this script's variables, so the
+# resolved ports have to reach it as environment variables. They are read out of
+# the compose file through the one function that knows how, rather than
+# restated: a port number in two files is a port number that will be wrong in one
+# of them, and the wrong one is a connection refused.
+export E2E_EDGE_PORT="${E2E_EDGE_PORT:-$(./bin/e2e-stack host-port edge)}"
+export E2E_PARLOR_PORT="${E2E_PARLOR_PORT:-$(./bin/e2e-stack host-port parlor)}"
+export E2E_GUARD_PORT="${E2E_GUARD_PORT:-$(./bin/e2e-stack host-port guard)}"
+export E2E_IDENTITY_PORT="${E2E_IDENTITY_PORT:-$(./bin/e2e-stack host-port identity)}"
+
+KEEP=0
+BRING_UP=1
+PLAYWRIGHT_ARGS=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --keep) KEEP=1; shift ;;
+    --no-stack) BRING_UP=0; shift ;;
+    --) shift; PLAYWRIGHT_ARGS=("$@"); break ;;
+    *) PLAYWRIGHT_ARGS+=("$1"); shift ;;
+  esac
+done
+
+started=$(date +%s)
+
+# The teardown is armed before the stack goes up, and it runs on every path out
+# of this script — including the one where the browser download failed. A stack
+# left running after a failed harness is four containers and a project name
+# somebody has to remember.
+teardown() {
+  local status=$?
+  if [ "$BRING_UP" -eq 1 ] && [ "$KEEP" -eq 0 ]; then
+    ./bin/e2e-stack down || true
+  elif [ "$KEEP" -eq 1 ]; then
+    printf '[e2e] the stack is still up: project %s, %s to stop it\n' \
+      "${E2E_STACK_NAME:-parlor-e2e}" "./bin/e2e-stack down" >&2
+  fi
+  exit "$status"
+}
+trap teardown EXIT
+
+if [ "$BRING_UP" -eq 1 ]; then
+  ./bin/e2e-stack up
+else
+  printf '[e2e] using the stack that is already up\n'
+  ./bin/e2e-stack wait
+fi
+
+printf '[e2e] edge    %s   <- the origin the browser uses\n' "http://127.0.0.1:${E2E_EDGE_PORT}"
+printf '[e2e] parlor  %s   <- the app directly\n' "http://127.0.0.1:${E2E_PARLOR_PORT}"
+printf '[e2e] identity %s\n' "http://127.0.0.1:${E2E_IDENTITY_PORT}"
+printf '[e2e] guard   %s\n' "http://127.0.0.1:${E2E_GUARD_PORT}"
+
+# ---------------------------------------------------------------------------
+# The browser.
+# ---------------------------------------------------------------------------
+# Installed by the harness, pinned to the Playwright in package.json: the
+# `@playwright/test` version and the browser build it expects are one pair, and
+# `npx playwright install` resolves against whatever is in node_modules. There is
+# no "latest" anywhere in this line, because a suite that fetches the newest
+# browser on a Tuesday is a suite that breaks on a Tuesday.
+#
+# `--with-deps` on Linux only, and only because of what it is: the browser needs
+# shared libraries (libnss3 and friends) that a bare ubuntu image does not have,
+# and a CI runner that installs the browser without them fails at `launch` with
+# "Host system is missing dependencies" — which is a wasted five-minute build
+# every time. macOS and Windows ship what chromium needs, and asking for sudo on
+# a developer's laptop is worse than the problem.
+case "$(uname -s)" in
+  Linux) install_flags=(--with-deps) ;;
+  *) install_flags=() ;;
+esac
+printf '[e2e] ensuring the chromium build for @playwright/test is installed\n'
+timeout 900 npx --no-install playwright install chromium "${install_flags[@]+"${install_flags[@]}"}"
+
+# The previous run's report is deleted before the next one starts. Not
+# housekeeping: `tests/assert-e2e-ran.mjs` and the global teardown both read this
+# path, and a stale report from a run with different contents reads as this run's
+# result. It happened while this was being written — a run in which the reporter
+# never wrote a file was reported as "the tier passed 1 test", from the run
+# before it.
+rm -f e2e-results.json
+
+printf '[e2e] running the end-to-end suite\n'
+set +e
+npx --no-install playwright test "${PLAYWRIGHT_ARGS[@]+"${PLAYWRIGHT_ARGS[@]}"}"
+run_status=$?
+set -e
+
+# The report is the claim; this is the check on it. Read on the way out whether
+# or not playwright succeeded, because "playwright failed AND the report says
+# nothing ran" is the case a reader most needs told apart from "playwright
+# failed on a real assertion".
+node ./tests/assert-e2e-ran.mjs e2e-results.json
+report_status=$?
+
+elapsed=$(($(date +%s) - started))
+printf '[e2e] end-to-end tier finished in %ss\n' "$elapsed"
+
+# The report check's own failure is the more informative one when both fail: it
+# says the tier verified nothing, where playwright's says only that something
+# broke. Prefer it, and never let it be masked.
+if [ "$report_status" -ne 0 ]; then
+  exit "$report_status"
+fi
+exit "$run_status"

@@ -64,8 +64,11 @@
 #     does not have yet (billing, courier, darkroom, muse) without moving
 #     anything.
 #   * The layout is by role, not by service, so a reader can guess a port:
-#       16xxx  the three application processes, one port each
-#       16001+ the infrastructure, one port each
+#       16000      the origin a browser talks to (the edge)
+#       16001-99   everything else, one port each, in service-name order
+#   * `parlor` is published on 16003 AND proxied through the edge, rather than
+#     only proxied. The harness proves the app is up as a process and that the
+#     edge can reach it, and those are two facts that fail for two reasons.
 #
 # Every published port is `${E2E_*:default}`: a literal port in a compose file
 # is a collision the second developer on the machine hits. Change it in the
@@ -87,10 +90,17 @@
 # `redis` by name), and parlor (`/readyz`, currently reporting
 # `"deps":"none"` — see AGENTS.md, "Health surfaces").
 #
+# The edge has no `/readyz` of its own and that is deliberate: it is a proxy, it
+# does not implement the platform's health contract, and giving it one would be a
+# second answer to a question the contract already has. Its healthcheck asks the
+# *app's* liveness through the proxy, which is the only question it can answer.
+#
 # parlor's `/readyz` NOT probing identity is deliberate and is why the E2E
 # spec asserts the user-visible result instead: a stack that comes up and then
 # cannot authenticate is exactly the failure this tier exists to catch, and a
-# readiness endpoint that lied about it would hide the failure.
+# readiness endpoint that lied about it would hide the failure. It is also, as
+# measured, not hypothetical: the first run of this tier brought the whole stack
+# up green and then could not sign a single person in.
 #
 # ---------------------------------------------------------------------------
 # SECRETS
@@ -183,12 +193,17 @@ services:
       # Over the compose network, by service name. This is the address the
       # harness proves by making a real registration through it.
       DATABASE_URL: "postgres://identity:identity@identity-postgres:5432/identity?sslmode=disable"
-      # A development signing key, fixed so identity's JWKS is stable for the
-      # lifetime of the stack. identity refuses to generate a key at boot (AGENTS.md,
-      # "One signing key, and it is configured") because a key generated per
-      # process publishes a document no caching verifier has seen. It is a
-      # throwaway for a throwaway database and must never be reused.
-      OIDC_SIGNING_KEY: "${E2E_IDENTITY_OIDC_KEY:-e2e-development-signing-key-not-a-secret-32+bytes}"
+      # OIDC is deliberately OFF here, and that is a fact about this stack
+      # rather than an omission: identity refuses to boot unless OIDC_ISSUER,
+      # OIDC_SIGNING_KEY and OIDC_SIGNING_KEY_ID are all set or all unset
+      # (internal/config/config.go, ErrInvalidOIDC — measured, it is the first
+      # thing this stack did when it was brought up with only a key). Turning it
+      # on needs an https issuer plus a PEM signing key, and neither belongs in
+      # a test fixture. So identity serves its /v1 surface and its probes, and
+      # publishes no key set. The consequence — guard has no JWKS to verify
+      # against, and no test mints a JWT — is stated in the packet report as the
+      # reason the suite's guard assertions are about readiness and refusal
+      # rather than about a verified token.
     ports:
       - "${E2E_IDENTITY_PORT:-16080}:8080"
     depends_on:
@@ -232,9 +247,13 @@ services:
       IDENTITY_URL: "http://identity:8080"
       # The issuer tokens are *verified* against. guard appends
       # /.well-known/jwks.json itself (identity/internal/oidc/provider.go,
-      # PathJWKS). This is the three-process chain the suite asserts: a token
-      # minted by identity, checked by guard, against a key set fetched from
-      # identity.
+      # PathJWKS; guard/src/middleware/jwt.ts, JWKS_PATH). This is the shape of
+      # the three-process chain: a token minted by identity, checked by guard,
+      # against a key set fetched from identity. identity publishes no key set
+      # in this stack — see the OIDC note above — so the chain is configured and
+      # its first two hops are asserted (guard reached identity and redis; guard
+      # refuses a caller with no credential) and its third hop is not. A test
+      # that cannot be true is worse than a test that is smaller.
       IDENTITY_ISSUER: "http://identity:8080"
       # The shared counter store, so guard's /readyz has a second dependency to
       # report and the shared-allowance path is the one under test.
@@ -253,11 +272,17 @@ services:
       guard-redis:
         condition: service_healthy
     healthcheck:
+      # /healthz, NOT /readyz, and the distinction is guard's own: a dependency
+      # outage is /readyz's to report and must not take the gateway out of
+      # rotation (../guard/docker-compose.yml says this at the same line). A
+      # container healthcheck on /readyz would restart the gateway every time
+      # identity hiccuped. Readiness is the harness's job and it is done from
+      # outside, on /readyz, in bin/e2e-stack.
       test:
         - CMD
         - bun
         - -e
-        - "fetch('http://127.0.0.1:8080/readyz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+        - "fetch('http://127.0.0.1:8080/healthz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
       interval: 2s
       timeout: 3s
       retries: 30
@@ -270,28 +295,36 @@ services:
   #   * `NEXT_PUBLIC_IDENTITY_URL` is inlined into the client bundle at BUILD
   #     time, so it is a build arg and not an environment variable. Setting it
   #     with `docker run -e` would change nothing, because the string is already
-  #     in the JavaScript by then. The default in the Dockerfile is
-  #     `http://localhost:8080`; this harness overrides it, and the E2E fails
-  #     with a page error rather than a build error if this arg is ever dropped.
-  #   * The value is the HOST-published identity port, because the caller is the
-  #     browser, not this container. `http://identity:8080` would be a name only
-  #     the compose network can resolve, and a Next.js build cannot know that.
+  #     in the JavaScript by then.
+  #   * Its value is the EDGE's origin, not identity's, and the reason is
+  #     measured rather than stylistic: identity serves no CORS headers, so a
+  #     browser on a different origin cannot read its answers at all. The full
+  #     argument, and the two fixes that belong in the real repositories, are in
+  #     e2e/edge.conf.
+  #
+  # Published on 16003 as well as proxied, so the harness can prove the app is
+  # up *as a process* separately from the edge being able to reach it. Two
+  # readiness facts, because they fail for different reasons.
   parlor:
     build:
       context: .
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_IDENTITY_URL: "${E2E_NEXT_PUBLIC_IDENTITY_URL:-http://localhost:16080}"
+        NEXT_PUBLIC_IDENTITY_URL: "${E2E_NEXT_PUBLIC_IDENTITY_URL:-http://127.0.0.1:16000}"
     image: cafaye/e2e-parlor:local
     environment:
       PORT: "3000"
       HOSTNAME: "0.0.0.0"
     ports:
-      - "${E2E_PARLOR_PORT:-16000}:3000"
+      - "${E2E_PARLOR_PORT:-16003}:3000"
     depends_on:
       identity:
         condition: service_started
     healthcheck:
+      # Liveness, for the same reason as guard's: a restart should mean "this
+      # process is not answering", never "a dependency is unhappy". The same
+      # HEALTHCHECK is already in the image's own Dockerfile; it is restated so
+      # this file is the one place a reader looks for a service's health.
       test:
         - CMD
         - node
@@ -301,4 +334,41 @@ services:
       timeout: 3s
       retries: 30
       start_period: 5s
+    networks: [platform]
+
+  # --------------------------------------------------------------------- edge
+  # The origin a browser actually talks to, and the only reason the sign-in path
+  # in this stack works at all. Read e2e/edge.conf before changing anything here:
+  # the file states the measured reason this service exists, which routing is
+  # deliberate, and which two fixes belong in the real repositories instead.
+  #
+  # It is last in the document because it depends on both of the services above.
+  edge:
+    image: nginx:1.27.4-alpine
+    volumes:
+      # Relative to the *project directory*, which bin/e2e-stack pins to the
+      # repository root so that `../identity` means the sibling checkout. Hence
+      # `./e2e/edge.conf` and not `./edge.conf` — getting that wrong produces
+      # "not a directory: Are you trying to mount a directory onto a file",
+      # which is a real message from this run rather than a hypothetical.
+      # The leading `./` is load-bearing for a second reason: without it Compose
+      # reads a bare relative path as the NAME of a named volume and refuses
+      # with "refers to undefined volume", which is also a real message from here.
+      - ./e2e/edge.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./e2e/proxy-headers.conf:/etc/nginx/proxy-headers.conf:ro
+    ports:
+      - "${E2E_EDGE_PORT:-16000}:3000"
+    depends_on:
+      parlor:
+        condition: service_healthy
+      identity:
+        condition: service_started
+    healthcheck:
+      # The app's own liveness, through the proxy. A healthcheck on the edge's
+      # port that answered a static file would be a healthcheck on nginx.
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:3000/healthz"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 3s
     networks: [platform]

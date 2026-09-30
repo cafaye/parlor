@@ -57,6 +57,16 @@ PROJECT="${E2E_STACK_NAME:-parlor-e2e}"
 # Budgets. Every one is overridable because a cold run on a laptop and a warm
 # run on a CI runner differ by an order of magnitude, and a hard-coded budget
 # that is right for one of them is wrong for the other.
+# Build parallelism. One image at a time by default, and this is a measured
+# setting rather than a cautious one: three toolchains building at once (a Go
+# compile, the `bun test` inside guard's image, and Next/Turbopack) is enough
+# RAM to take a laptop's container runtime down, and on the machine this was
+# written on it did — OrbStack stopped responding part-way through a cold build
+# and the run failed with a socket error naming nothing about the cause. A cold
+# run is slower this way and it finishes. Raise it with COMPOSE_PARALLEL_LIMIT
+# when there is room for it.
+export COMPOSE_PARALLEL_LIMIT="${COMPOSE_PARALLEL_LIMIT:-1}"
+
 BUILD_TIMEOUT="${E2E_BUILD_TIMEOUT:-1800}"   # image builds: three toolchains, cold cache
 UP_TIMEOUT="${E2E_UP_TIMEOUT:-420}"          # create + start + health
 READY_TIMEOUT="${E2E_READY_TIMEOUT:-180}"    # per-service /readyz poll
@@ -74,7 +84,7 @@ POLL_INTERVAL="${E2E_POLL_INTERVAL:-1}"
 # stack adds it to the wait without a second edit. `docker compose config
 # --format json` is the parsed document: a half-parsed YAML read is a worse
 # reader than the tool that renders the file.
-READY_SERVICES=(identity-postgres identity guard parlor)
+READY_SERVICES=(identity-postgres identity guard parlor edge)
 
 log() { printf '[e2e] %s\n' "$*"; }
 die() { printf '[e2e] FAIL: %s\n' "$*" >&2; exit 1; }
@@ -83,8 +93,32 @@ need() {
   command -v "$1" >/dev/null 2>&1 || die "$1 is not on PATH. $2"
 }
 
+# `--project-directory` is the repository root, not `e2e/`. Compose resolves a
+# relative `build.context` against the project directory, so without this the
+# `../identity` in the compose file means "a directory called identity inside
+# the repository" and the build fails with a path error rather than a reason.
+# With it, `../identity` is the sibling checkout, which is what the file says it
+# is and what the preflight below checks for.
 compose() {
-  docker compose --project-name "$PROJECT" --file "$COMPOSE_FILE" "$@"
+  docker compose \
+    --project-name "$PROJECT" \
+    --project-directory "$ROOT" \
+    --file "$COMPOSE_FILE" \
+    "$@"
+}
+
+# The same, under a deadline. `timeout` takes the program as its own argument,
+# so it cannot wrap a shell function: the command is spelled out here once
+# rather than at every call site, because a `timeout 420 compose up` reads as
+# working and fails with "compose: No such file or directory" instead.
+compose_timed() {
+  local budget=$1
+  shift
+  timeout "$budget" docker compose \
+    --project-name "$PROJECT" \
+    --project-directory "$ROOT" \
+    --file "$COMPOSE_FILE" \
+    "$@"
 }
 
 elapsed_since() { echo $(($(date +%s) - $1)); }
@@ -147,10 +181,11 @@ build() {
   log "  identity  <- ../identity"
   log "  guard     <- ../guard"
   log "  parlor    <- . (NEXT_PUBLIC_IDENTITY_URL is a build arg: Next inlines it)"
+  log "  edge      <- nginx, a pinned image: see e2e/edge.conf for why it exists"
   local started elapsed status
   started=$(date +%s)
   set +e
-  timeout "$BUILD_TIMEOUT" compose build --pull=false
+  compose_timed "$BUILD_TIMEOUT" build
   status=$?
   set -e
   elapsed=$(elapsed_since "$started")
@@ -173,14 +208,23 @@ up() {
   local started elapsed status
   started=$(date +%s)
 
-  # `--wait` blocks on the container healthchecks: postgres and redis report
-  # theirs, guard and parlor report theirs, and identity has none because its
-  # distroless image cannot carry one (see the finding in the compose file).
-  # `docker compose up` (detached) for the ones with health, then the host poll
-  # below for all of them, so the suite is never gated on a signal that could
-  # not exist.
+  # NOT `up --wait`, on purpose, and the reason is a measured failure on this
+  # machine: `--wait` fails the moment a container is *currently* unhealthy, and
+  # it carries health state over from a previous run. A guard container left
+  # unhealthy by an earlier attempt (when identity had not been created yet)
+  # makes the next `up --wait` fail in six seconds against a stack that is
+  # perfectly healthy by then.
+  #
+  # What is left is the right shape anyway:
+  #   * compose still blocks on `depends_on: condition: service_healthy` for the
+  #     infrastructure, so postgres and redis are ready before anything that
+  #     needs them starts. That ordering is a property of the document, and it
+  #     is the ordering that has to be in the document.
+  #   * the gate for the suite is the bounded host poll on /readyz below, which
+  #     is the signal the packet asks for and the only one a container cannot
+  #     make a claim about on its own behalf.
   set +e
-  timeout "$UP_TIMEOUT" compose up -d --wait
+  compose_timed "$UP_TIMEOUT" up -d
   status=$?
   set -e
   elapsed=$(elapsed_since "$started")
@@ -189,7 +233,7 @@ up() {
     dump_state
     exit 1
   fi
-  log "containers started in ${elapsed}s"
+  log "containers started in ${elapsed}s (dependency health ordered)"
 
   migrate
   wait_ready
@@ -238,11 +282,13 @@ wait_ready() {
       continue
     fi
     port=$(host_port "$service")
-    case "$service" in
-      identity-postgres) url="unused" ;;
-      parlor) url="http://127.0.0.1:${port}/readyz" ;;
-      *) url="http://127.0.0.1:${port}/readyz" ;;
-    esac
+    # Every service in this stack answers /readyz on its published port, and
+    # `edge` is no exception: it has no readiness endpoint of its own, so the
+    # route it publishes is the app's, proxied. Asking the edge for /readyz is
+    # therefore a real question with a real answer — "can a browser reach the
+    # app and the app's idea of readiness" — and it is the one question a
+    # browser's first navigation will ask.
+    url="http://127.0.0.1:${port}/readyz"
     started=$(date +%s)
     deadline=$((started + READY_TIMEOUT))
     attempt=0
@@ -281,12 +327,13 @@ dump_state() {
   compose ps -a 2>&1 | sed 's/^/[e2e] /' >&2 || true
 
   local unhealthy
-  unhealthy=$(compose ps -a --format '{{.Service}} {{.State}} {{.Status}}' 2>/dev/null \
-    | awk '$2 != "running" || $3 !~ /^Up/ || $3 ~ /unhealthy|starting|exited/ {print $1}' || true)
-  # A service that is running but whose healthcheck has not passed is included by
-  # the `starting` match; a service that is running and healthy is not. An empty
-  # list here means the failure is not a container, and the logs below still say
-  # something.
+  # Read `.Health` rather than parsing `.Status`: compose's status string is
+  # prose ("Up About a minute (unhealthy)"), and matching prose is how the first
+  # version of this function printed the stack state and then said "no service
+  # was unhealthy" while a container was visibly marked unhealthy in the table
+  # two lines above it. Measured, not predicted.
+  unhealthy=$(compose ps -a --format '{{.Service}}|{{.State}}|{{.Health}}' 2>/dev/null \
+    | awk -F'|' '$2 != "running" || $3 == "unhealthy" || $3 == "" && $2 == "exited" {print $1}' || true)
   if [ -n "$unhealthy" ]; then
     printf '\n[e2e] ===== not up: %s =====\n' "$(echo "$unhealthy" | tr '\n' ' ')" >&2
     local service
@@ -294,6 +341,12 @@ dump_state() {
       printf '\n[e2e] ----- logs: %s -----\n' "$service" >&2
       compose logs --no-color --tail 200 "$service" 2>&1 | sed 's/^/[e2e] /' >&2 || true
     done
+  else
+    # Nothing is unhealthy, which means the failure is not a container: a port
+    # that is already bound, a build that produced nothing, a migration that
+    # did not apply. Say that, because otherwise the reader assumes the logs
+    # above were empty because the logs were uninformative.
+    printf '\n[e2e] no container is unhealthy: the failure is above this line, not in a container\n' >&2
   fi
   printf '\n[e2e] ===== end stack state =====\n' >&2
 }
@@ -304,7 +357,7 @@ down() {
   # `-v` on purpose: a stale database is a schema from a previous checkout, and
   # an E2E suite that passes against yesterday's migrations has verified
   # nothing. The volumes hold a throwaway fixture, not anybody's data.
-  timeout 120 compose down -v --remove-orphans 2>&1 | sed 's/^/[e2e] /' || true
+  compose_timed 120 down -v --remove-orphans 2>&1 | sed 's/^/[e2e] /' || true
   log "stopped"
 }
 
@@ -312,7 +365,12 @@ case "${1:-}" in
   build) build ;;
   up) up ;;
   wait) preflight; wait_ready ;;
-  logs) compose logs --no-color "$@" ;;
+  # The published host port for a service, on stdout and nothing else. A second
+  # script needs these numbers (bin/e2e hands them to Playwright) and the port
+  # block lives in exactly one file, so the reader is this function and not a
+  # literal somebody copied.
+  host-port) [ $# -ge 2 ] || die "usage: bin/e2e-stack host-port <service>"; host_port "$2" ;;
+  logs) shift; compose logs --no-color "$@" ;;
   ps) compose ps -a ;;
   down) down ;;
   *)
