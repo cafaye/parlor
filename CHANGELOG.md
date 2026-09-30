@@ -68,6 +68,14 @@ All notable changes to parlor are recorded here. The format follows
   `FINDING` in its own block. Three of the new checks were wrong before they
   were right and the self-test is what said so — they are written up where they
   live.
+- **Measured, on an M-series laptop with OrbStack: a cold `./bin/e2e` is 5m 08s
+  (3m 23s of it building three images from three toolchains) and a warm one is
+  1m 31s, of which 4.3s is the six specs.** The specs are 3% of a warm run. The
+  stack is the cost, which is the argument for the tier not being in
+  `bin/prime`, and the warm number is the one a self-hoster needs.
+  `COMPOSE_PARALLEL_LIMIT` defaults to 1 because three toolchains building at
+  once took the container runtime down on this machine and the error named a
+  socket rather than a cause.
 - **`e2e/` layout**, all documented in the files themselves: `docker-compose.yml`
   (topology, port block and readiness, with where the topology came from and
   what it cost), `edge.conf` and `proxy-headers.conf` (the same-origin edge),

@@ -4,9 +4,10 @@
 #   bin/e2e-stack build     build every image in the stack from its checkout
 #   bin/e2e-stack up        build, migrate, start, and wait for /readyz
 #   bin/e2e-stack wait      wait for /readyz on an already-running stack
+#   bin/e2e-stack host-port <service>   the published host port, on stdout
 #   bin/e2e-stack logs      print the stack's logs
-#   bin/e2e-stack down      stop it and delete its volumes
 #   bin/e2e-stack ps        what is running
+#   bin/e2e-stack down      stop it and delete its volumes
 #
 # `bin/e2e` drives this; a developer can drive it directly when a test failed
 # and the stack is still up, which is the point of leaving it up on failure.
@@ -384,7 +385,11 @@ case "${1:-}" in
   ps) compose ps -a ;;
   down) down ;;
   *)
-    sed -n '2,20p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    # The usage is the header comment, and only the header comment: printing
+    # more than that answers a question nobody asked, and the line range is the
+    # only thing keeping the two in step. `sed -n '2,12p'` is the block from the
+    # title through the last subcommand, which is where a reader stops reading.
+    sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
     exit 2
     ;;
 esac

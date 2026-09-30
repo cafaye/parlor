@@ -351,15 +351,23 @@ was not in the bytes of the `.zip`.
 
 ### Cold and warm
 
-Measured on an M-series laptop with OrbStack, `COMPOSE_PARALLEL_LIMIT=1`:
+Measured on an M-series laptop with OrbStack, `COMPOSE_PARALLEL_LIMIT=1`, from
+`./bin/e2e` to the stack being gone again:
 
-| Run | Wall clock |
-| --- | --- |
-| Cold — no Docker layer cache, no browser cache | see CHANGELOG for the measured figure |
-| Warm — images built, stack torn down with its volumes | **91s**, of which the six specs are 4.3s |
+| Run | Wall clock | Of which |
+| --- | --- | --- |
+| **Cold** — no Docker layer cache, no browser cache | **5m 08s** | 3m 23s building three images from three toolchains; the rest is pulling Chromium and starting containers |
+| **Warm** — images built, volumes recreated | **1m 31s** | 40s re-checking the build cache, 15s starting containers, **4.3s running the six specs** |
 
-The suite is the cheap part. The stack is the cost, which is why it is not in
-`bin/prime`.
+The specs are 3% of a warm run and 2.5% of a cold one. The stack is the cost,
+which is exactly why the tier is not in `bin/prime` — and the number a
+self-hoster needs is the warm one, because the cold one is a one-off per
+machine.
+
+`COMPOSE_PARALLEL_LIMIT` defaults to 1 on purpose. Three toolchains building at
+once took the container runtime down on the machine this was written on, and the
+failure named a socket rather than a cause. Raise it when there is memory for
+it.
 
 ### What the tier needs on the machine
 

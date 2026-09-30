@@ -157,10 +157,10 @@ test("the session survives a page load, so a signed-in person can reach their ac
   // asserted the header right after signing in would pass with a session that
   // does not survive a reload, which is the bug this tier is most likely to be
   // the first to see.
-  // Scoped to the header's own navigation, and `exact`, because the landing
-  // page has a card link with the same destination and a longer accessible
-  // name. A locator that matches two elements is not a weaker assertion, it is
-  // a strict-mode error — which is the right outcome, and one this file hit.
+  //
+  // Scoped to the header, because the landing page also links to /accounts and
+  // a page-wide locator matched two elements — a strict-mode error, which is the
+  // right outcome and one this file hit.
   await header(page).getByRole("link", { name: "Accounts" }).click();
   await expect(page).toHaveURL(/\/accounts$/);
 
