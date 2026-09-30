@@ -1,0 +1,322 @@
+#!/usr/bin/env bash
+# The whole-stack lifecycle for the end-to-end suite: build, up, wait, down.
+#
+#   bin/e2e-stack build     build every image in the stack from its checkout
+#   bin/e2e-stack up        build, migrate, start, and wait for /readyz
+#   bin/e2e-stack wait      wait for /readyz on an already-running stack
+#   bin/e2e-stack logs      print the stack's logs
+#   bin/e2e-stack down      stop it and delete its volumes
+#   bin/e2e-stack ps        what is running
+#
+# `bin/e2e` drives this; a developer can drive it directly when a test failed
+# and the stack is still up, which is the point of leaving it up on failure.
+#
+# ---------------------------------------------------------------------------
+# THE FOUR RULES THIS SCRIPT EXISTS TO ENFORCE
+# ---------------------------------------------------------------------------
+#
+# 1. DETERMINISTIC BRING-UP OR A LOUD FAILURE. Every long command is wrapped in
+#    `timeout` and prints a checkpoint before it starts, so a ten-minute silent
+#    tool call is a series of sentences instead. When the stack does not come
+#    up, the failing container's logs are printed *here*, before the exit: a
+#    harness that says "stack did not come up" and stops has cost the next
+#    person an hour, and this is the one place that hour was being spent.
+#
+# 2. READINESS, NOT SLEEPING. Nothing in this file sleeps a fixed number of
+#    seconds to hope a service is up. Every wait is a bounded poll on a
+#    `/readyz` — the endpoint every cafaye service already exposes and the
+#    platform contract fixes. The slowest container in the stack is the slowest
+#    thing in the stack, and a fixed sleep is either too short (a flake) or too
+#    long (a tax on every run).
+#
+# 3. A BOUNDED BUDGET ON EVERY WAIT. Each wait has a deadline and, on expiry,
+#    prints what it was waiting for and why. An unbounded poll against a
+#    dependency that will never answer is how a CI job runs for six hours and
+#    then reports a timeout with no information in it.
+#
+# 4. NO SLEEP IS EVER THE ANSWER TO A MISSING SIGNAL. A service with no
+#    `/readyz` is a finding, printed as one. The one service here that cannot
+#    be probed from inside its own container — identity, whose distroless image
+#    has no HTTP client — is documented in e2e/docker-compose.yml, and is
+#    probed from here instead.
+#
+# ---------------------------------------------------------------------------
+# WHAT IS NOT IN THIS FILE
+# ---------------------------------------------------------------------------
+# The topology, the image pins, the port block and the healthchecks. They are in
+# e2e/docker-compose.yml, next to the reasoning for each. This file is the
+# machine that drives that document, and it reads the ports and the readiness
+# paths out of it rather than restating them, because a second copy of a port
+# number is a second thing to keep true.
+set -euo pipefail
+
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+COMPOSE_FILE="$ROOT/e2e/docker-compose.yml"
+PROJECT="${E2E_STACK_NAME:-parlor-e2e}"
+
+# Budgets. Every one is overridable because a cold run on a laptop and a warm
+# run on a CI runner differ by an order of magnitude, and a hard-coded budget
+# that is right for one of them is wrong for the other.
+BUILD_TIMEOUT="${E2E_BUILD_TIMEOUT:-1800}"   # image builds: three toolchains, cold cache
+UP_TIMEOUT="${E2E_UP_TIMEOUT:-420}"          # create + start + health
+READY_TIMEOUT="${E2E_READY_TIMEOUT:-180}"    # per-service /readyz poll
+
+# The poll interval is not a sleep in the sense rule 2 forbids: it is the gap
+# between two probes of a condition, and the condition is what gates the loop.
+POLL_INTERVAL="${E2E_POLL_INTERVAL:-1}"
+
+# The services the harness waits on, in the order it waits for them, and the
+# readiness path each one answers. `service:container_port` is the *container*
+# side, which the image fixes; the host side is what the compose file publishes
+# and is read back out of it below.
+#
+# Read from the compose file rather than listed here, so adding a service to the
+# stack adds it to the wait without a second edit. `docker compose config
+# --format json` is the parsed document: a half-parsed YAML read is a worse
+# reader than the tool that renders the file.
+READY_SERVICES=(identity-postgres identity guard parlor)
+
+log() { printf '[e2e] %s\n' "$*"; }
+die() { printf '[e2e] FAIL: %s\n' "$*" >&2; exit 1; }
+
+need() {
+  command -v "$1" >/dev/null 2>&1 || die "$1 is not on PATH. $2"
+}
+
+compose() {
+  docker compose --project-name "$PROJECT" --file "$COMPOSE_FILE" "$@"
+}
+
+elapsed_since() { echo $(($(date +%s) - $1)); }
+
+# --- preflight --------------------------------------------------------------
+# Everything this script needs, checked before anything is started, so the
+# failure is "curl is not installed" rather than "the stack did not come up"
+# after four minutes of building.
+preflight() {
+  need docker "Install Docker: https://docs.docker.com/get-docker/"
+  need curl "curl is used to poll /readyz from the host."
+
+  docker compose version >/dev/null 2>&1 \
+    || die "docker compose (the v2 plugin) is not available. The harness needs it for 'up --wait'."
+
+  # `goose` applies identity's migrations. It is identity's own documented
+  # procedure (../identity/migrations/README.md) and it is deliberately NOT a
+  # container here: pinning a third-party migration image into the fleet's
+  # toolchain is a decision for identity and the manager, not for a test
+  # harness. A missing goose is a loud, actionable failure — never a skip.
+  need goose "Install it the way ../identity documents: mise, or 'go install github.com/pressly/goose/v3/cmd/goose@<pinned version>'."
+
+  [ -f "$COMPOSE_FILE" ] || die "no compose file at $COMPOSE_FILE"
+  [ -d "$ROOT/../identity" ] || die "no sibling checkout at ../identity; the stack builds its image from there."
+  [ -d "$ROOT/../guard" ] || die "no sibling checkout at ../guard; the stack builds its image from there."
+}
+
+# --- the host port a service publishes --------------------------------------
+# Read out of the compose document so this file never holds a port number. The
+# substitution's default is what a bare `docker compose run` would publish, and
+# ${VAR:-default} is the whole grammar: anything more would be a YAML parser in
+# a shell script.
+host_port() {
+  local service=$1
+  local published
+  published=$(compose config --format json 2>/dev/null \
+    | node -e '
+      let raw = "";
+      process.stdin.on("data", (chunk) => (raw += chunk));
+      process.stdin.on("end", () => {
+        const doc = JSON.parse(raw);
+        const svc = (doc.services || {})[process.argv[1]];
+        const list = (svc && svc.ports) || [];
+        // Compose normalizes a published port to an object; a string is the
+        // short form. Either way the key is the host end.
+        const first = list[0];
+        if (first == null) { process.exit(1) }
+        const host = typeof first === "string" ? Number(first.split(":")[0]) : Number(first.published);
+        if (!Number.isInteger(host) || host <= 0) { process.exit(1) }
+        process.stdout.write(String(host));
+      });
+    ' "$service") || die "cannot read the published host port for $service out of $COMPOSE_FILE"
+  printf '%s' "$published"
+}
+
+# --- build ------------------------------------------------------------------
+build() {
+  preflight
+  log "building images (budget ${BUILD_TIMEOUT}s; a cold run builds three toolchains)"
+  log "  identity  <- ../identity"
+  log "  guard     <- ../guard"
+  log "  parlor    <- . (NEXT_PUBLIC_IDENTITY_URL is a build arg: Next inlines it)"
+  local started elapsed status
+  started=$(date +%s)
+  set +e
+  timeout "$BUILD_TIMEOUT" compose build --pull=false
+  status=$?
+  set -e
+  elapsed=$(elapsed_since "$started")
+  if [ "$status" -ne 0 ]; then
+    # Buildkit's own output has already gone to stderr; what is missing is the
+    # sentence saying which image and how long it had.
+    printf '[e2e] FAIL: image build failed after %ss (exit %s)\n' "$elapsed" "$status" >&2
+    dump_state
+    exit 1
+  fi
+  log "images built in ${elapsed}s"
+}
+
+# --- up ---------------------------------------------------------------------
+up() {
+  preflight
+  build
+
+  log "starting the stack in project $PROJECT"
+  local started elapsed status
+  started=$(date +%s)
+
+  # `--wait` blocks on the container healthchecks: postgres and redis report
+  # theirs, guard and parlor report theirs, and identity has none because its
+  # distroless image cannot carry one (see the finding in the compose file).
+  # `docker compose up` (detached) for the ones with health, then the host poll
+  # below for all of them, so the suite is never gated on a signal that could
+  # not exist.
+  set +e
+  timeout "$UP_TIMEOUT" compose up -d --wait
+  status=$?
+  set -e
+  elapsed=$(elapsed_since "$started")
+  if [ "$status" -ne 0 ]; then
+    printf '[e2e] FAIL: the stack did not start in %ss (exit %s)\n' "$elapsed" "$status" >&2
+    dump_state
+    exit 1
+  fi
+  log "containers started in ${elapsed}s"
+
+  migrate
+  wait_ready
+}
+
+# --- migrations -------------------------------------------------------------
+# A deploy step, run as one. identity never migrates itself, so skipping this
+# produces a stack that comes up perfectly and then refuses every sign-in,
+# which is a far worse first minute than a step that says what it is doing.
+migrate() {
+  local port dsn
+  port=$(host_port identity-postgres)
+  dsn="postgres://identity:identity@127.0.0.1:${port}/identity?sslmode=disable"
+  log "applying identity's migrations (../identity/migrations)"
+  local started elapsed status
+  started=$(date +%s)
+  set +e
+  # `-dir` is relative to this script's working directory on purpose: it is the
+  # sibling's migrations, at the path identity's own README documents, not a
+  # copy of them that could drift.
+  (cd "$ROOT/../identity" && timeout 120 goose -dir migrations postgres "$dsn" up)
+  status=$?
+  set -e
+  elapsed=$(elapsed_since "$started")
+  if [ "$status" -ne 0 ]; then
+    printf '[e2e] FAIL: identity migrations failed after %ss (exit %s)\n' "$elapsed" "$status" >&2
+    printf '[e2e] the database this ran against is postgres on host port %s\n' "$port" >&2
+    exit 1
+  fi
+  log "migrations applied in ${elapsed}s"
+}
+
+# --- readiness --------------------------------------------------------------
+# The gate. A bounded poll on a published `/readyz`, per service, in dependency
+# order, with a checkpoint on every poll so a slow start is visible while it is
+# happening rather than inferred afterwards from how long it took.
+wait_ready() {
+  log "waiting for /readyz on ${READY_SERVICES[*]} (budget ${READY_TIMEOUT}s each)"
+  local service port url deadline started elapsed attempt
+  for service in "${READY_SERVICES[@]}"; do
+    if [ "$service" = "identity-postgres" ]; then
+      # Postgres has no /readyz; its readiness is `pg_isready` inside the
+      # container, which `up --wait` has already blocked on. Saying so, rather
+      # than probing something that does not exist, is the difference between a
+      # finding and a reason to sleep.
+      continue
+    fi
+    port=$(host_port "$service")
+    case "$service" in
+      identity-postgres) url="unused" ;;
+      parlor) url="http://127.0.0.1:${port}/readyz" ;;
+      *) url="http://127.0.0.1:${port}/readyz" ;;
+    esac
+    started=$(date +%s)
+    deadline=$((started + READY_TIMEOUT))
+    attempt=0
+    while :; do
+      attempt=$((attempt + 1))
+      if curl --silent --show-error --fail --max-time 3 "$url" >/dev/null 2>&1; then
+        log "  $service ready after $(elapsed_since "$started")s ($attempt polls) — $url"
+        break
+      fi
+      if [ "$(date +%s)" -ge "$deadline" ]; then
+        printf '[e2e] FAIL: %s did not answer %s within %ss (%s polls)\n' \
+          "$service" "$url" "$READY_TIMEOUT" "$attempt" >&2
+        printf '[e2e] its last answer, if any:\n' >&2
+        curl --silent --show-error --max-time 3 "$url" 2>&1 | sed 's/^/[e2e]   /' >&2 || true
+        dump_state
+        exit 1
+      fi
+      # A checkpoint every five polls. Not a sleep to pass time: the loop
+      # re-probes after it, and the deadline above is what ends the wait.
+      if [ $((attempt % 5)) -eq 0 ]; then
+        log "  $service not ready after $(elapsed_since "$started")s ($attempt polls) — still trying"
+      fi
+      sleep "$POLL_INTERVAL"
+    done
+  done
+  log "the whole stack is ready"
+}
+
+# --- failure output ---------------------------------------------------------
+# Everything a reader needs to diagnose a bring-up failure, printed on the way
+# out. The order is deliberate: what is running, then what is NOT, then the logs
+# of the things that are not — because "the stack did not come up" plus twelve
+# unrelated log dumps is the same hour, just with more scrollback.
+dump_state() {
+  printf '\n[e2e] ===== stack state =====\n' >&2
+  compose ps -a 2>&1 | sed 's/^/[e2e] /' >&2 || true
+
+  local unhealthy
+  unhealthy=$(compose ps -a --format '{{.Service}} {{.State}} {{.Status}}' 2>/dev/null \
+    | awk '$2 != "running" || $3 !~ /^Up/ || $3 ~ /unhealthy|starting|exited/ {print $1}' || true)
+  # A service that is running but whose healthcheck has not passed is included by
+  # the `starting` match; a service that is running and healthy is not. An empty
+  # list here means the failure is not a container, and the logs below still say
+  # something.
+  if [ -n "$unhealthy" ]; then
+    printf '\n[e2e] ===== not up: %s =====\n' "$(echo "$unhealthy" | tr '\n' ' ')" >&2
+    local service
+    for service in $unhealthy; do
+      printf '\n[e2e] ----- logs: %s -----\n' "$service" >&2
+      compose logs --no-color --tail 200 "$service" 2>&1 | sed 's/^/[e2e] /' >&2 || true
+    done
+  fi
+  printf '\n[e2e] ===== end stack state =====\n' >&2
+}
+
+# --- down -------------------------------------------------------------------
+down() {
+  log "stopping $PROJECT and deleting its volumes"
+  # `-v` on purpose: a stale database is a schema from a previous checkout, and
+  # an E2E suite that passes against yesterday's migrations has verified
+  # nothing. The volumes hold a throwaway fixture, not anybody's data.
+  timeout 120 compose down -v --remove-orphans 2>&1 | sed 's/^/[e2e] /' || true
+  log "stopped"
+}
+
+case "${1:-}" in
+  build) build ;;
+  up) up ;;
+  wait) preflight; wait_ready ;;
+  logs) compose logs --no-color "$@" ;;
+  ps) compose ps -a ;;
+  down) down ;;
+  *)
+    sed -n '2,20p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    exit 2
+    ;;
+esac

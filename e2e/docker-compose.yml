@@ -1,0 +1,304 @@
+---
+# The whole cafaye stack, for the end-to-end suite. This is the topology the
+# Playwright specs in this directory drive; `bin/e2e` is the only thing that
+# brings it up.
+#
+# ---------------------------------------------------------------------------
+# WHERE THIS TOPOLOGY CAME FROM — read this before adding a service
+# ---------------------------------------------------------------------------
+# It is NOT a second copy of the platform topology. The topology is owned by two
+# places three directories away, and this file is a thin overlay on both:
+#
+#   ../kit/templates/compose/docker-compose.yml   the local infrastructure a
+#       cafaye service joins: Postgres, NATS, Redis, the OTel collector. kit
+#       owns those images, their pins and their healthchecks, and the pins
+#       there are exact tags. Nothing in this file restates a kit image except
+#       where the harness needs a different one and says so.
+#
+#   ../caf — `caf dev` renders a compose document from a manifest plus a
+#       service catalog (internal/dev/plan.go, internal/dev/registry.go). It
+#       plans the *shape*: the project service built from the working tree, its
+#       declared dependencies resolved through the registry, the local Postgres
+#       and Redis, healthcheck-ordered `depends_on`, and a port-conflict refusal.
+#       This file is that plan with three things it cannot express, listed
+#       below. The alternative — invoking `caf dev` and then hand-patching its
+#       output — was rejected, and the reason is in the report: `caf dev`
+#       resolves dependencies to *published images*, and this harness has to
+#       build every one of them from the sibling checkout, and it has to pin a
+#       port block nothing else on the machine uses.
+#
+# The three differences from what `caf dev` would render, and why each is here
+# rather than a caf feature request:
+#
+#   1. Sibling build contexts. `caf dev` builds the project service and pulls
+#      its dependencies. The E2E path crosses three services, so all three are
+#      built here from `../identity`, `../guard` and `.`. An image built from
+#      this workspace is the only thing that tests the *current* checkout of a
+#      sibling rather than whatever tag is on a registry.
+#   2. A port block nothing else uses. See PORTS below.
+#   3. A migration step. Migrations are a deploy step in every service, by
+#      policy, so nothing here migrates on boot. `bin/e2e` runs `goose` from the
+#      host, which is identity's own documented dev procedure
+#      (`../identity/migrations/README.md`, "Running migrations") and is why this
+#      file has no goose image: a third-party migration image pinned into the
+#      fleet's toolchain is a decision that belongs to identity and the manager,
+#      not to a test harness. See DECISION NEEDED in the packet report.
+#
+# ---------------------------------------------------------------------------
+# PORTS — the 16xxx block, and why
+# ---------------------------------------------------------------------------
+# Everything published here lands in 16000-16099. The choice is the only free
+# decision in this file, so here is the whole reasoning:
+#
+#   * Not the standard ports. 3000, 8080, 5432 and 6379 are exactly the ports a
+#     developer's own `caf dev` stack, a local Postgres and a local Redis are
+#     already on. The brief for this file is that a developer's running stack
+#     must survive the harness.
+#   * Not 15xxx. That block is this workspace's observability stack
+#     (cafaye-grafana 15000, postgres 15500, nats 15600/15700, redis 15800,
+#     tempo 15900, loki 15901, mimir 15902) and it is *running* right now on
+#     the machine this was written on. Two stacks that both believe they own
+#     15xxx is a collision the day somebody scales either of them.
+#   * 16xxx is adjacent, unallocated, and still a block: 100 ports for a
+#     six-service fleet, and 16000-16099 leaves room for the services this file
+#     does not have yet (billing, courier, darkroom, muse) without moving
+#     anything.
+#   * The layout is by role, not by service, so a reader can guess a port:
+#       16xxx  the three application processes, one port each
+#       16001+ the infrastructure, one port each
+#
+# Every published port is `${E2E_*:default}`: a literal port in a compose file
+# is a collision the second developer on the machine hits. Change it in the
+# environment, not here. The container-side ports are not parameterized —
+# those are fixed by the images and by the service contracts.
+#
+# ---------------------------------------------------------------------------
+# READINESS — no sleeps, and the reason is in this file
+# ---------------------------------------------------------------------------
+# Every service here has a healthcheck, and every one of them probes a
+# `/readyz` or its equivalent rather than a port. `docker compose up --wait`
+# blocks on those health states, and `bin/e2e` additionally polls the published
+# `/readyz` from the host, because a container that is healthy is a claim made
+# from inside the network and the browser is not inside the network.
+#
+# A service with no `/readyz` would be a finding to report, not a reason to
+# sleep. All three application services here have one: identity (`/readyz`,
+# which pings its database), guard (`/readyz`, which reports `identity` and
+# `redis` by name), and parlor (`/readyz`, currently reporting
+# `"deps":"none"` — see AGENTS.md, "Health surfaces").
+#
+# parlor's `/readyz` NOT probing identity is deliberate and is why the E2E
+# spec asserts the user-visible result instead: a stack that comes up and then
+# cannot authenticate is exactly the failure this tier exists to catch, and a
+# readiness endpoint that lied about it would hide the failure.
+#
+# ---------------------------------------------------------------------------
+# SECRETS
+# ---------------------------------------------------------------------------
+# The `identity` fixture credentials and the OIDC signing key below are
+# development values for a throwaway database inside a throwaway container.
+# They are not secrets and must never be reused: nothing here is reachable
+# outside the loopback, and `docker compose down -v` deletes the database they
+# live in. What this file must never do is print a *session* token; see
+# e2e/artifacts.e2e.spec.ts, which is the test that proves it.
+
+name: ${E2E_STACK_NAME:-parlor-e2e}
+
+networks:
+  platform:
+    # Not `internal: true`: the image builds in this stack need the registry, and
+    # a compose network with no egress cannot pull. The stack publishes to the
+    # host loopback and nowhere else, which is the posture that matters.
+    driver: bridge
+
+volumes:
+  identity-postgres-data:
+  guard-redis-data:
+
+services:
+  # ---------------------------------------------------------------- postgres
+  # identity's own database. One container, one database: the platform is
+  # database-per-service and a service that reaches into another's database is a
+  # bug in review, not a config problem to solve in this file.
+  #
+  # postgres:17-alpine, not kit's 16.6: this is the tag identity's own
+  # docker-compose.yml already pins, and this harness does not get to be the
+  # place where a service is tested against a Postgres version its own repo
+  # disagrees with.
+  identity-postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: identity
+      POSTGRES_PASSWORD: identity
+      POSTGRES_DB: identity
+    ports:
+      # Host side only, and only so `bin/e2e` can prove the database is up
+      # before the service that depends on it. The service reaches postgres on
+      # the compose network.
+      - "${E2E_IDENTITY_POSTGRES_PORT:-16001}:5432"
+    volumes:
+      - identity-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      # `pg_isready` with no -U/-d returns true against any database including
+      # the bootstrap one, which is the classic "migrations failed against a
+      # database that was not ready" flake. Naming the user and the database
+      # makes it check the real thing.
+      test: ["CMD-SHELL", "pg_isready -U identity -d identity"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+    networks: [platform]
+
+  # ----------------------------------------------------------------- identity
+  #
+  # FINDING, and the reason there is no `healthcheck:` here: identity's image is
+  # `gcr.io/distroless/static-debian12:nonroot` (kit's Go template), which has
+  # no shell, no `wget` and no `curl`. A compose healthcheck runs *inside* the
+  # container it is declared on, so there is nothing in that image that can
+  # answer an HTTP probe, and the two available substitutes are both worse than
+  # nothing: a `CMD` that exits 0 immediately is a healthcheck that always says
+  # healthy, and identity does have a `/readyz` that answers the real question.
+  #
+  # So identity's readiness is established from the host, by `bin/e2e` polling
+  # the published `/readyz` with a bounded budget — which is the mechanism the
+  # packet asks for anyway, and the only one that can see a container that
+  # cannot see itself. `guard` and `parlor` below do get container healthchecks
+  # because their images have a runtime that can fetch, and they are useful:
+  # they gate compose's own `depends_on` ordering.
+  #
+  # The fix belongs in identity's own Dockerfile (a `HEALTHCHECK` needs a probe
+  # binary in the image, or a base that has one) and is DECISION NEEDED for the
+  # manager. This repository may not modify a sibling.
+  identity:
+    build:
+      context: ../identity
+      dockerfile: Dockerfile
+      args:
+        SERVICE_NAME: identity
+    image: cafaye/e2e-identity:local
+    environment:
+      PORT: "8080"
+      LOG_LEVEL: debug
+      # Over the compose network, by service name. This is the address the
+      # harness proves by making a real registration through it.
+      DATABASE_URL: "postgres://identity:identity@identity-postgres:5432/identity?sslmode=disable"
+      # A development signing key, fixed so identity's JWKS is stable for the
+      # lifetime of the stack. identity refuses to generate a key at boot (AGENTS.md,
+      # "One signing key, and it is configured") because a key generated per
+      # process publishes a document no caching verifier has seen. It is a
+      # throwaway for a throwaway database and must never be reused.
+      OIDC_SIGNING_KEY: "${E2E_IDENTITY_OIDC_KEY:-e2e-development-signing-key-not-a-secret-32+bytes}"
+    ports:
+      - "${E2E_IDENTITY_PORT:-16080}:8080"
+    depends_on:
+      identity-postgres:
+        condition: service_healthy
+    networks: [platform]
+
+  # -------------------------------------------------------------------- redis
+  # guard's rate-limit counters. One replica makes the in-memory store correct,
+  # so Redis is here to prove the *shared* path the moment there are two, and
+  # because a Redis probe in guard's `/readyz` is a third service boundary the
+  # harness can see.
+  guard-redis:
+    image: redis:7.4.1-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${E2E_GUARD_REDIS_PORT:-16002}:6379"
+    volumes:
+      - guard-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 2s
+    networks: [platform]
+
+  # -------------------------------------------------------------------- guard
+  guard:
+    build:
+      context: ../guard
+      dockerfile: Dockerfile
+      args:
+        BUN_VERSION: "1.3.12"
+    image: cafaye/e2e-guard:local
+    environment:
+      PORT: "8080"
+      NODE_ENV: production
+      # Where the /auth surface sends its calls, and what its readiness probe
+      # checks. By service name over the compose network.
+      IDENTITY_URL: "http://identity:8080"
+      # The issuer tokens are *verified* against. guard appends
+      # /.well-known/jwks.json itself (identity/internal/oidc/provider.go,
+      # PathJWKS). This is the three-process chain the suite asserts: a token
+      # minted by identity, checked by guard, against a key set fetched from
+      # identity.
+      IDENTITY_ISSUER: "http://identity:8080"
+      # The shared counter store, so guard's /readyz has a second dependency to
+      # report and the shared-allowance path is the one under test.
+      REDIS_URL: "redis://guard-redis:6379"
+    ports:
+      - "${E2E_GUARD_PORT:-16081}:8080"
+    depends_on:
+      # `service_started` on identity, not `service_healthy`: identity's image
+      # cannot carry a healthcheck (see the finding above), and compose would
+      # otherwise wait forever for a signal that can never arrive. guard does
+      # not need identity to be *ready* to boot — the pool is lazy and the
+      # readiness probe reports an unavailable dependency rather than refusing to
+      # start — so `bin/e2e`'s host poll is what gates the suite.
+      identity:
+        condition: service_started
+      guard-redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - bun
+        - -e
+        - "fetch('http://127.0.0.1:8080/readyz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+    networks: [platform]
+
+  # ------------------------------------------------------------------- parlor
+  # The service under test. Two build-time facts make this the interesting one:
+  #
+  #   * `NEXT_PUBLIC_IDENTITY_URL` is inlined into the client bundle at BUILD
+  #     time, so it is a build arg and not an environment variable. Setting it
+  #     with `docker run -e` would change nothing, because the string is already
+  #     in the JavaScript by then. The default in the Dockerfile is
+  #     `http://localhost:8080`; this harness overrides it, and the E2E fails
+  #     with a page error rather than a build error if this arg is ever dropped.
+  #   * The value is the HOST-published identity port, because the caller is the
+  #     browser, not this container. `http://identity:8080` would be a name only
+  #     the compose network can resolve, and a Next.js build cannot know that.
+  parlor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_IDENTITY_URL: "${E2E_NEXT_PUBLIC_IDENTITY_URL:-http://localhost:16080}"
+    image: cafaye/e2e-parlor:local
+    environment:
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+    ports:
+      - "${E2E_PARLOR_PORT:-16000}:3000"
+    depends_on:
+      identity:
+        condition: service_started
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/healthz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+    networks: [platform]
