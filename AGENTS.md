@@ -38,6 +38,53 @@ mise install      # node version from mise.toml
   `LayoutProps`, precisely so a fresh clone can typecheck. The CI `build` job
   deletes `.next` before typechecking, so it cannot pass on generated types.
 
+## The end-to-end tier
+
+`bin/prime` is the per-commit gate and has no stack in it. The whole-fleet tier
+is `./bin/e2e`, and it is not optional decoration — it is how a change to this
+app is proved against the services it actually talks to. Read `e2e/edge.conf`
+before changing the topology; the file states the measured reason the stack has
+a reverse proxy in it, which is not a stylistic choice.
+
+```
+e2e/docker-compose.yml   the stack: identity + guard built from ../ and
+                         siblings, one Postgres, one Redis, one edge proxy
+e2e/edge.conf            the same-origin edge. WHY IT EXISTS is in the file
+bin/e2e-stack            build / up / wait / down — the lifecycle, the bounded
+                         readiness poll, and the logs on a failed bring-up
+bin/e2e                  the tier: stack up, browser installed, suite run, the
+                         report checked, stack down
+playwright.config.ts     trace OFF, video OFF, retries 0, one worker
+e2e/*.e2e.spec.ts        the specs. All assertions are on rendered text
+e2e/no-token-artifacts.ts global teardown: no artifact holds a session token,
+                         the tier ran, nothing was skipped
+```
+
+- **The rules this tier holds, and how each is enforced.** No sleep: every wait
+  is Playwright's own auto-waiting assertion, and `bin/e2e-stack` polls
+  `/readyz` with a budget. No retries: `retries: 0`, and a check fails the build
+  if it is raised. No skip: there is no `test.skip` anywhere, and a check greps
+  for one. No secret in an artifact: `trace` and `video` are off, a check fails
+  the build if either is not, and the teardown scans every produced file —
+  archive members included — for a token the run actually minted, and deletes
+  what it finds.
+- **Never add a `trace` to debug a failure.** Read the assertion and the
+  `error-context.md` Playwright writes next to the screenshot; both are in the
+  output directory. If they are not enough, the answer is a better message, not
+  a network log.
+- **A screenshot of a failure is safe and a trace is not**, because the session
+  token is in `localStorage` and is never rendered. Keep it that way: a new
+  `page.screenshot` of a screen holding a credential is a new leak, and the
+  teardown only knows about tokens it has been told.
+- **Ports are `16xxx`** and `tests/validate-ci.sh` checks every published port
+  is inside the block, collides with nothing the workspace owns, and matches
+  the fallbacks in `playwright.config.ts`. `bin/e2e` reads the real numbers out
+  of the compose file rather than restating them.
+- **A service in the stack with no `healthcheck:` must have a `FINDING` in its
+  own block**, and the gate checks for both. identity is the one: a distroless
+  image has no HTTP client, so nothing inside it can answer a probe, and the
+  harness polls from outside instead.
+
 ## CI
 
 `.github/workflows/ci.yml` — `ci` (kit's shared `node` job), `prime`
@@ -45,22 +92,31 @@ mise install      # node version from mise.toml
 `build` (typecheck, then `next build`, then an assertion that the standalone
 output the Dockerfile copies exists).
 
+`.github/workflows/e2e.yml` — the whole-stack tier, its own workflow and its own
+required job. It checks out `../identity` and `../guard` beside this repository,
+because the stack builds their images from those checkouts.
+
 - **The gate is `bin/prime`, and CI runs that script, not a list of `npm run`
   commands.** If the two can disagree, one of them is lying. Adding a check
   means adding it to `bin/prime`, not to the workflow.
 - **`tests/validate-ci.sh` is part of the gate, not a CI extra.** It checks the
   shape of the tree CI assumes — the pin, the lockfile contract, the gate
-  command, that every `npm run` the workflow calls still exists. Its
-  `--self-test` breaks a throwaway copy 16 ways and asserts each one goes red;
-  a check that has only ever been green has verified nothing.
+  command, that every `npm run` the workflow calls still exists, and now the
+  end-to-end tier's own shape. Its `--self-test` breaks a throwaway copy 34
+  ways and asserts each one goes red; a check that has only ever been green has
+  verified nothing.
 - **Do not write `grep -q` into that script inside a pipeline.** Under
   `set -o pipefail`, `grep -q` exits on its first match and the writer takes
   SIGPIPE, so the pipeline reports 141 and a check that *found* the thing reads
   as "not found". Capture the match into a variable instead; `found()` and
-  `found_fixed()` exist for that.
+  `found_fixed()` exist for that. Two more gotchas in the same family are
+  recorded where they were found: BSD grep does not know `\s`, and an ERE
+  `[A-Z_]` does not match a variable name with a digit in it.
 - **A new environment-gated test tier must be forced in CI, and the report must
   say how it was counted.** A gate that prints `0 passed; 14 ignored` has
-  verified nothing.
+  verified nothing. The end-to-end tier is the same rule with one fewer moving
+  part: it has no skip mechanism at all, and two readers of its report fail the
+  run when fewer than two tests passed.
 
 ## Tests first
 
@@ -230,6 +286,9 @@ src/app/            routes: page, login/, register/, accounts/,
                     accounts/[accountId]/, invitations/[token]/,
                     billing/plans/, billing/customers/, healthz/, readyz/,
                     providers.tsx — the client provider stack, mounted by layout
+e2e/                the whole-stack end-to-end tier: the compose topology, the
+                    Playwright specs, and the guards that make a green run mean
+                    something
 src/lib/            identity.ts (identity contract), roles.ts (role vocabulary),
                     accounts.ts (tenancy queries), money.ts, billing.ts,
                     billing-context.tsx, token-store.ts, auth.tsx (session)

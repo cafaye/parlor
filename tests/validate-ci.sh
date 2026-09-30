@@ -47,6 +47,28 @@ DEAD_USES='cafaye/kit/workflows/ci.reusable.yml@'
 # The lockfile `npm ci` consumes. CI fails when the gate moves it; see the
 # prime job in the workflow for why that is the desired failure.
 LOCKFILE=package-lock.json
+# The end-to-end tier's own files. They are read by the same checks as the rest
+# of CI, because a claim CI makes about a tier is a claim about the shape of the
+# tree, and this tier has several that can be true while the tier still does not
+# run (see the end-to-end section below).
+E2E_WF="$ROOT/.github/workflows/e2e.yml"
+E2E_COMPOSE="$ROOT/e2e/docker-compose.yml"
+PW_CONFIG="$ROOT/playwright.config.ts"
+E2E_RUNNER="$ROOT/bin/e2e"
+# The first host port the stack publishes and the last. A port block is a block
+# because a reader can tell at a glance that nothing in it collides; a check
+# that only looked at the first port would pass with 5432 in the middle of it.
+E2E_PORT_FIRST=16000
+E2E_PORT_LAST=16099
+# The ports the rest of the workspace already owns, which the block must not
+# enter: the observability stack (grafana 15000, postgres 15500, nats 15600 and
+# 15700, redis 15800, tempo 15900, loki 15901, mimir 15902), the identity-07
+# worker's postgres on 5437, darkroom's test postgres on 55432, and the standard
+# service ports a developer's own stack is on. The colleagues are listed here
+# rather than only implied, because a block is a promise about *this* stack and
+# a collision with somebody else's stack on the same machine is the collision
+# the packet for this file names first.
+E2E_RESERVED_PORTS="3000 5432 5437 6379 8080 8888 15000 15500 15600 15700 15800 15900 15901 15902 55432"
 
 pass=0
 fail=0
@@ -327,6 +349,332 @@ else
     "found '$(manifest_scalar test)'"
 fi
 
+# ---------------------------------------------------------------------------
+# The end-to-end tier
+# ---------------------------------------------------------------------------
+# Every check in this section is a claim about whether the tier can be green
+# without having run, or can run and leave a credential on disk. Both have
+# happened in this fleet: PLAN.md's risk register names "a CI job which silently
+# skips its hard half is worse than no CI, because a green badge is a claim", and
+# this tier's own artifact scan was green on a leak until it was taught to read
+# inside a zip. A check here that has never gone red is a rubber stamp, so the
+# self-test at the bottom breaks the tree this many ways.
+
+# The workflow exists, and it is its own workflow. The end-to-end tier is not in
+# ci.yml: a whole stack of containers, three image builds and a browser download
+# are not part of a per-commit gate, and putting them there is how a gate starts
+# being skipped.
+if [ -f "$E2E_WF" ]; then
+  ok "e2e.yml exists"
+else
+  no "e2e.yml exists" "$E2E_WF is missing; the end-to-end tier has no CI job"
+fi
+
+if [ -f "$E2E_WF" ] && [ -f "$WF" ]; then
+  if [ -n "$(code_lines "$WF" | found_fixed './bin/e2e')" ]; then
+    no "the end-to-end tier is not in the per-commit gate" \
+      "ci.yml invokes ./bin/e2e; bin/prime is a per-commit gate and a whole stack does not belong in it"
+  else
+    ok "the end-to-end tier is not in the per-commit gate"
+  fi
+
+  if [ -n "$(code_lines "$PRIME" | found_fixed 'e2e')" ]; then
+    no "bin/prime does not run the end-to-end tier" \
+      "bin/prime mentions e2e; a whole stack in the per-commit gate is the failure this is checking for"
+  else
+    ok "bin/prime does not run the end-to-end tier"
+  fi
+fi
+
+# The job runs the tier through the one script, so a developer and CI cannot
+# disagree about what "the end-to-end tier" is.
+if [ -f "$E2E_WF" ] && [ -n "$(code_lines "$E2E_WF" | found_fixed './bin/e2e')" ]; then
+  ok "the e2e job runs ./bin/e2e"
+else
+  no "the e2e job runs ./bin/e2e" \
+    "the job must call the same command a developer runs, not a hand-assembled list of steps"
+fi
+
+# The job cannot be a soft failure. `continue-on-error` on the job or on any step
+# is a green badge over a tier that did not run.
+if [ -f "$E2E_WF" ]; then
+  if [ -n "$(code_lines "$E2E_WF" | found 'continue-on-error')" ]; then
+    no "the e2e job cannot be a soft failure" \
+      "continue-on-error is set; a green badge over a tier that did not run is worse than no job"
+  else
+    ok "the e2e job cannot be a soft failure"
+  fi
+
+  if [ -n "$(code_lines "$E2E_WF" | found_fixed 'tests/assert-e2e-ran.mjs')" ]; then
+    ok "the e2e job fails when the tier ran nothing"
+  else
+    no "the e2e job fails when the tier ran nothing" \
+      "no call to tests/assert-e2e-ran.mjs; the job would go green over a filtered-out suite"
+  fi
+fi
+
+if [ -x "$E2E_RUNNER" ]; then
+  ok "bin/e2e is executable"
+else
+  no "bin/e2e is executable" "$E2E_RUNNER is not chmod +x"
+fi
+
+# `MINIMUM_TESTS` is duplicated in two files on purpose — one is a shell-time
+# reader and the other runs after Playwright has exited — and the duplication is
+# a value that can drift. It is checked here rather than left to a comment.
+minimum_tests() {
+  sed -n 's/^const MINIMUM_TESTS = \([0-9][0-9]*\);.*/\1/p' "$1"
+}
+if [ -f "$ROOT/tests/assert-e2e-ran.mjs" ] && [ -f "$ROOT/e2e/no-token-artifacts.ts" ]; then
+  reader_floor=$(minimum_tests "$ROOT/tests/assert-e2e-ran.mjs")
+  teardown_floor=$(minimum_tests "$ROOT/e2e/no-token-artifacts.ts")
+  if [ -n "$reader_floor" ] && [ "$reader_floor" = "$teardown_floor" ]; then
+    ok "both readers of the report agree on the test floor ($reader_floor)"
+  else
+    no "both readers of the report agree on the test floor" \
+      "tests/assert-e2e-ran.mjs says '${reader_floor:-<none>}', e2e/no-token-artifacts.ts says '${teardown_floor:-<none>}'"
+  fi
+else
+  no "both readers of the report agree on the test floor" \
+    "tests/assert-e2e-ran.mjs and e2e/no-token-artifacts.ts are both required"
+fi
+
+# The credential guard is a config setting, and this is the check that catches it
+# BEFORE a browser runs. `trace: "on"`, `retain-on-failure` and every other
+# non-off value record network traffic, and this suite's traffic carries
+# `Authorization: Bearer <session token>`. The artifact scan in
+# e2e/no-token-artifacts.ts is the second line; this is the first, and a first
+# line that costs nothing is worth having.
+if [ -f "$PW_CONFIG" ]; then
+  for setting in trace video; do
+    value=$(sed -n "s/^[[:space:]]*$setting:[[:space:]]*\"\([^\"]*\)\".*/\1/p" "$PW_CONFIG" | head -1)
+    if [ "$value" = "off" ]; then
+      ok "playwright $setting is off, so the run records no network traffic"
+    else
+      no "playwright $setting is off, so the run records no network traffic" \
+        "$setting is ${value:-<unset>}; a trace or a video is recorded network traffic and this suite's is authenticated"
+    fi
+  done
+else
+  no "playwright trace and video are off" "$PW_CONFIG is missing"
+fi
+
+# `retries: 0` is a position, not a default. A raised retry count is a way of
+# not finding out that the stack is flaky, and this check exists so the change
+# cannot be made quietly and then read as a green tier.
+if [ -f "$PW_CONFIG" ]; then
+  retries=$(sed -n 's/^[[:space:]]*retries:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$PW_CONFIG" | head -1)
+  if [ "$retries" = "0" ]; then
+    ok "playwright retries is 0, and the tier refuses to raise it"
+  else
+    no "playwright retries is 0, and the tier refuses to raise it" \
+      "retries is ${retries:-<unset>}; a retry count hides a real flake rather than reporting it"
+  fi
+fi
+
+# No skip mechanism anywhere in the tier. `test.skip`, `test.fixme` and a
+# conditional skip are the same failure wearing different clothes, and PLAN.md
+# §1 is explicit that a skip nobody is forced to notice is not a pass.
+if [ -d "$ROOT/e2e" ]; then
+  # Comment lines are excluded, and that is the same trap the `npm install`
+  # check hit and documents at `code_lines`: this file's own comment says the
+  # tier has no `test.skip`, and a grep that reads comments fails the tier for
+  # documenting itself. A check that punishes the warning it wants written is a
+  # check that gets deleted within a month.
+  skips=$(grep -rnE 'test\.(skip|fixme)' "$ROOT/e2e" 2>/dev/null \
+    | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*|/\*)' || true)
+  if [ -z "$skips" ]; then
+    ok "the end-to-end tier has no skip mechanism"
+  else
+    no "the end-to-end tier has no skip mechanism" "$(echo "$skips" | head -3)"
+  fi
+fi
+
+# --- the port block --------------------------------------------------------
+# The brief for this file asks for a documented high port block that collides
+# with nothing. A block described in a comment and drifted into a standard port
+# is a collision the second developer on the machine hits, so the numbers are
+# read out of the compose file and checked rather than trusted.
+if [ -f "$E2E_COMPOSE" ]; then
+  # Every `${E2E_*_PORT:-<n>}` default. The substitution's default is the port a
+  # bare `docker compose up` publishes, which is the number that has to be right.
+  # The default is extracted with `sed` rather than a second `grep -oE '[0-9]+$'`,
+  # because a substituted port is followed by `}` and not by a digit: the anchored
+  # form matches nothing and the check reports "no ports found" on a compose file
+  # full of them. A check that is silently blind is the failure this whole file
+  # exists to prevent, and this one was that, once.
+  block=$(grep -oE '\$\{E2E_[A-Z_]*PORT:-[0-9]+\}' "$E2E_COMPOSE" \
+    | sed -nE 's/.*:-([0-9]+)\}$/\1/p' || true)
+  if [ -z "$block" ]; then
+    no "every published port is a substitution with a default" \
+      "no \${E2E_*PORT:-n} in $E2E_COMPOSE"
+  else
+    bad=""
+    for port in $block; do
+      if [ "$port" -lt "$E2E_PORT_FIRST" ] || [ "$port" -gt "$E2E_PORT_LAST" ]; then
+        bad="$bad $port(out of block)"
+        continue
+      fi
+      for reserved in $E2E_RESERVED_PORTS; do
+        if [ "$port" = "$reserved" ]; then
+          bad="$bad $port(reserved)"
+        fi
+      done
+    done
+    if [ -z "$bad" ]; then
+      ok "the whole port block is in ${E2E_PORT_FIRST}-${E2E_PORT_LAST} and collides with nothing reserved"
+    else
+      no "the whole port block is in ${E2E_PORT_FIRST}-${E2E_PORT_LAST} and collides with nothing reserved" \
+        "offending ports:$bad"
+    fi
+  fi
+
+  # Every published port is a `${E2E_*_PORT:-n}` substitution, and every image is
+  # pinned to an exact tag. A literal host port in a compose file is a collision
+  # the second developer on the machine hits, and `latest` is a stack that
+  # changes under you between two runs of the same command. Both of kit's rules,
+  # restated here because the file being checked is this repository's and kit's
+  # script reads kit's template.
+  published_lines=$(sed 's/[[:space:]]*#.*$//' "$E2E_COMPOSE" \
+    | awk '/^[[:space:]]*ports:[[:space:]]*$/ { inports = 1; next }
+           inports && /^[[:space:]]*-[[:space:]]/ { print; next }
+           inports && /^[[:space:]]*[^[:space:]-]/ { inports = 0 }')
+  if [ -z "$published_lines" ]; then
+    no "every published port in the stack is a substitution" \
+      "no ports: lists found in $E2E_COMPOSE"
+  else
+    # `[[:space:]]` and not `\s`: BSD grep does not know `\s`, so a pattern
+    # using it matches nothing and every line reads as a literal. `[A-Za-z0-9_]`
+    # and not `[A-Z_]`: a variable name with a digit in it — E2E_EDGE_PORT is
+    # the one that caught this — is not matched by a letters-and-underscore
+    # class, and a check whose pattern is quietly wrong is worse than no check.
+    literals=$(printf '%s\n' "$published_lines" | grep -vE '^[[:space:]]*-[[:space:]]+"\$\{[A-Za-z0-9_]+:-[0-9]+\}' || true)
+    if [ -z "$literals" ]; then
+      ok "every published port in the stack is a substitution ($(printf '%s\n' "$published_lines" | wc -l | tr -d ' ') entries)"
+    else
+      no "every published port in the stack is a substitution" \
+        "these are literal:$(printf '%s' "$literals" | tr '\n' ' ')"
+    fi
+  fi
+
+  unpinned=$(sed 's/[[:space:]]*#.*$//' "$E2E_COMPOSE" \
+    | grep -oE '^[[:space:]]*image:[[:space:]]*[^[:space:]]+' \
+    | sed 's/.*image:[[:space:]]*//' \
+    | awk '{ tag = ($0 ~ /:/) ? $0 : $0 ":latest"; n = split(tag, parts, ":"); last = parts[n]; if (last == "" || last == "latest") print $0 }' || true)
+  if [ -z "$unpinned" ]; then
+    ok "every image in the stack is pinned to an exact tag"
+  else
+    no "every image in the stack is pinned to an exact tag" \
+      "unpinned:$(printf '%s' "$unpinned" | tr '\n' ' ')"
+  fi
+
+  # The defaults the Playwright config falls back to must be the same numbers.
+  # bin/e2e resolves the ports out of the compose file, so the fallback only
+  # matters for a bare `npx playwright test` — which is exactly the invocation
+  # that skips the harness, and therefore the one where a wrong fallback points
+  # at somebody else's stack.
+  config_ports=$(grep -oE '"E2E_[A-Z_]*PORT", "[0-9]+"' "$PW_CONFIG" \
+    | sed -nE 's/.*"([0-9]+)"$/\1/p' || true)
+  mismatch=""
+  for port in $config_ports; do
+    if ! printf '%s\n' $block | grep -qx "$port"; then
+      mismatch="$mismatch $port"
+    fi
+  done
+  if [ -z "$config_ports" ]; then
+    no "playwright's port fallbacks are the compose file's" \
+      "no \"E2E_*_PORT\", \"<n>\" fallback in $PW_CONFIG"
+  elif [ -z "$mismatch" ]; then
+    ok "playwright's port fallbacks are the compose file's"
+  else
+    no "playwright's port fallbacks are the compose file's" \
+      "in playwright.config.ts but not in the compose document:$mismatch"
+  fi
+fi
+
+# Every service in the stack either has a healthcheck or a comment saying why it
+# cannot. A `docker compose up --wait` cannot mean anything without a health
+# signal, and the one service here that has none — identity, whose distroless
+# image has no HTTP client — has to have said so where a reader will find it.
+if [ -f "$E2E_COMPOSE" ]; then
+  # Only the keys under `services:`. The document also declares `networks:` and
+  # `volumes:` at the same indentation, and a scan that took all of them would
+  # report `platform` and the two volume names as services with no healthcheck.
+  # Only the keys under `services:`, and each one WITH the comment block
+  # immediately above it. Both halves are load-bearing:
+  #   * the document also declares `networks:` and `volumes:` at the same
+  #     indentation, and a scan that took all of them would report `platform`
+  #     and the two volume names as services with no healthcheck;
+  #   * a service's finding is written as the comment above its key, which is
+  #     where a reader looks for it. A check that read only the indented body
+  #     would fail a file that says the thing in the right place, and the fix a
+  #     tired author would reach for is to move the note somewhere useless.
+  services=$(awk '
+    /^services:[[:space:]]*$/ { inside = 1; next }
+    inside && /^[a-z]/ { inside = 0 }
+    !inside { next }
+    /^  [a-z][a-z0-9-]*:[[:space:]]*$/ {
+      name = $1
+      sub(/:$/, "", name)
+      print name
+    }
+  ' "$E2E_COMPOSE" || true)
+
+  # One service: its key line, the comment block directly above it, and
+  # everything indented under it.
+  #
+  # The comment block is BUFFERED rather than read afterwards, because awk sees
+  # the comments before it sees the key they belong to. A version that turned
+  # `inside` on at the key line never saw them at all, and the check then failed
+  # a file whose finding was written exactly where a reader would look for it —
+  # which is the shape of a check that pushes an author to write the note
+  # somewhere useless.
+  service_block() {
+    awk -v want="$1" '
+      function flush_buffer() { printf "%s", buffer; buffer = "" }
+      /^  [a-z][a-z0-9-]*:[[:space:]]*$/ {
+        name = $1
+        sub(/:$/, "", name)
+        if (name == want) { flush_buffer(); inside = 1; found = 1; next }
+        buffer = ""
+        if (inside) { inside = 0 }
+        next
+      }
+      !inside && /^[ ]*#/ { buffer = buffer $0 "\n"; next }
+      !inside { next }
+      { print }
+      END { if (!found) exit 1 }
+    ' "$E2E_COMPOSE"
+  }
+
+  if [ -z "$services" ]; then
+    no "every service in the stack has a healthcheck or a stated finding" \
+      "no services parsed out of $E2E_COMPOSE"
+  else
+    unhealthy=""
+    for service in $services; do
+      block_text=$(service_block "$service")
+      if ! printf '%s' "$block_text" | grep -q 'healthcheck:'; then
+        # No healthcheck is acceptable only with the finding stated, and the
+        # finding has to be in the SERVICE's own block. One sentence in the file
+        # header would otherwise license a missing check on every service below
+        # it, which is a check that verifies nothing.
+        if printf '%s' "$block_text" | grep -qi 'FINDING'; then
+          :
+        else
+          unhealthy="$unhealthy $service"
+        fi
+      fi
+    done
+    if [ -z "$unhealthy" ]; then
+      ok "every service in the stack has a healthcheck or a stated finding"
+    else
+      no "every service in the stack has a healthcheck or a stated finding" \
+        "no healthcheck and no FINDING in:$unhealthy"
+    fi
+  fi
+fi
+
 # --- optional: shellcheck --------------------------------------------------
 # Reported either way. A skip is never hidden, and it is never the difference
 # between this gate and a green build — every check above is dependency-free.
@@ -342,7 +690,7 @@ else
 fi
 
 # --- prove the checks can fail --------------------------------------------
-# Thirteen breakages of a throwaway copy of the four files these checks read,
+# Thirty-three breakages of a throwaway copy of every file these checks read,
 # each asserted to send this gate red. A check that has only ever been seen
 # green is a check nobody has watched fail, and this is the difference between
 # a gate and a rubber stamp (PLAN.md §1: a skipped test proves nothing; a check
@@ -365,7 +713,7 @@ self_test() {
   # breakages under test.
   seed_sandbox() {
     rm -rf "${SANDBOX:?:?}"/*
-    mkdir -p "$SANDBOX/tests" "$SANDBOX/.github/workflows" "$SANDBOX/bin"
+    mkdir -p "$SANDBOX/tests" "$SANDBOX/.github/workflows" "$SANDBOX/bin" "$SANDBOX/e2e"
     cp "$ROOT/tests/validate-ci.sh" "$SANDBOX/tests/validate-ci.sh"
     cp "$PRIME" "$SANDBOX/bin/prime"
     cp "$PKG" "$SANDBOX/package.json"
@@ -373,6 +721,22 @@ self_test() {
     cp "$MANIFEST" "$SANDBOX/cafaye.yml"
     cp "$ROOT/$LOCKFILE" "$SANDBOX/$LOCKFILE"
     cp "$WF" "$SANDBOX/.github/workflows/ci.yml"
+    # The end-to-end tier's files, for the same reason the other four are here:
+    # a sandbox without them is red for a reason that has nothing to do with the
+    # breakage under test, and a self-test whose baseline is red proves nothing
+    # about what follows. The spec sources are copied INTO the sandbox's own e2e/
+    # directory, because that is the directory the skip check reads, and it has
+    # to be the same directory the checks read in the real tree.
+    cp "$E2E_WF" "$SANDBOX/.github/workflows/e2e.yml"
+    cp "$E2E_COMPOSE" "$SANDBOX/e2e/docker-compose.yml"
+    cp "$PW_CONFIG" "$SANDBOX/playwright.config.ts"
+    cp "$E2E_RUNNER" "$SANDBOX/bin/e2e"
+    cp "$ROOT/tests/assert-e2e-ran.mjs" "$SANDBOX/tests/assert-e2e-ran.mjs"
+    cp "$ROOT/e2e/no-token-artifacts.ts" "$SANDBOX/e2e/no-token-artifacts.ts"
+    for spec in "$ROOT"/e2e/*.e2e.spec.ts; do
+      cp "$spec" "$SANDBOX/e2e/$(basename "$spec")"
+    done
+    chmod +x "$SANDBOX/bin/e2e"
   }
 
   # Baseline first: a self-test that cannot see the copy go green in the first
@@ -401,7 +765,25 @@ self_test() {
     "no-engines-field|node -e 'const f=process.argv[1];const p=require(f);delete p.engines;require(\"fs\").writeFileSync(f,JSON.stringify(p,null,2))' '$SANDBOX/package.json'" \
     "range-instead-of-a-pin|sed -i '' 's|\"node\": \"22.22.2\"|\"node\": \"^22\"|' '$SANDBOX/package.json'" \
     "no-lockfile|sed -i '' 's|packageManager: npm|packageManager: pnpm|' '$SANDBOX/cafaye.yml'" \
-    "manifest-forgets-its-node|sed -i '' '/^    node: \"22\"$/d' '$SANDBOX/cafaye.yml'"
+    "manifest-forgets-its-node|sed -i '' '/^    node: \"22\"$/d' '$SANDBOX/cafaye.yml'" \
+    "no-e2e-workflow|rm -f '$SANDBOX/.github/workflows/e2e.yml'" \
+    "e2e-in-the-per-commit-gate|printf '      - run: ./bin/e2e\n' >>'$SANDBOX/.github/workflows/ci.yml'" \
+    "e2e-in-bin-prime|printf 'npm run e2e\n' >>'$SANDBOX/bin/prime'" \
+    "e2e-job-does-not-run-the-tier|sed -i '' 's|run: ./bin/e2e|run: echo the tier is optional|' '$SANDBOX/.github/workflows/e2e.yml'" \
+    "e2e-job-is-soft-fail|printf '    continue-on-error: true\n' >>'$SANDBOX/.github/workflows/e2e.yml'" \
+    "e2e-job-cannot-tell-nothing-ran|sed -i '' '/assert-e2e-ran.mjs/d' '$SANDBOX/.github/workflows/e2e.yml'" \
+    "e2e-runner-not-executable|chmod -x '$SANDBOX/bin/e2e'" \
+    "the-two-test-floors-disagree|sed -i '' 's|^const MINIMUM_TESTS = 2;|const MINIMUM_TESTS = 1;|' '$SANDBOX/e2e/no-token-artifacts.ts'" \
+    "trace-on|sed -i '' 's|trace: \"off\"|trace: \"retain-on-failure\"|' '$SANDBOX/playwright.config.ts'" \
+    "video-on|sed -i '' 's|video: \"off\"|video: \"on\"|' '$SANDBOX/playwright.config.ts'" \
+    "retries-raised|sed -i '' 's|retries: 0|retries: 2|' '$SANDBOX/playwright.config.ts'" \
+    "a-skip-in-the-tier|printf 'test.skip(true, \"no stack\");\n' >>'$SANDBOX/e2e/session.e2e.spec.ts'" \
+    "a-port-on-a-colleague|sed -i '' 's|E2E_GUARD_REDIS_PORT:-16002|E2E_GUARD_REDIS_PORT:-6379|' '$SANDBOX/e2e/docker-compose.yml'" \
+    "a-port-outside-the-block|sed -i '' 's|E2E_IDENTITY_POSTGRES_PORT:-16001|E2E_IDENTITY_POSTGRES_PORT:-15400|' '$SANDBOX/e2e/docker-compose.yml'" \
+    "a-literal-port-in-the-stack|sed -i '' 's|E2E_EDGE_PORT:-16000|16000|' '$SANDBOX/e2e/docker-compose.yml'" \
+    "playwright-points-at-another-stack|sed -i '' 's|\"E2E_PARLOR_PORT\", \"16003\"|\"E2E_PARLOR_PORT\", \"3000\"|' '$SANDBOX/playwright.config.ts'" \
+    "a-service-with-no-health-and-no-finding|printf '  bogus-service:\n    image: busybox:1.36.1\n' >>'$SANDBOX/e2e/docker-compose.yml'" \
+    "an-unpinned-image|sed -i '' 's|image: nginx:1.27.4-alpine|image: nginx:latest|' '$SANDBOX/e2e/docker-compose.yml'"
   do
     name=${proof%%|*}
     breakage=${proof#*|}

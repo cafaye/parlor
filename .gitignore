@@ -46,4 +46,11 @@ yarn-error.log*
 # test + tooling output
 # (/coverage already listed above)
 /test-results
-/playwright-report
+
+# Playwright. `e2e-results.json` and the output directory are this run's
+# artifacts, not source: they are written by `bin/e2e` and uploaded by CI, and
+# the one that must never be committed is the record of session tokens (which
+# lives in the OS temp directory, not here — see e2e/session-tokens.ts).
+e2e-results.json
+e2e/.artifacts/
+playwright-report/

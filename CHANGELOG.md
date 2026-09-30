@@ -8,6 +8,80 @@ All notable changes to parlor are recorded here. The format follows
 
 ### Added
 
+- **The whole-stack end-to-end tier.** `./bin/e2e` brings up a Docker Compose
+  stack — `parlor` built from here, `identity` and `guard` built from
+  `../identity` and `../guard`, one Postgres, one Redis, and the same-origin edge
+  described above — waits on each service's `/readyz` with a bounded poll,
+  installs the pinned Chromium, runs six Playwright specs, checks the report and
+  takes the stack down. It is deliberately *not* in `bin/prime`: a whole stack
+  is not a per-commit gate. Six specs, in two files:
+  `e2e/session.e2e.spec.ts` is the headline path — a person creates an account,
+  signs in, sees an account row `identity` created and made them the owner of,
+  creates a second account through the form, signs out, reloads, and is signed
+  out — and it includes the security case that only a real service can settle,
+  a wrong password and an address that was never registered rendering
+  byte-identical refusals. `e2e/stack.e2e.spec.ts` is the whole deployment seen
+  from a browser: every service's `/readyz` as rendered text, guard refusing an
+  anonymous caller, and the one API-shaped assertion, which is there because
+  guard's BFF has no page and asserts the *distinction* between 401 and 503 —
+  the only way to tell that guard reached identity at all.
+- **`e2e/no-token-artifacts.ts` — the credential guard, and the first version of
+  it was wrong.** Playwright's config sets `trace: "off"` and `video: "off"`
+  because a trace is a full request log and four of this suite's requests carry
+  `Authorization: Bearer <identity session token>`. A setting is not a
+  guarantee, so the global teardown walks every file the run produced and fails
+  if one contains a token the run actually minted — recording tokens to a
+  `0o600` file in the OS temp directory, never to the repository and never to
+  the artifact directory, and destroying it on every path. The first version
+  compared raw bytes and reported *"6 files scanned, none found"* on a run that
+  had just written six traces each containing the full bearer header: a trace's
+  network log is NDJSON **inside** a deflated zip, so the needle was not in the
+  bytes of the `.zip`. It now reads archive members (`unzip`, declared a
+  prerequisite rather than assumed) and deletes the offending files before
+  failing, because a red run that leaves traces full of live tokens on disk has
+  fixed the badge and left the problem where somebody's bug report will find
+  it.
+- **`tests/assert-e2e-ran.mjs` — the tier cannot pass by not running.** Fails
+  when the JSON report says fewer than `MINIMUM_TESTS` passed, when anything was
+  skipped, and when anything only passed on retry. It is the guard-05 mechanism
+  (a gated tier that exits 0 having verified nothing) applied to a tier built so
+  it cannot skip at all: there is no `test.skip`, no `test.fixme` and no
+  environment variable that turns it off.
+- **`.github/workflows/e2e.yml`** — the tier's own workflow and its own job, not
+  `continue-on-error`. It checks out `identity` and `guard` beside this
+  repository (the stack builds their images from there), installs `goose` pinned
+  to an exact version, runs `./bin/e2e`, uploads the JSON report, and then runs
+  the report check again with `if: always()` so the count is in the log whatever
+  happened. No secrets: the fixture database, its credentials and its volumes
+  are throwaway.
+- **`tests/validate-ci.sh` — fifteen more checks, and the self-test grows from
+  sixteen breakages to thirty-four.** The new ones are all claims about whether
+  the end-to-end tier can be green without having run: it has its own workflow,
+  it is not in `ci.yml` or `bin/prime`, the job calls `./bin/e2e`, it cannot be
+  soft-failed, and it calls the report check. Plus the config invariants —
+  `trace` and `video` off, `retries: 0`, no `test.skip` anywhere in `e2e/` — and
+  the topology: every published port a substitution, inside `16000-16099`,
+  colliding with nothing this workspace already owns (the observability stack's
+  `15xxx`, the identity-07 worker's `5437`, darkroom's `55432`, the standard
+  service ports), matching the fallbacks in `playwright.config.ts`; every image
+  pinned to an exact tag; and every service carrying a `healthcheck` or a
+  `FINDING` in its own block. Three of the new checks were wrong before they
+  were right and the self-test is what said so — they are written up where they
+  live.
+- **Measured, on an M-series laptop with OrbStack: a cold `./bin/e2e` is 5m 08s
+  (3m 23s of it building three images from three toolchains) and a warm one is
+  1m 31s, of which 4.3s is the six specs.** The specs are 3% of a warm run. The
+  stack is the cost, which is the argument for the tier not being in
+  `bin/prime`, and the warm number is the one a self-hoster needs.
+  `COMPOSE_PARALLEL_LIMIT` defaults to 1 because three toolchains building at
+  once took the container runtime down on this machine and the error named a
+  socket rather than a cause.
+- **`e2e/` layout**, all documented in the files themselves: `docker-compose.yml`
+  (topology, port block and readiness, with where the topology came from and
+  what it cost), `edge.conf` and `proxy-headers.conf` (the same-origin edge),
+  `session-tokens.ts` (the one place a token is written down and the one place
+  it is destroyed), `no-token-artifacts.ts` (the teardown).
+
 - `.github/workflows/ci.yml` — three jobs. `ci` calls kit's reusable workflow
   at `cafaye/kit/.github/workflows/ci.reusable.yml@master` with
   `language: node`, so the shared install/lint/test contract lands here
@@ -43,6 +117,20 @@ All notable changes to parlor are recorded here. The format follows
 
 ### Changed
 
+- **`docker build` works, and the three faults that stopped it are fixed.** It
+  could not build on `master` when this packet started; the CHANGELOG recorded
+  why, and this is what changed. The `deps` stage no longer inherits
+  `NODE_ENV=production` into a production-only install (`npm ci --include=dev`,
+  which is what puts `@tailwindcss/postcss` and `typescript` back); `.npmrc` is
+  copied into the build context, so `engine-strict=true` is enforced there and
+  not only on the host; the base is `node:22.22.2-slim`, the pin
+  `package.json` declares, rather than `node:22-slim` which resolved to
+  22.23.3 and would have shipped a different runtime than the suite verifies
+  on; and the runner no longer copies a `/app/public` this repository does not
+  have. Verified by `bin/e2e`, which builds the image and runs a browser
+  against it. The three were found by the previous packet and left deliberately
+  — it was scoped to CI and the image is a deployment surface — and the
+  end-to-end packet could not exist without them.
 - `mise.toml` — no version changed. A comment now says it mirrors
   `package.json` and that the gate fails when the two disagree.
 - `README.md` and `AGENTS.md` — the pin is described as living in
@@ -113,26 +201,31 @@ All notable changes to parlor are recorded here. The format follows
 These are gaps in the *services*, found while building against them. Each one is
 recorded so it is not rediscovered from a UI symptom.
 
-- **`docker build` does not work, and this one is not a gap in a service.**
-  Measured, not inferred: the `deps` stage inherits `NODE_ENV=production` from
-  `base`, so `npm ci` there installs production dependencies only — no
-  `@tailwindcss/postcss`, no `typescript` — and the builder stage dies with
-  `Turbopack build failed … Cannot find module '@tailwindcss/postcss'` from
-  `./src/app/globals.css`. Three faults sit behind that one: the runner stage
-  copies `/app/public`, which does not exist in this repository;
-  `FROM node:22-slim` currently resolves to Node **22.23.3**, not the 22.22.2
-  this repository now pins, so the image would run a different runtime than the
-  suite is verified on; and the `deps` stage copies only `package.json` and
-  `package-lock.json`, so `.npmrc`'s `engine-strict=true` is not in that build
-  context and the mismatch is a warning rather than a failure. The README's
-  Container section tells a new contributor `docker build -t parlor .`, and
-  that command fails on `master` today. Left alone deliberately — this packet's
-  scope is CI, and the image is a deployment surface. The minimal fix is
-  `npm ci --include=dev` in `deps`, `FROM node:22.22.2-slim`, `COPY .npmrc ./`
-  in `deps`, and either a `public/` directory or dropping that `COPY`. The CI
-  `build` job is unaffected: it runs `next build` directly with a full dev
-  install, and asserts that `.next/standalone/server.js` exists precisely
-  because the container path cannot currently be trusted to notice.
+- **A browser cannot call `identity` from this app: `identity` serves no CORS
+  headers.** Measured on a running stack, and it is the first thing this
+  repository's end-to-end tier found. The client bundle does the fetching
+  (`src/lib/identity.ts`, base URL from `NEXT_PUBLIC_IDENTITY_URL`), so the
+  caller is the user's browser on the app's origin; `identity/internal/` sets no
+  `Access-Control-Allow-*` anywhere, and `OPTIONS /v1/session` answers `405`
+  because the route implements `POST` and a preflight is not that. The preflight
+  fails, the response is unreadable, and the sign-in form renders "Something
+  went wrong. Try again." — on a stack that came up completely green and whose
+  `/readyz` said `ok` on every service.
+
+  377 unit tests cannot see it, and the reason is structural: every one of them
+  injects a stub transport and never opens a socket, so the browser's
+  same-origin policy is never in the path.
+
+  Two fixes, both in other repositories, neither landed:
+  `identity` could grow a CORS policy for the origins it is embedded in, or
+  `parlor` could grow the same-origin BFF route `AGENTS.md` already schedules —
+  the packet that also moves the session token out of `localStorage`. The
+  end-to-end harness supplies the second shape with an nginx in front of the
+  app and identity's `/v1` (`e2e/edge.conf`), because a tier that documents a
+  bug instead of asserting it is not a tier. **DECISION NEEDED: which of the two
+  owns it, and what the CORS allowlist is if it is the first.** Until one lands,
+  this is a one-line change to `e2e/docker-compose.yml` away from being a real
+  deployment failure rather than a test-harness note.
 
 - **`identity/openapi/v1.yaml` does not describe the tenancy surface.** The
   document was last changed before the packet that added the implementation was

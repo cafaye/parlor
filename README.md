@@ -174,7 +174,8 @@ calling it cross-origin. Until then, `SESSION_TOKEN_KEY` in
 ## Stack
 
 Next.js (App Router) · TypeScript · Tailwind CSS v4 · @tanstack/react-query ·
-vitest · @testing-library/react · Node pinned in `package.json`.
+vitest · @testing-library/react · Playwright for the end-to-end tier · Node
+pinned in `package.json`.
 
 ## Getting started
 
@@ -194,6 +195,8 @@ npm test           # vitest, single run
 npm run test:watch # vitest, watching
 npm run lint       # eslint
 npm run typecheck  # tsc --noEmit
+
+./bin/e2e          # the whole stack, in a browser — see "End to end"
 ```
 
 ### The runtime pin is `package.json`, and the gate keeps it honest
@@ -227,6 +230,14 @@ bash tests/validate-ci.sh --self-test  # break a throwaway copy 16 ways,
 | `prime` | `./bin/prime`, then `git diff --exit-code -- package-lock.json` | CI runs the command a developer runs, and fails if the gate moved the lockfile. |
 | `build` | `rm -rf .next && npm run typecheck`, then `npm run build`, then an assertion that `.next/standalone/server.js` and `.next/BUILD_ID` exist | The suite renders components in jsdom and never asks Next to compile a route, so a broken server/client boundary or a failing prerender is invisible to it. |
 
+A second workflow, `.github/workflows/e2e.yml`, is the end-to-end tier. It is
+separate because a whole stack is not a per-commit gate, and it is not
+`continue-on-error` because a green badge over a tier that did not run is worse
+than no job. It checks out `identity` and `guard` beside this repository,
+builds their images, brings the stack up, installs the pinned Chromium, runs
+the suite, uploads the report and then fails the job if the report says fewer
+than two tests passed or anything was skipped.
+
 Two decisions worth knowing about:
 
 - **`lint` is in CI, and it is kit's step.** `npm run lint` runs in the shared
@@ -250,23 +261,120 @@ number nobody measured is worse than an honest 0 with a comment.
 
 ## Container
 
-> **`docker build` is broken on `master` today**, and this section is the
-> record of that rather than an instruction that works. The `deps` stage
-> inherits `NODE_ENV=production`, so `npm ci` there installs no
-> devDependencies and the builder dies on `Cannot find module
-> '@tailwindcss/postcss'`. Two faults sit behind it — the runner copies an
-> `/app/public` that does not exist, and `node:22-slim` is 22.23.3 rather than
-> the pinned 22.22.2. See CHANGELOG "Known gaps" for the measurements and the
-> minimal fix. The CI `build` job is unaffected and asserts the standalone
-> output the image needs.
+The image builds and runs. `docker build` was broken on `master` until the
+end-to-end packet needed it; the three faults are recorded in CHANGELOG
+"Known gaps" under *What this packet fixed*, and all three are fixed.
 
 ```sh
-docker build -t parlor .          # currently fails, see above
+docker build -t parlor .
 docker run --rm -p 3000:3000 parlor
 ```
 
-Multi-stage `node:22-slim`, standalone Next output, non-root user, `/healthz`
-wired to the image `HEALTHCHECK`.
+Multi-stage `node:22.22.2-slim` — the pin `package.json` declares, not
+whatever `node:22-slim` resolves to this week — standalone Next output,
+non-root user, `/healthz` wired to the image `HEALTHCHECK`.
+
+The image is not the point of this section any more. `bin/e2e` builds it, and
+so builds `identity` and `guard` from their own checkouts, and drives all of it
+from a browser. Read on.
+
+## End to end
+
+```sh
+./bin/e2e          # the whole stack, in Chromium, then it is gone again
+./bin/e2e --keep   # leave it up afterwards
+./bin/e2e-stack ps # what is running
+```
+
+`bin/prime` deliberately does not contain this. It is a per-commit gate, and a
+whole stack of containers, three image builds and a browser download are not a
+per-commit gate. The tier is `bin/e2e` and CI runs it as its own job.
+
+### The stack
+
+| Container | From | Published on | What it is for |
+| --- | --- | --- | --- |
+| `edge` | `nginx:1.27.4-alpine` | `16000` | The origin a browser loads. Routes `/v1/*` to identity and everything else to parlor. |
+| `parlor` | this repository | `16003` | The app under test, also reachable directly. |
+| `identity` | `../identity` | `16080` | Auth, sessions, accounts, on a real Postgres. |
+| `guard` | `../guard` | `16081` | The gateway: JWT verification, rate limits, a BFF. |
+| `identity-postgres` | `postgres:17-alpine` | `16001` | identity's database. |
+| `guard-redis` | `redis:7.4.1-alpine` | `16002` | The shared rate-limit counters. |
+
+Everything is in the `16xxx` block, chosen because `15xxx` is this workspace's
+observability stack and `3000`/`5432`/`6379`/`8080` belong to whatever you
+already have running. `tests/validate-ci.sh` reads the compose file and fails if
+a published port leaves the block or lands on one of those.
+
+### Why there is a reverse proxy in it
+
+`e2e/edge.conf` states this in full and it is worth repeating here, because it
+is the first thing this tier found and it is a real defect in the app as it
+stands:
+
+**A browser cannot call `identity` from this app.** The client bundle does the
+fetching (`src/lib/identity.ts`), `identity` serves no CORS headers, and
+`OPTIONS /v1/session` answers `405`. The preflight fails, the response is
+unreadable, and the sign-in form renders "Something went wrong. Try again." —
+on a stack that came up completely green.
+
+The unit suite cannot see it: 377 tests, every one of them injecting a stub
+transport and never opening a socket. The fixes belong in the real repositories
+— a CORS policy in `identity`, or the same-origin BFF route `AGENTS.md` already
+schedules for `parlor` — and until one of them lands the harness supplies the
+second shape itself, because a test suite that documents a bug is not a test
+suite.
+
+### What the specs assert
+
+Rendered text. A role and an accessible name, a heading, a row in a list. There
+is not one `expect(response.status()).toBe(200)` in the auth path, and the one
+API-shaped assertion in the gateway file is there because the surface has no
+page — and it asserts the *distinction* between 401 and 503, which is the only
+way to tell that guard reached identity at all.
+
+### The rules it holds, and how
+
+| Rule | Enforced by |
+| --- | --- |
+| No `waitForTimeout` anywhere | Nothing to enforce mechanically; every wait is Playwright's own auto-waiting assertion, and `bin/e2e-stack` polls `/readyz` with a bounded budget instead of sleeping. |
+| No raised retries | `retries: 0`, plus a `validate-ci.sh` check that fails the build if it is changed. |
+| No skipping | There is no `test.skip` in `e2e/`, plus a check that greps for one, plus two readers of the report that fail the run below two passing tests. |
+| No credential in an artifact | `trace` and `video` off (checked), **and** `e2e/no-token-artifacts.ts` scans every produced file — zip members included — for a token the run actually minted, then deletes what it finds. |
+| A failed bring-up says why | `bin/e2e-stack` prints the failing container's logs before exiting. |
+
+The token scan earned its keep immediately. Its first version compared raw
+bytes and reported "6 files scanned, none found" on a run that had just written
+six traces, every one of them holding the full `Authorization: Bearer …`
+header. A trace's network log is NDJSON *inside* a deflated zip, so the needle
+was not in the bytes of the `.zip`.
+
+### Cold and warm
+
+Measured on an M-series laptop with OrbStack, `COMPOSE_PARALLEL_LIMIT=1`, from
+`./bin/e2e` to the stack being gone again:
+
+| Run | Wall clock | Of which |
+| --- | --- | --- |
+| **Cold** — no Docker layer cache, no browser cache | **5m 08s** | 3m 23s building three images from three toolchains; the rest is pulling Chromium and starting containers |
+| **Warm** — images built, volumes recreated | **1m 31s** | 40s re-checking the build cache, 15s starting containers, **4.3s running the six specs** |
+
+The specs are 3% of a warm run and 2.5% of a cold one. The stack is the cost,
+which is exactly why the tier is not in `bin/prime` — and the number a
+self-hoster needs is the warm one, because the cold one is a one-off per
+machine.
+
+`COMPOSE_PARALLEL_LIMIT` defaults to 1 on purpose. Three toolchains building at
+once took the container runtime down on the machine this was written on, and the
+failure named a socket rather than a cause. Raise it when there is memory for
+it.
+
+### What the tier needs on the machine
+
+`docker` with the compose v2 plugin, `curl`, `unzip`, and `goose` (the pinned
+version `identity` documents; `bin/e2e-stack` refuses to start without it and
+prints the install command). The sibling checkouts `../identity` and `../guard`
+must exist — the stack builds their images from there, and CI checks out both.
 
 ## Not yet — Phase 2
 

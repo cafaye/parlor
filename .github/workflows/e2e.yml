@@ -1,0 +1,158 @@
+---
+# The end-to-end tier. Its own workflow, its own job, and NOT part of the `ci`
+# workflow — deliberately, twice over.
+#
+# WHY A SEPARATE WORKFLOW
+#   * `bin/prime` is a per-commit gate and the unit tier belongs in it. A whole
+#     stack of containers, three image builds and a browser download do not: a
+#     gate that takes ten minutes is a gate people stop running, and a gate
+#     people stop running is a gate that is not a gate.
+#   * The stack needs sibling checkouts. `e2e/docker-compose.yml` builds
+#     identity's and guard's images from `../identity` and `../guard`, and this
+#     repository cannot vendor a second copy of a sibling: a copy is a second
+#     thing to keep true. So the job checks out the fleet.
+#   * It is slow and it is not fast-feedback. It runs on push and on pull
+#     requests — not nightly, not pre-release — because a nightly E2E is a
+#     regression nobody reads about.
+#
+# WHY IT IS NOT `continue-on-error`
+#   PLAN.md §1: "a CI job which silently skips its hard half is worse than no
+#   CI, because a green badge is a claim". This job has no soft-fail path at
+#   all:
+#
+#   * `bin/e2e` has no skip mechanism. There is no `test.skip`, no
+#     `test.fixme`, no "if the stack is not available" branch, and no
+#     environment variable that turns the tier off. The browser is installed or
+#     the run fails; the stack comes up or the run fails.
+#   * `tests/assert-e2e-ran.mjs` fails the run when the JSON report says fewer
+#     than two tests passed, and when anything was skipped. So a `testMatch` that
+#     stopped matching is a red build, not a green one over nothing.
+#   * `e2e/no-token-artifacts.ts` (Playwright's global teardown) repeats both
+#     checks and adds the credential scan, so the guarantees hold for a
+#     developer running `npx playwright test` directly as well as for CI.
+#
+# WHAT THIS JOB IS NOT ALLOWED TO BE
+#   A job that can go green without proving the fleet works together. Every step
+#   below that looks defensive exists because the failure it catches has already
+#   happened somewhere in this fleet.
+name: e2e
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Nothing here needs a secret. The fixture database, its credentials and the
+# OIDC signing key (there is none — see e2e/docker-compose.yml) live inside
+# throwaway containers on a throwaway runner. A self-hoster's first question is
+# what to put in this file, and the answer is nothing.
+jobs:
+  e2e:
+    name: whole stack, in a browser
+    runs-on: ubuntu-latest
+    # Generous, and it is a ceiling rather than a target: a cold run builds
+    # three images from three toolchains, which is most of the time. A timeout
+    # that is too tight turns a slow cold cache into a red build that says
+    # nothing; a timeout that is too loose is only paid when something is
+    # already wrong, and every long command inside bin/e2e-stack has its own
+    # bounded budget and prints the failing container's logs.
+    timeout-minutes: 45
+    steps:
+      # The fleet. `identity` and `guard` are built from these checkouts by
+      # e2e/docker-compose.yml, so a job that checked out only this repository
+      # could not build the stack at all.
+      #
+      # Three checkout steps rather than one with a `path:` list, because
+      # `ref` differs between them: this repository is tested at the ref being
+      # pushed, and the siblings at master. A stack assembled from mismatched
+      # service versions is a different artifact with the same name, and
+      # pinning the siblings to this ref would mean a green run of a fleet that
+      # does not exist.
+      - uses: actions/checkout@v7
+        with:
+          path: parlor
+          ref: ${{ github.ref }}
+      - uses: actions/checkout@v7
+        with:
+          path: identity
+          ref: master
+      - uses: actions/checkout@v7
+        with:
+          path: guard
+          ref: master
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: parlor/package.json
+
+      # `npm ci` and not `npm install`: the lockfile is the contract, and a CI
+      # path that resolves a disagreement `npm ci` should have reported is how a
+      # green build says something the tree does not contain.
+      - name: install the committed lockfile
+        working-directory: parlor
+        run: npm ci
+
+      # The sibling checkouts have to exist before the compose file will even be
+      # read, and asserting it here names the two directories in a CI log
+      # instead of leaving a reader to work out why a build context is missing.
+      - name: the sibling checkouts the stack builds from are present
+        run: |
+          set -euo pipefail
+          for sibling in identity guard; do
+            if [ ! -f "../$sibling/Dockerfile" ]; then
+              echo "::error::../$sibling/Dockerfile is missing; e2e/docker-compose.yml builds that image from there" >&2
+              exit 1
+            fi
+            echo "  ../$sibling: present"
+          done
+
+      # identity applies its own migrations with goose, from the host, because
+      # migrations are a deploy step and not a boot step (identity/AGENTS.md).
+      # Pinned to an exact version for the same reason every other pin in the
+      # fleet is: a `@latest` in a CI path is a build that changes under you.
+      # `npm ci` has already put Go on the runner via setup-node's sibling? No —
+      # GitHub's ubuntu images ship Go, and this step is the one place that
+      # depends on that, so the version is printed next to the install.
+      - name: install goose, pinned
+        run: |
+          set -euo pipefail
+          go version
+          go install github.com/pressly/goose/v3/cmd/goose@v3.24.1
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      # A checkpoint a reader can see. The three builds are the expensive part
+      # of a cold run and `docker compose build` is otherwise a silent
+      # ten-minute tool call; bin/e2e-stack prints one line per image and the
+      # time each took, and this step makes sure a reader is still there.
+      - name: the tier (builds the stack, installs the browser, runs the suite)
+        working-directory: parlor
+        run: ./bin/e2e
+
+      # The report, uploaded. It is a per-test status list and a stdout/stderr
+      # capture — no trace, no video, no network log, which is the whole reason
+      # those are off in playwright.config.ts and the reason
+      # e2e/no-token-artifacts.ts fails the run if any of them is on. Uploading
+      # this is the difference between "the end-to-end tier failed" and a
+      # reader being able to see which assertion.
+      - name: upload the end-to-end report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report
+          path: parlor/e2e-results.json
+          if-no-files-found: warn
+          retention-days: 7
+
+      # Belt and braces, and it is here rather than only inside bin/e2e because
+      # this is the step a reviewer reads: the count is printed whatever
+      # happened, so "the job is green and the tier ran nothing" is visible in
+      # the log rather than inferrable. The same check runs inside the tier; this
+      # one is the record.
+      - name: the tier ran tests, and skipped none
+        if: always()
+        working-directory: parlor
+        run: node tests/assert-e2e-ran.mjs e2e-results.json
