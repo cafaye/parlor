@@ -19,6 +19,18 @@ RUN npm ci
 # --- builder ----------------------------------------------------------------
 FROM base AS builder
 WORKDIR /app
+
+# Next inlines NEXT_PUBLIC_* into the client bundle at BUILD time, so the value
+# has to be here or it is not going to be anywhere: setting it later, in
+# `docker run -e`, changes nothing because the string is already in the
+# JavaScript. Verified by grepping the built chunk for this value.
+#
+#   docker build --build-arg NEXT_PUBLIC_IDENTITY_URL=https://identity.example.com .
+#
+# The default is the compose-stack address, which is what a local build wants.
+ARG NEXT_PUBLIC_IDENTITY_URL=http://localhost:8080
+ENV NEXT_PUBLIC_IDENTITY_URL=$NEXT_PUBLIC_IDENTITY_URL
+
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
