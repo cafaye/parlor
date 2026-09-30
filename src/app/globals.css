@@ -1,0 +1,23 @@
+@import "tailwindcss";
+@import "../styles/tokens.css";
+
+/*
+ * Base element styles only.
+ *
+ * Theme values live in `src/styles/tokens.css` — the single source of truth.
+ * Do not add colors or fonts here; add a token and use the utility.
+ */
+
+@layer base {
+  html {
+    height: 100%;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    height: 100%;
+    background-color: var(--color-surface);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+  }
+}

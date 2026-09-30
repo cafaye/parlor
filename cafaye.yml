@@ -1,0 +1,77 @@
+# cafaye.yml — DRAFT manifest for parlor.
+#
+# STATUS: draft. The authoritative cafaye.yml schema lands with `core` v0
+# (PLAN.md Phase 0); `core` owns the format and this file gets reconciled when
+# it does. Do not build tooling against this shape yet — read it as intent.
+#
+# What is stable even in draft form:
+#   - `healthz` / `readyz` paths and response shapes are the platform contract.
+#     Probe them; do not rename them.
+#   - `deps: none` is a placeholder that becomes a real dependency list once
+#     Phase 2 wires identity/billing/courier checks into /readyz.
+
+apiVersion: cafaye/v0-draft
+kind: service
+
+metadata:
+  name: parlor
+  version: 0.1.0
+  summary: >-
+    The cafaye app shell: App Router + Tailwind v4 theme, health surfaces and a
+    test rig. Template buyers own the resulting code.
+
+spec:
+  runtime:
+    language: typescript
+    framework: nextjs
+    node: "22"
+    packageManager: npm
+    build:
+      command: npm run build
+      output: standalone
+    serve:
+      command: npm start
+      port: 3000
+
+  http:
+    port: 3000
+    routes:
+      - path: /
+        kind: page
+        phase: 1
+        note: Landing placeholder. Phase 2 replaces it with the product shell.
+      - path: /healthz
+        kind: route
+        method: GET
+        phase: 1
+        probe: liveness
+        response:
+          status: 200
+          body:
+            status: ok
+      - path: /readyz
+        kind: route
+        method: GET
+        phase: 1
+        probe: readiness
+        response:
+          status: 200
+          body:
+            status: ok
+            deps: none
+
+  # Phase 2: the shell starts depending on platform services. These are the
+  # slots /readyz will report on once they exist.
+  dependencies: []
+
+  container:
+    image: cafaye/parlor
+    dockerfile: Dockerfile
+    port: 3000
+    user: nextjs
+
+  quality:
+    test: npm test
+    lint: npm run lint
+    typecheck: npm run typecheck
+    prime: ./bin/prime

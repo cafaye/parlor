@@ -1,0 +1,73 @@
+/**
+ * cafaye design tokens.
+ *
+ * PLACEHOLDER PALETTE. The scale below is a neutral graphite ramp chosen only
+ * so the shell has a coherent, testable theme — it is NOT the cafaye brand.
+ * Brand colors are a Phase 2 decision (see AGENTS.md); when they land, edit
+ * these variables and nothing else.
+ *
+ * Rules for this file:
+ *   - This is the single source of theme values. Components use Tailwind
+ *     utilities (bg-cafaye-500, text-muted); they never hardcode hex values.
+ *   - Everything lives inside `@theme` so Tailwind v4 generates the utilities.
+ *   - Semantic names (--color-surface, --color-muted) describe intent, not
+ *     pigment, so a dark-mode swap stays a one-line change per token.
+ *   - shadcn/ui arrives in Phase 2 and will add its own token block; keep both
+ *     in this file rather than scattering CSS.
+ */
+
+@theme {
+  /* -- cafaye palette (placeholder) ------------------------------------- */
+  --color-cafaye-50: #f7f7f8;
+  --color-cafaye-100: #ededee;
+  --color-cafaye-200: #d8d8db;
+  --color-cafaye-300: #b6b6bb;
+  --color-cafaye-400: #8e8e95;
+  --color-cafaye-500: #6b6b73;
+  --color-cafaye-600: #55555c;
+  --color-cafaye-700: #444449;
+  --color-cafaye-800: #2e2e32;
+  --color-cafaye-900: #1b1b1e;
+  --color-cafaye-950: #101012;
+
+  /* -- semantic layer ---------------------------------------------------- */
+  --color-surface: var(--color-cafaye-50);
+  --color-surface-raised: #ffffff;
+  --color-foreground: var(--color-cafaye-950);
+  --color-muted: var(--color-cafaye-500);
+  --color-border: var(--color-cafaye-200);
+  --color-accent: var(--color-cafaye-900);
+
+  /* -- status (reserved: identity + billing wire these up in Phase 2) ---- */
+  --color-positive: #2f7d4f;
+  --color-caution: #8a6a1f;
+  --color-critical: #a32f2f;
+
+  /* -- typography -------------------------------------------------------- */
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  /* -- radius / spacing scale ------------------------------------------- */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+}
+
+/* Dark mode: remap the semantic layer only. The ramp above is shared, so the
+   brand decision in Phase 2 lands in one place. */
+@layer base {
+  :root {
+    color-scheme: light dark;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --color-surface: var(--color-cafaye-950);
+      --color-surface-raised: var(--color-cafaye-900);
+      --color-foreground: var(--color-cafaye-50);
+      --color-muted: var(--color-cafaye-400);
+      --color-border: var(--color-cafaye-800);
+      --color-accent: var(--color-cafaye-100);
+    }
+  }
+}

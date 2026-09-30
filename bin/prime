@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Prime a fresh checkout of parlor.
+#
+# Two commands on purpose: install EXACTLY the committed lockfile (`npm ci`,
+# which deletes node_modules and refuses to drift), then run the full suite.
+# A green `bin/prime` means the checkout reproduces. Run it before touching
+# code, and again before handing work off.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+echo "==> npm ci"
+npm ci
+
+echo "==> npm test"
+npm test

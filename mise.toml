@@ -1,0 +1,22 @@
+[tools]
+# 22.12.0 was the local machine's version, but the jsdom test rig (jsdom@30,
+# @asamuzakjp/*, w3c-xmlserializer) now requires ^22.22.2. Pin that floor so
+# `npm ci` installs warning-free. Stays on the Node 22 LTS line, matching the
+# `node:22-slim` base in the Dockerfile.
+node = "22.22.2"
+
+[tasks.test]
+description = "Run the vitest suite once"
+run = "npm test"
+
+[tasks.lint]
+description = "Lint and typecheck"
+run = ["npm run lint", "npm run typecheck"]
+
+[tasks.prime]
+description = "Fresh checkout: install the lockfile, then prove the tests pass"
+run = "./bin/prime"
+
+[tasks.dev]
+description = "Next dev server"
+run = "npm run dev"
