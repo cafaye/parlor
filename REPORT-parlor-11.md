@@ -170,6 +170,130 @@ different toolchain's result wearing this one's name — so "the gate passed" is
 only a statement about the tree when the toolchain was pinned first. §8 item 12
 records the sharp edge: the self-test does *not* do this for you.
 
+### 0.7 The control, observed RED
+
+**Authorship note, so §0.1–§0.6 and this subsection are not read as one voice.**
+§0.1–§0.6 were written by the run that corrected the report. **§0.7 and §0.8 were
+written by a third run**, later again, on the same branch. It changed no code: it
+took the tree as it found it, ran the self-test, broke the pattern on purpose to
+watch the control fail, restored the tree, and wrote down what it saw. Nothing in
+§0.1–§0.6 is restated here except where a number has to agree.
+
+**§0.1 reports a green control. This run observed the same control red, and both
+are true, which is the point.**
+
+A self-test whose control has never been observed failing is an untested test.
+Every number in this document is a claim about a test suite, and until this run
+every such claim rested on runs in which that suite had never been wrong. D13
+says the control's state is not a footnote in a report; it decides whether the
+rest of the report means anything. So it was put to the question:
+
+1. The tree as committed: `33 passed, 0 failed, 0 skipped`, exit 0.
+
+2. **The break** — one word, the smallest mistake a person can make by accident:
+
+   ```diff
+   -      match: '^[ ]*Tests[ ]+([0-9]+)[ ]+passed(?![ ]*\|)'
+   +      match: '^[ ]*Test [ ]+([0-9]+)[ ]+passed(?![ ]*\|)'
+   ```
+
+   `Tests` became `Test`. The self-test's `suite_head` was changed to match, and
+   that is not cheating: the spelling guard exists to stop a self-test whose
+   expectations have drifted away from the declaration, and leaving it pointing
+   at the old spelling would have aborted the run *before* the control executed.
+   The scenario is the realistic one — somebody edits the pattern, the cases
+   follow it mechanically, and the control is the only thing left that notices.
+
+3. **The run**, whole, on the broken tree:
+
+   ```
+   26 passed, 7 failed, 0 skipped          exit 1
+   ```
+
+   Both controls red, naming the finding:
+
+   ```
+   FAIL  the control: gate.yml as committed is true of this repository
+         gate-check --prove exited 1 on an unmodified clone
+   FAIL gate.proof-missing: proof 'suite' never appeared; no line of the gate's
+         output, with terminal escapes stripped, matches
+         '^[ ]*Test [ ]+([0-9]+)[ ]+passed(?![ ]*\|)'
+   FAIL  the control under colour: gate.yml is true of a gate whose output is coloured
+   ```
+
+   That finding is the defect this packet was created to remove, reproduced on
+   purpose: a gate that ran 377 tests and exited 0, reported as
+   `gate.proof-missing` about a suite that had just proved it ran.
+
+   The other five failures are the blast radius of one word — every case whose
+   subject is the suite proof matching:
+
+   | failed case | why one word took it down |
+   |---|---|
+   | `floor-above-the-suite` | expects `gate.floor`, and a floor is never read when the proof never matched |
+   | `floor-with-no-capture-group` | expects `gate.proof-invalid`, which `core` checks *after* the match |
+   | `floor-with-two-capture-groups` | same, for the case added in this run |
+   | `colour-green` | the captured coloured bytes stop satisfying the proof |
+   | `colour-lost-tests` | the 300-vs-377 case leaks to `gate.proof-missing` — the floor leak, verbatim |
+
+4. **The restore**, verified by SHA-256 rather than by eye, because "I put it
+   back" is a claim and a hash is evidence:
+
+   ```
+   d683d152…  gate.yml
+   2937ab9f…  tests/gate-declaration-self-test.sh      identical before and after
+   ```
+
+   `git status` clean, and the tally is the one in §0.1.
+
+**The most interesting thing in that run is a case that stayed green.** Six cases
+in this script expect `gate.proof-missing` — `no-separator`,
+`colour-skipped-one`, `colour-skipped-one-plain`, `colour-wrong-number`, the
+false-green case and the wrong-word case. Under the broken pattern they
+**passed**, because a pattern that matches nothing does produce
+`gate.proof-missing`. They were right for a reason that had nothing to do with
+what they were written to check.
+
+That is not a defect in them. It is the argument for the control in a single
+observation: six cases agreed with a broken repository, and the two cases that
+disagreed were the ones that ran the *unmodified declaration* against the real
+gate. **A self-test's red cases are not evidence that the self-test works; its
+control is.** This packet exists because a red control was shipped as a green
+one, and this run is the first time the red has been seen rather than assumed.
+
+### 0.8 Could not verify — this run
+
+Additive to §8, which stands.
+
+1. **That `core`'s stripping is permanent.** MD17 is a ruling and `core-13` is
+   merged, but nothing in *this* repository can hold `core` to it forever. §0.5
+   names the case that goes red if it stops; this run adds only that the cost of
+   that red has not been measured in CI, and that one full gate run is the order
+   of it.
+2. **`ci.yml` has not run on GitHub.** §0.6 runs the gate locally. The one-line
+   `run:` is the ordinary spelling, `gate-check` reads it here, and the step's
+   behaviour is unchanged from the block form — but "core's reader can see it" is
+   a static property of a text file, and "GitHub Actions executes it" is a runner.
+3. **`minimum: 377` still has no ratchet here.** Unchanged by this run: the new
+   cases are in a shell script `bin/prime` does not run, so no vitest test was
+   added and the floor was correctly left alone.
+4. **One transient red, and what I concluded.** An earlier run of this script
+   ended `32 passed, 1 failed`, the failure being the documented blind-spot case
+   with `gate.nonzero: the gate exited 1` from the repository's *own* gate —
+   nothing to do with the pattern. The sandbox was reproduced by hand and was
+   green, and the likely cause is my own housekeeping: I had `kill -9`-ed an
+   `npm ci` in an abandoned run, and `npm ci` on a cold checkout is the one
+   command in this gate that needs the network. `npm cache verify` afterwards was
+   clean and garbage-collected 18 orphaned entries. The §0.1 tally is a re-run on
+   the identical tree. Reporting it costs nothing; hiding it would be the failure
+   this packet was created to end.
+5. **Two runs were wasted on my own mistakes**, recorded rather than buried. I
+   edited the self-test while a run of it was in flight — bash reads a script
+   incrementally, so the run died on a syntax error. And the first version of the
+   paired `no-separator` case seeded the repository's *real* gate instead of the
+   fixture it compares against, which would have gone green and been evidence of
+   nothing. The comment in that case now says why the fixture is written twice.
+
 ---
 
 ## 1. The thing to read first
