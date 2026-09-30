@@ -5,16 +5,146 @@
 Branch `worker/parlor-11-ansi`, based on `master` at `49c9cf3`. Nothing pushed,
 nothing merged, no repository outside `parlor` touched.
 
-This packet was worked twice, and the document says which half is which:
+This packet was worked three times, and the document says which pass is which.
+Getting that wrong would be this packet's own defect — a reader unable to tell
+whose measurement they are reading:
 
-- **Part one (§1–§9 below) is the previous worker's report**, kept as written,
-  because it is accurate about the state of the tree at `8b6791b` and because
-  throwing away careful analysis to save a rewrite would be its own kind of
-  damage. Three claims in it have since been overtaken by events, and each is
-  marked in place with what superseded it. Nothing else in it has been edited.
-- **Part two (at the very top, §0) is this run**: what the previous worker left
-  behind, the rebase, what `core-13` made redundant, what I deleted, and what
-  I verified.
+- **Part one (§1–§9 below) is the repair**, written by the run that did the
+  engineering, kept as written because it is accurate about the state of the tree
+  at `8b6791b` and because throwing away careful analysis to save a rewrite
+  would be its own kind of damage. Claims in it that events have overtaken are
+  marked in place with what superseded them. Nothing else in it has been edited.
+- **Part two (§0) is a later run that verified the repair and corrected three
+  things in it** — a stale pass count, four cross-references to a §0 that did
+  not exist, and a claim about `ci.yml` that the tree no longer matches. It
+  wrote no engineering changes to `gate.yml` or to the self-test. Its tally and
+  §8 items 10–12 are that run's own measurements and its own limits, and it says
+  plainly that it did not write the repair it is vouching for.
+- **`74ce235` is neither of the two.** It is the manager committing work that
+  was on disk uncommitted when a worker's process died, labelled so it could not
+  be mistaken for reviewed work. §7 has the branch history.
+
+---
+
+## 0. This run: what was verified, and what was corrected
+
+**Authorship, because a report that blurs it is the defect this packet is
+about.** §1–§9 were written by the run that did the repair. **This section was
+written by a later run**, on the same branch, which found the repair already
+committed — `609687a`, `8b6791b`, then `74ce235` — and did not take any of it on
+trust. Everything asserted in §0 is a measurement that run made itself. Where
+this section corrects §1–§9 it says so in place, and the correction is marked
+rather than folded away, because a silent edit to a number in a report about
+undisclosed red controls would be the same failure wearing a smaller hat.
+
+### 0.1 The control, re-run from scratch
+
+`bash tests/gate-declaration-self-test.sh` on `worker/parlor-11-ansi` at
+`74ce235`, exit 0:
+
+```
+33 passed, 0 failed, 0 skipped
+```
+
+**0 skipped**, and the skip count is reported separately from the pass count
+because a green hiding a skip is worse than a red. Both controls are green,
+including the one that forces `FORCE_COLOR=1` — the case that reproduces the
+original defect on purpose. The suite proof now goes red for every case the
+brief demands: a suite that lost tests (`gate.floor`), one that skipped
+(`gate.proof-missing`, asserted on **both** a coloured and a colour-free run),
+and one that printed the file count instead of the test count
+(`gate.proof-missing`).
+
+So the claim in §1 — "the previous packet had a red control. This one does not" —
+is now backed by a run this section can point at, rather than by the sentence
+alone. It is the one claim in this document worth believing only after a
+measurement, and the measurement is above.
+
+### 0.2 What was corrected, and why it is not a formality
+
+Three things in §1–§9 did not match the tree, and a reader would have taken them
+as measurements:
+
+1. **§5's tally was stale: it said `28 passed, 0 failed, 0 skipped`. The real
+   number is 33.** The five extra cases are the source-property assertions and
+   the captured-byte fixtures added after that section was written. A report
+   whose pass count does not match its own artifact is precisely the failure
+   this packet exists to end, so it is corrected in place (§4, §5) and not
+   quietly left.
+2. **Four cross-references pointed at a §0 that did not exist** — this section,
+   §0.4, §0.5, and the preamble's own promise of "part two". They now resolve.
+   Two prior runs wrote cross-references to a section neither of them wrote,
+   which is the same class of defect as a red control described as green: a
+   document asserting a thing the document does not contain.
+3. **§7 claimed "the `ci.yml` block scalar" is new in this branch. It is not
+   there any more.** `74ce235` replaced the `run: |` block with a one-line
+   `run: ./bin/prime`, because `core-12` (`63fd319`) landed and `RUN_KEY` in
+   `harness/gate_check.py` now captures the inline form. That is a correct
+   removal, and this run verified it rather than assuming it: `RUN_KEY` carries
+   an `inline` group, and two self-test cases guard the one-line spelling.
+
+### 0.3 Independently checked, not inherited
+
+The claims below were re-derived from `core`'s source and from captured bytes
+rather than read out of §1–§9:
+
+- **`core-13` is landed, so the escape tolerance is genuinely dead weight.**
+  `c63af27` ("gate: match a proof against the line a terminal shows, not the
+  bytes") is an ancestor of `core`'s `master` (`0a711cf`), and `prove()` applies
+  `strip_ansi()` to the captured output before any `proof[].match`. The manager's
+  exact captured bytes, run through core's own `strip_ansi`, become
+  `'      Tests  377 passed (377)'`, which the committed pattern matches and
+  reads `377` from. This is why deleting the tolerance changed nothing, and it
+  is measured rather than assumed.
+- **The skip tightening survives the deletion.** A coloured
+  `Tests  2 passed | 1 skipped (3)` strips to a line the committed pattern
+  refuses, because of `(?![ ]*\|)`. The negative lookahead is independent of
+  colour and is still load-bearing.
+- **`FORCE_COLOR=1` reproduces the original defect exactly.** It yields
+  `\x1b[2m      Tests \x1b[22m \x1b[1m\x1b[32m377 passed…` — the manager's bytes.
+  Without it this machine's log contains **zero** ESC bytes, which is why the
+  original control was green here and red for the manager. That is the whole
+  lesson of the packet in one measurement: the control was reporting the day,
+  not the repository.
+
+### 0.4 The leading `[ ]*`, which is not part of the escape tolerance
+
+§8 records a prediction that was "quietly wrong", and this is the one. Deleting
+`(?:[ ]|\x1b\[[0-9;]*m)*` because core strips ANSI is correct. Deleting the
+**leading `^[ ]*`** in the same pass would have been a mistake, and a quiet
+one, because the two look identical in the diff and neither is a comment.
+
+The committed pattern is:
+
+```
+^[ ]*Tests[ ]+([0-9]+)[ ]+passed(?![ ]*\|)
+```
+
+That leading `[ ]*` is the **indent `vitest` prints in front of `Tests`**, not
+escape tolerance. A terminal shows the indent and so does the stripped line, so
+it is the one clause that was there before any of this packet's work and it has
+no business being removed with the tolerance. Dropping it would still pass
+today's suite, because `finditer` would find the match mid-line — it would only
+cost the proof its claim that the summary line is a summary *line* rather than a
+substring anywhere in a log. `tests/gate-declaration-self-test.sh` asserts that
+no `match:` in `gate.yml` names a terminal escape, which is what makes the
+tolerance *deleted* rather than dormant; that assertion does not and should not
+extend to the spaces.
+
+### 0.5 Which side of MD17 this repository is on
+
+The self-test now states it out loud instead of inferring it. Its case runs the
+**pre-fix** pattern — `^[ ]*Tests[ ]+([0-9]+) passed`, the one that shipped red
+— against the same captured coloured bytes, and asserts that it is **green**,
+printing the reason: core strips ANSI before matching. So the pre-fix pattern is
+not broken on today's core; it was broken on the core it was written against.
+
+That case is worth more than the sentence it replaces. It means the repository
+now has an assertion about the *checker's* behaviour, not only about its own
+declaration, and it is the case that goes red if `core` ever stops stripping — a
+revert, a refactor, a narrower `ANSI_ESCAPE`. §8's prediction that this case
+would "merely SKIP" was wrong, and the version that landed asserts which side of
+the ruling the tree is on instead of skipping quietly.
 
 ---
 
@@ -272,6 +402,13 @@ Then one line in `gate.yml`, and:
 28 passed, 0 failed, 0 skipped        exit 0
 ```
 
+> **CORRECTED — a later run, see §0.** This was `28` at the moment it was
+> measured, and the artifact as it now stands is **33 passed, 0 failed,
+> 0 skipped**; five source-property and captured-byte cases were added after
+> that run. The `24 passed, 5 failed` red above is left exactly as recorded,
+> because it is a true account of what that run saw — only the green number is a
+> claim about the tree as it stands now. §5 carries the current tally.
+
 The three intermediate breakages are 3.4 and 3.5. Nothing was loosened to get
 there: no sleep, no retry, no relaxed assertion. The one assertion that changed
 is the skip case in 3.3, and it got *stricter*.
@@ -280,22 +417,34 @@ is the skip case in 3.3, and it got *stricter*.
 
 ## 5. Pass and skip, reported separately
 
-**`tests/gate-declaration-self-test.sh` — 28 passed, 0 failed, 0 skipped.**
+**`tests/gate-declaration-self-test.sh` — 33 passed, 0 failed, 0 skipped.**
+
+> **CORRECTED — a later run, see §0.** This line said `28` and `0 skipped`; the
+> tally and the breakdown below are re-measured against the artifact rather than
+> carried forward. The `28` in §4 is annotated in place rather than rewritten.
+
 Zero skips, and that is not luck: the script's only skip paths are shellcheck
 being absent (it is installed here — 0.11.0 — so the lint ran and passed) and
 the pre-fix-pattern case detecting that `core` has learned to strip ANSI. It
-has not, so that case ran and passed rather than skipping.
+has, so that case now takes its other branch rather than skipping: it asserts
+which side of MD17 the repository is on and prints which answer it got, because
+"the pre-fix pattern is green *because* core strips" is a fact worth stating.
+See §0.5.
 
-> **SUPERSEDED — this run.** `core` has learned to strip ANSI, so that case now
-> takes its other branch. It is no longer a SKIP: it asserts which side of
-> MD17 the repository is on and prints which answer it got, because
-> "the pre-fix pattern is green *because* core strips" is a fact worth stating.
-> See §0.5.
+**33 cases**, and the breakdown, counted off the run rather than estimated:
 
-28 cases: 2 controls, 12 static breakages, 5 that run a gate under `--prove`
-(3 of them the repository's real gate, 2 a fast stand-in), 6 fixtures built
-from captured bytes, 1 source-property assertion, 1 documented blind spot
-asserted to stay green, and the shellcheck lint.
+| kind | n | what it is |
+|---|---|---|
+| controls | 2 | the real gate, unmodified clone, `--prove`; one plain, one with `FORCE_COLOR=1` |
+| static breakages | 13 | the checker reading two files and disagreeing — no gate run, so each is fast |
+| `--prove` breakages | 11 | `gate.proof-missing`, `gate.floor`, `gate.proof-invalid` (zero *and* two capture groups), `gate.nonzero`, and the lost / skipped / file-count fixtures |
+| asserted green | 6 | captured coloured bytes; the missing space under the deleted tolerance; the pre-fix pattern on today's core; no `match:` names an escape; `validate-ci.sh` cannot colour; the documented blind spot |
+| shellcheck | 1 | `-S warning` clean on the self-test itself |
+
+The 24 breakage cases each assert the **finding id**, not merely a nonzero exit,
+so "went red for the wrong reason" fails the case — which is how the three
+`gate.proof-missing` masks of the original defect are caught rather than
+reproduced.
 
 **The gate — `mise x -- ./bin/prime` → exit 0:**
 
@@ -367,6 +516,17 @@ Two further notes on those two:
 
 ## 7. Two things about this worktree the manager should know
 
+**And again, in the second half of this packet.** While part two of this packet
+was running, `74ce235` appeared on `worker/parlor-11-ansi`: "recover(parlor-11-
+ansi): uncommitted work left by a worker whose process died", committing the six
+files that were on disk at the time. Its own message says it is not a finished
+packet and that this packet owns the landing decision, which is the right way to
+do it — nothing was lost, and the diff it captured is the diff this report
+describes. I have not rewritten it. The same phenomenon as the paragraph below,
+on a branch that now has two commits from outside this session, which is worth
+the manager knowing when they read the history: `609687a` and `8b6791b` are the
+two commits the previous worker made, and `74ce235` is neither of them.
+
 **The branch was moved twice, by something outside this session.** During this
 work `worker/parlor-11-ansi` was reset to the unlanded `core-10` commit
 (`b70fa91`) twice — once as a hard reset to the working tree, once as a
@@ -380,9 +540,20 @@ diffing against a tree that is not the base.
 
 **The base is master and the whole packet is in this branch.** `gate.yml` did
 not exist on `master`, so nothing here is a diff against a landed predecessor;
-`gate.yml`, `tests/gate-declaration-self-test.sh`, the `ci.yml` block scalar,
-the `AGENTS.md` section, the `CHANGELOG.md` entries and this report are all new
-in `worker/parlor-11-ansi`.
+`gate.yml`, `tests/gate-declaration-self-test.sh`, the `AGENTS.md` section, the
+`CHANGELOG.md` entries and this report are all new in `worker/parlor-11-ansi`.
+
+> **CORRECTED — a later run, see §0.** This paragraph listed "the `ci.yml` block
+> scalar" among the things new in this branch. It is not in the branch any more.
+> `74ce235` replaced the `run: |` block with a one-line `run: ./bin/prime`,
+> because `core-12` landed and `RUN_KEY` now captures the inline form — so the
+> D12 workaround this packet inherited is genuinely redundant and removing it is
+> correct. Verified this run rather than assumed: `RUN_KEY` carries an `inline`
+> group, `core-12` (`63fd319`) is an ancestor of `core`'s `master`, and two
+> self-test cases guard the one-line spelling — one breaks the step's command
+> and one blanks it, both asserted to go red naming `gate.ci-disagrees`. The
+> reason the block existed is kept in the comment above the step, inverted into
+> the reason not to put it back.
 
 ---
 
@@ -439,6 +610,31 @@ is too.
    They say `core` did not run `mise` and `npm`. A checker that ran them would
    be red on a laptop and green on CI, so the warning is the design rather than
    a gap — but that is a design I am reporting on, not one I have tested.
+
+Added by the later run that wrote §0, because that run's position on this packet
+is different and pretending otherwise would be the defect this packet is about:
+
+10. **I did not write the repair, and I did not review it as its author would.**
+    `609687a`, `8b6791b` and `74ce235` were all on the branch before this run
+    started. I verified the declaration's behaviour against `core`'s source and
+    against captured bytes, corrected the three defects listed in §0.2, and left
+    the engineering decisions in §1–§9 as their author wrote them. I cannot
+    tell you which of them I would have written the same way, and a reader
+    should not mistake a verified artifact for an endorsed design.
+11. **The self-test was run once, here, at `74ce235`.** One green run is one
+    green run. It was a clean tree, `shellcheck` installed, and warm `npm` caches.
+    The `--prove` cases that run the real gate depend on the registry, so a
+    second run on an offline machine would `exit 2` and not `0` — which is the
+    designed behaviour, but it does mean I have not shown the packet green twice.
+12. **The self-test runs the gate *outside* mise.** `bin/prime` is invoked by
+    `gate_check.py` with no `env=` and no mise wrapper, so a sandbox inherits
+    whatever Node is ambient. On this machine that resolves through mise's shims
+    to the pinned 22.22.2 and `npm ci` is clean, which is why the controls are
+    green — but it means the self-test's green does **not** by itself demonstrate
+    the toolchain pin, and a machine whose ambient Node is not the pinned one
+    would get `EBADENGINE` inside the sandboxes rather than a finding about the
+    declaration. §5's gate numbers were taken under `mise x -- ./bin/prime`
+    separately, and those are the ones that demonstrate the pin.
 
 ---
 
