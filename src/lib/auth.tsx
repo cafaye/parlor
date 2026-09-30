@@ -53,6 +53,31 @@ export type AuthValue = {
   logout(): Promise<void>;
   /** True while any of the three is in flight. */
   pending: boolean;
+  /**
+   * The identity client every screen in this app talks to.
+   *
+   * On the same context as the session rather than in a context of its own,
+   * because there is one client and one session and they are set up together in
+   * `Providers`. A second provider would be a second place to inject a stub,
+   * and a render test that injected one and forgot the other would get a tree
+   * that half-works — which is the failure mode this file exists to prevent.
+   *
+   * Every call still goes through here and never through `fetch`: the client
+   * carries the transport, so handing a screen this object is handing it the
+   * only sanctioned way to reach the network.
+   */
+  client: IdentityClient;
+  /**
+   * The session token, or null when there is not one.
+   *
+   * Exposed because every tenancy call takes it as its first argument: the
+   * service resolves a session at the top of every account route, so a screen
+   * that wants an account has to hold the credential that authorises it. It is
+   * the same token the store holds and the same one the query keys are built
+   * from — one value, read from one place, so there is no second answer to
+   * "who is asking" for a component to disagree with.
+   */
+  token: string | null;
 };
 
 const AuthContext = createContext<AuthValue | null>(null);
@@ -136,10 +161,16 @@ export function AuthProvider({
 
   const value: AuthValue = {
     session: deriveSession({ read, query: session }),
+    client: identity,
     login: (credentials) => loginMutation.mutateAsync(credentials),
     register: (credentials) => registerMutation.mutateAsync(credentials),
     logout: () => logoutMutation.mutateAsync(),
     pending: loginMutation.isPending || registerMutation.isPending || logoutMutation.isPending,
+    // `UNKNOWN_TOKEN` is the server render and the hydration commit, where
+    // there is genuinely no token to report. Collapsing it to null is the same
+    // answer the session state gives for "nobody is signed in yet", so a
+    // component reading both never sees a token without a session.
+    token: read === UNKNOWN_TOKEN ? null : read,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -4,6 +4,7 @@ import {
   type InputHTMLAttributes,
   type ReactElement,
   type ReactNode,
+  type SelectHTMLAttributes,
 } from "react";
 
 import { cx } from "@/lib/cx";
@@ -30,7 +31,15 @@ export type FieldProps = {
   hint?: string;
   /** Replaces nothing, appends: both hint and error describe the control. */
   error?: string;
-  children: ReactElement<InputHTMLAttributes<HTMLInputElement>>;
+  /**
+   * The control this field labels.
+   *
+   * An input or a select — the union is here because both are native controls
+   * that take the same four attributes, and narrowing it to inputs would push
+   * somebody into hand-wiring `aria-describedby` on the next `<select>`, which
+   * is the mistake this component exists to prevent.
+   */
+  children: ReactElement<InputHTMLAttributes<HTMLInputElement> | SelectHTMLAttributes<HTMLSelectElement>>;
 };
 
 export function Field({ id, label, hint, error, children }: FieldProps) {
