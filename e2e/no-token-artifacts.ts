@@ -13,6 +13,21 @@
  *      playwright.config.ts is therefore a red build instead of a credential
  *      uploaded to a CI artifact store.
  *
+ *      The zip case is not hypothetical and this function got it wrong the
+ *      first time. A trace's network log is a plain NDJSON file *inside* a
+ *      deflated zip, so a raw byte search of the `.zip` finds nothing while
+ *      `unzip -p trace.zip '*-trace.network' | grep` prints the bearer header
+ *      in full. The scan therefore reads archive members, and `unzip` is a
+ *      declared prerequisite (bin/e2e checks for it) rather than an optional
+ *      nicety: a credential check that cannot open the file it is checking is
+ *      not a credential check, and a check that degrades to "nothing found" when
+ *      a tool is missing is worse than no check at all.
+ *
+ *      `tests/validate-ci.sh` is the other half and the earlier one: it reads
+ *      playwright.config.ts and fails if `trace` or `video` is anything but
+ *      `"off"`, so the mistake is caught before a browser runs rather than
+ *      after one has already written the credential to disk.
+ *
  *   2. **The tier ran tests, and skipped none.** `bin/e2e` also checks the
  *      report; this repeats it here so the guarantee holds for anyone who runs
  *      `npx playwright test` directly. A suite that is filtered down to nothing
@@ -29,7 +44,8 @@
  * It checks *this* suite's output against *this* run's tokens, which is the
  * claim the report makes.
  */
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
 import { clearRecordedSessionTokens, recordedSessionTokens } from "./session-tokens";
@@ -50,11 +66,12 @@ export default async function globalTeardown(): Promise<void> {
 /**
  * Fails when any scanned file contains any recorded token.
  *
- * Binary files are read as bytes and compared, not decoded: a trace is a zip,
- * and a zip is exactly the kind of file where a naive `readFileSync(path,
- * "utf8")` produces mojibake, throws, or — worst — silently finds nothing
- * because the needle is not in the decoded form of the bytes. A credential
- * check that cannot read the file it is checking is not a credential check.
+ * Archives are read member by member. `readFileSync(path, "utf8")` on a `.zip`
+ * produces mojibake, and a needle that is not in the decoded form of the bytes
+ * is simply not found — which is a green check on a file that holds the
+ * credential. Measured: the first version of this function reported "6 files
+ * scanned, none found" on a run that had just written six traces, every one of
+ * them containing the bearer header in full inside `*-trace.network`.
  */
 async function assertNoTokenInArtifacts(tokens: string[]): Promise<void> {
   if (tokens.length === 0) {
@@ -72,27 +89,71 @@ async function assertNoTokenInArtifacts(tokens: string[]): Promise<void> {
   for (const scanned of SCANNED) {
     for (const file of walk(scanned)) {
       filesScanned += 1;
-      const bytes = readFileSync(file);
-      if (needles.some((needle) => bytes.includes(needle))) {
+      if (holdsAnyNeedle(file, needles)) {
+        // The path and the member, never the token: this message goes into a
+        // CI log that gets attached to a ticket.
         offenders.push(relative(process.cwd(), file));
       }
     }
   }
 
   if (offenders.length > 0) {
-    // The path, never the token: this message goes into a CI log.
+    // Delete them before throwing. A red run that leaves six traces full of live
+    // session tokens in the working tree has fixed the CI badge and left the
+    // problem on disk, and the next thing to happen is somebody zipping the
+    // directory for a bug report. The best-effort delete of a file this run
+    // created is safe precisely because this run created it.
+    for (const offender of offenders) {
+      try {
+        rmSync(offender, { force: true });
+      } catch {
+        // Reported, not silently ignored: the message already says to delete
+        // them, and a permission problem here is not a reason to hide the leak.
+      }
+    }
+    // The path, never the token: this message goes into a CI log that gets
+    // attached to a ticket.
     throw new Error(
-      "[e2e] FAIL: a session token is present in the run's own output, in: " +
-        `${offenders.join(", ")}. ` +
-        "Playwright traces and videos are recorded network traffic and are " +
-        "uploaded as artifacts; keep `trace` and `video` off in " +
-        "playwright.config.ts, and delete the artifacts from this build.",
+      "[e2e] FAIL: a session token was present in the run's own output, in: " +
+        `${offenders.join(", ")}. Those files have been deleted. Playwright ` +
+        "traces and videos are recorded network traffic and are uploaded as " +
+        "artifacts; keep `trace` and `video` off in playwright.config.ts.",
     );
   }
 
   console.log(
-    `[e2e] scanned ${filesScanned} produced file(s) for ${needles.length} session token(s): none found`,
+    `[e2e] scanned ${filesScanned} produced file(s), archive members included, ` +
+      `for ${needles.length} session token(s): none found`,
   );
+}
+
+/** Whether a file, or any member of it when it is an archive, holds a needle. */
+function holdsAnyNeedle(file: string, needles: Buffer[]): boolean {
+  const bytes = readFileSync(file);
+  if (needles.some((needle) => bytes.includes(needle))) return true;
+
+  if (!isZip(bytes)) return false;
+
+  // `unzip -Z1` lists members, `unzip -p` streams one to stdout. Two processes
+  // per archive, and the reason is stated above: this is the only reader of a
+  // zip in the tree and pulling in a dependency to do it is worse than two calls
+  // to a tool the platform already ships.
+  const listed = execFileSync("unzip", ["-Z1", file], { encoding: "utf8" });
+  for (const member of listed.split("\n").filter((line) => line !== "")) {
+    const content = execFileSync("unzip", ["-p", file, member], {
+      // maxBuffer: a screencast frame member is small, but a video is not and
+      // the default 1 MB cap would kill the check on exactly the file it exists
+      // for.
+      maxBuffer: 256 * 1024 * 1024,
+    });
+    if (needles.some((needle) => content.includes(needle))) return true;
+  }
+  return false;
+}
+
+/** `PK\x03\x04` — the local file header every zip member starts with. */
+function isZip(bytes: Buffer): boolean {
+  return bytes.length > 4 && bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03;
 }
 
 /** Every file under a path, whether it is a file or a directory. */

@@ -64,6 +64,14 @@ done
 
 started=$(date +%s)
 
+# `unzip` is a prerequisite of the tier's own artifact guard, checked here rather
+# than discovered in the teardown: a run that discovers it three minutes later has
+# already spent the browser download.
+command -v unzip >/dev/null 2>&1 || {
+  printf '[e2e] FAIL: unzip is not on PATH. The end-to-end tier reads Playwright artifacts member by member looking for a leaked session token, and a credential check that cannot open the archive it is checking finds nothing. Install unzip (apt-get install unzip) and run again.\n' >&2
+  exit 1
+}
+
 # The teardown is armed before the stack goes up, and it runs on every path out
 # of this script — including the one where the browser download failed. A stack
 # left running after a failed harness is four containers and a project name

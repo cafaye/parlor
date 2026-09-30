@@ -131,6 +131,13 @@ preflight() {
   need docker "Install Docker: https://docs.docker.com/get-docker/"
   need curl "curl is used to poll /readyz from the host."
 
+  # `unzip` is used by the end-to-end tier's own guard, which reads Playwright's
+  # artifacts member by member looking for a leaked session token (see
+  # e2e/no-token-artifacts.ts). It is a prerequisite rather than a nicety: a
+  # credential check that cannot open the archive it is checking silently finds
+  # nothing, which is the exact failure it exists to prevent.
+  need unzip "unzip reads the members of a Playwright trace. It ships with macOS and with every Linux CI image; 'apt-get install unzip' if yours does not have it."
+
   docker compose version >/dev/null 2>&1 \
     || die "docker compose (the v2 plugin) is not available. The harness needs it for 'up --wait'."
 
