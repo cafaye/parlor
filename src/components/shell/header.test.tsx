@@ -199,3 +199,40 @@ describe("shell header", () => {
     });
   });
 });
+
+describe("navigation", () => {
+  it("offers the plans catalogue, which needs no account", () => {
+    // billing's plan catalogue is the one screen that needs no session, so
+    // hiding it behind sign-in would hide the only thing a prospective customer
+    // can look at.
+    renderWithProviders(<ShellHeader />, { identity: stubIdentity() });
+
+    expect(screen.getByRole("link", { name: "Plans" })).toHaveAttribute("href", "/billing/plans");
+  });
+
+  it("offers the accounts list once there is a session", async () => {
+    storeToken("tok_abc");
+    renderWithProviders(<ShellHeader />, {
+      identity: stubIdentity({ me: vi.fn(async () => aUser()) }),
+    });
+
+    expect(await screen.findByRole("link", { name: "Accounts" })).toHaveAttribute("href", "/accounts");
+  });
+
+  it("hides the accounts list from a signed-out visitor", () => {
+    // A link to a page that renders "Sign in to see your accounts" is a dead
+    // end in the navigation, and it advertises a route that cannot work.
+    renderWithProviders(<ShellHeader />, { identity: stubIdentity() });
+
+    expect(screen.queryByRole("link", { name: "Accounts" })).toBeNull();
+  });
+
+  it("puts the navigation in a labelled landmark, so it is findable", () => {
+    renderWithProviders(<ShellHeader />, { identity: stubIdentity() });
+
+    // `aria-label` rather than a label pointing at the brand: the nav is not
+    // "parlor", it is the nav, and a landmark called "parlor" is a dead end in
+    // the landmarks list.
+    expect(screen.getByRole("navigation", { name: "Main" })).toBeInTheDocument();
+  });
+});

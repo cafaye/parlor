@@ -29,23 +29,32 @@ would your product still build? It has to be.
 
 | Surface | Path | Purpose |
 | --- | --- | --- |
-| Landing placeholder | `/` | Brand text only. Product screens land in Phase 2. |
+| Landing | `/` | Directory of the sections below. |
 | Register | `/register` | Email + password against `POST /v1/users`. |
 | Sign in | `/login` | Email + password against `POST /v1/session`. |
-| Session shell | `src/components/shell/` | Header: sign out when authed, sign in when not. |
-| Identity client | `src/lib/identity.ts` | Typed, transport-injected client for the four endpoints. |
+| Accounts | `/accounts` | The accounts you belong to, and the create form. |
+| One account | `/accounts/[accountId]` | Facts, members, rename, invite, leave, delete — gated by your role. |
+| Accept an invitation | `/invitations/[token]` | Redeem a token. Does not accept on load. |
+| Plan catalogue | `/billing/plans` | What can be bought, at what price, on what cadence. Paged. |
+| Customers | `/billing/customers` | Billing's customer records. Platform-wide, and labelled so. |
+| Session shell | `src/components/shell/` | Header: navigation, sign out when authed, sign in when not. |
+| Identity client | `src/lib/identity.ts` | Typed, transport-injected client for identity's fourteen endpoints. |
+| Role vocabulary | `src/lib/roles.ts` | The capability matrix, transcribed from identity's authorization. |
+| Tenancy queries | `src/lib/accounts.ts` | Query keys and invalidation for the account surface. |
+| Money | `src/lib/money.ts` | Integer minor units in, a price out. |
+| Billing client | `src/lib/billing.ts` | Typed client for billing's five endpoints, with its own error type. |
 | Session state | `src/lib/auth.tsx` | React Query cache keyed by token + auth context. |
 | Token store | `src/lib/token-store.ts` | `localStorage` persistence, injectable. |
 | Liveness | `/healthz` | `{"status":"ok"}` — process is up. No dependency checks, on purpose. |
 | Readiness | `/readyz` | `{"status":"ok","deps":"none"}` — `deps` is a reserved placeholder. |
 | Theme tokens | `src/styles/tokens.css` | Tailwind v4 `@theme` block, placeholder cafaye palette. |
-| Primitives | `src/components/ui/` | Hand-rolled Button, Input, Field. shadcn/ui later. |
+| Primitives | `src/components/ui/` | Hand-rolled Button, Input, Field, Select, Panel, state components. shadcn/ui later. |
 | Tests | `src/**/*.test.{ts,tsx}` | vitest + `@testing-library/react`. |
 
 ## Talking to identity
 
-The four endpoints are fixed by contract. `src/lib/identity.ts` is the only file
-that knows them.
+The endpoints are fixed by contract. `src/lib/identity.ts` is the only file that
+knows them.
 
 | Call | Endpoint | Success |
 | --- | --- | --- |
@@ -53,6 +62,66 @@ that knows them.
 | `login({email, password})` | `POST /v1/session` | `200 {token, expires_at}` |
 | `logout(token)` | `DELETE /v1/session` | `204` |
 | `me(token)` | `GET /v1/me` | `200 {id, email}` |
+
+The tenancy surface, with the minimum role each route needs:
+
+| Call | Endpoint | Minimum role | Success |
+| --- | --- | --- | --- |
+| `listAccounts(token)` | `GET /v1/accounts` | any session | `200 [{id, name, slug, personal, role, created_at}]` |
+| `createAccount(token, {name})` | `POST /v1/accounts` | any session | `201 {id, name, slug, personal, role, …}` |
+| `getAccount(token, id)` | `GET /v1/accounts/{id}` | member | `200 {… , members}` |
+| `renameAccount(token, id, {name})` | `PATCH /v1/accounts/{id}` | admin | `200 {…}` |
+| `deleteAccount(token, id)` | `DELETE /v1/accounts/{id}` | owner | `204` |
+| `listMembers(token, id)` | `GET /v1/accounts/{id}/members` | member | `200 {memberships, role}` |
+| `inviteMember(token, id, {email, role})` | `POST /v1/accounts/{id}/invitations` | admin (owner for `role: admin`) | `201 {…, token}` |
+| `acceptInvitation(token, {token})` | `POST /v1/invitations/accept` | any session | `200 {account_id, user_id, role, created_at}` |
+| `changeMemberRole(token, id, userId, {role})` | `PATCH /v1/accounts/{id}/members/{userId}` | owner | `200 {…}` |
+| `removeMember(token, id, userId)` | `DELETE /v1/accounts/{id}/members/{userId}` | admin | `204` |
+
+> **The tenancy shapes come from the service's handler, not from its OpenAPI
+> document.** `identity/openapi/v1.yaml` on master describes five paths and
+> none of these: the document was last changed before the packet that added the
+> tenancy implementation was merged, so these routes exist in the service, in its
+> routes and in its authorization tests, and not in the published contract. A
+> struct tag is the wire and a document is a description of one, so the handler
+> is the authority here — but the gap is real, and merging the
+> `worker/identity-04-contract` draft is the fix. See CHANGELOG, "Known gaps".
+
+### Talking to billing
+
+`src/lib/billing.ts` is a separate client with its own `BillingError`. Billing is a
+different service with its own codes, and a change to identity's envelope should
+not be a change to this one.
+
+| Call | Endpoint | Success |
+| --- | --- | --- |
+| `listPlans({cursor, limit, order})` | `GET /v1/plans` | `200 {data: Plan[], page}` |
+| `getPlanBySlug(slug)` | `GET /v1/plans/{slug}` | `200 Plan` |
+| `listCustomers({cursor, limit})` | `GET /v1/customers` | `200 {data: Customer[], page}` |
+| `getCustomer(id)` | `GET /v1/customers/{id}` | `200 Customer` |
+| `createCustomer(input, idempotencyKey?)` | `POST /v1/customers` | `201 Customer` |
+
+The base URL comes from `NEXT_PUBLIC_BILLING_URL`, defaulting to
+`http://localhost:3000`. Three things about it are decisions rather than
+accidents:
+
+- **No identity session token is sent.** billing declares `security: []` with no
+  `securitySchemes` at all, and records the gap in its own header: `GET
+  /v1/customers` "returns every customer, because there is no account to scope
+  it by". There is nothing to authenticate with, and handing a live identity
+  session token to a service that does not authenticate it would put a credential
+  in a third party's request logs. `/billing/customers` is therefore labelled as
+  the platform's list, not somebody's.
+- **There is no subscription surface.** No `/v1/subscriptions*` exists and
+  `Customer` has no plan field, so nothing on the wire records which plan a
+  customer is on. A `Plan` is a catalogue row. This is why `/billing/plans` is a
+  catalogue with no buy button, and why "you are on X", upgrade, downgrade,
+  cancel and the five subscription states are a separate packet — `parlor-04`,
+  once billing-04's contract is on master.
+- **Money is integer minor units.** `formatMoney` reads the currency's exponent
+  from `Intl` rather than from a table, so 1900 minor units is $19.00 in USD,
+  ¥1,900 in JPY, and 12,345 is 12.345 in KWD. It is the only division in the
+  codebase and the last one before a number reaches a person.
 
 The base URL comes from `NEXT_PUBLIC_IDENTITY_URL`, defaulting to
 `http://localhost:8080` — the identity service in the compose stack.
@@ -145,8 +214,16 @@ Deliberately absent, by packet boundary rather than oversight:
 - OAuth sign-in and MFA enrollment (TOTP, recovery codes) — the service side
   lands in identity's later packets; the UI follows its contract.
 - Password reset, email verification, and every other identity screen.
-- Product screens: dashboard, settings, team and invite management.
-- Admin skeleton (`madmin`-style).
+- **The subscription lifecycle** — upgrade, downgrade, cancel, and the five
+  subscription states. billing's master contract has no `/v1/subscriptions*` and
+  `Customer` has no plan field, so none of it can be read from anywhere. This is
+  `parlor-04`, dispatched once billing-04's contract is merged; building it now
+  would mean inventing five states and their copy.
+- **Per-member management in the member panel.** The service sends no `user_id`
+  on a member row, so the per-member routes have nothing to address. The panel
+  shows the role distribution and says why; the per-member controls render the
+  moment identity fixes the projection.
+- Dashboard, settings, and admin skeleton (`madmin`-style).
 - **shadcn/ui** — installs into `src/components/ui/` so there is one import
   path for the whole product. The barrel is there, and already holding
   hand-rolled Button, Input and Field for shadcn to replace in place.
