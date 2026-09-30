@@ -2,6 +2,7 @@ import { render, type RenderOptions, type RenderResult } from "@testing-library/
 import type { ReactElement, ReactNode } from "react";
 
 import { Providers } from "@/app/providers";
+import type { BillingClient } from "@/lib/billing";
 import type { IdentityClient } from "@/lib/identity";
 import { createTokenStore, type TokenStore } from "@/lib/token-store";
 
@@ -16,13 +17,17 @@ import { createTokenStore, type TokenStore } from "@/lib/token-store";
  */
 export function renderWithProviders(
   ui: ReactElement,
-  options: { identity: IdentityClient; tokens?: TokenStore } & Omit<RenderOptions, "wrapper">,
+  options: {
+    identity: IdentityClient;
+    billing?: BillingClient;
+    tokens?: TokenStore;
+  } & Omit<RenderOptions, "wrapper">,
 ): RenderResult {
-  const { identity, tokens, ...renderOptions } = options;
+  const { identity, billing, tokens, ...renderOptions } = options;
   const store = tokens ?? createTokenStore();
 
   const Wrapper = ({ children }: { children: ReactNode }) => (
-    <Providers identity={identity} tokens={store}>
+    <Providers identity={identity} billing={billing} tokens={store}>
       {children}
     </Providers>
   );

@@ -9,23 +9,32 @@
  * for one reason — a test injects a scripted client and a memory store, so
  * there is no code path from a test to a socket. The app passes neither and
  * gets the real ones.
+ *
+ * `BillingProvider` sits inside, and is separate because billing is a different
+ * service with its own error type and — deliberately — no credential. See
+ * `src/lib/billing-context.tsx`.
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 
 import { AuthProvider } from "@/lib/auth";
+import { BillingProvider } from "@/lib/billing-context";
+import { type BillingClient } from "@/lib/billing";
 import { createIdentityClient, type IdentityClient } from "@/lib/identity";
 import { createTokenStore, type TokenStore } from "@/lib/token-store";
 
 export function Providers({
   children,
   identity,
+  billing,
   tokens,
 }: {
   children: ReactNode;
   /** Overrides the real client. Tests only. */
   identity?: IdentityClient;
+  /** Overrides the real client. Tests only. */
+  billing?: BillingClient;
   /** Overrides the real store. Tests only. */
   tokens?: TokenStore;
 }) {
@@ -51,7 +60,7 @@ export function Providers({
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider identity={client} tokens={store}>
-        {children}
+        <BillingProvider billing={billing}>{children}</BillingProvider>
       </AuthProvider>
     </QueryClientProvider>
   );
