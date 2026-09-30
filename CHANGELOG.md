@@ -8,6 +8,49 @@ All notable changes to parlor are recorded here. The format follows
 
 ### Added
 
+- `.github/workflows/ci.yml` — three jobs. `ci` calls kit's reusable workflow
+  at `cafaye/kit/.github/workflows/ci.reusable.yml@master` with
+  `language: node`, so the shared install/lint/test contract lands here
+  without a copy. `prime` runs `./bin/prime` — the command a developer runs —
+  and then `git diff --exit-code -- package-lock.json`. `build` deletes
+  `.next`, runs `npm run typecheck`, runs `npm run build` with the two
+  build-time `NEXT_PUBLIC_*` values set, and asserts that
+  `.next/standalone/server.js` and `.next/BUILD_ID` exist, because those are
+  what the Dockerfile copies and nothing else notices when they are missing.
+- `tests/validate-ci.sh` — the half of the gate that checks the gate. Eighteen
+  checks over the runtime pin, the lockfile contract, the gate command, the
+  npm scripts the workflow calls, and the agreement between `package.json`,
+  `mise.toml`, the workflow and `cafaye.yml`. `--self-test` breaks a
+  throwaway copy 16 ways and asserts each one goes red, plus the opposite
+  case: a comment that merely *mentions* `npm install` must not fail the check
+  that forbids it. It reads the workflow as text with anchored greps, so it
+  needs no PyYAML, no yq and no jq.
+- The runtime pin, in `package.json`: `engines.node` 22.22.2 and
+  `packageManager` npm@10.9.7. There was no `engines` and no `packageManager`
+  before, so nothing in the repository pinned the runtime — `mise.toml` did,
+  but mise is a workstation tool and a CI runner never reads it. The same
+  `npm ci` on the machine this was written on ran on Node 22.12.0 one directory
+  away from the pin.
+- `.npmrc` with `engine-strict=true`, so the pin is a gate. Verified both ways
+  on a throwaway package: with it, `npm ci` exits nonzero (`npm error engine
+  Unsupported engine … Required: {"node":"99.0.0"} / Actual: {…,"node":"v12.0.0"}`);
+  without it, the same command prints `npm warn EBADENGINE` and installs.
+- `bin/prime` gained a third command, `bash tests/validate-ci.sh
+  --self-test`. It was `npm ci` then `npm test`. A developer running the gate
+  should get the same three checks CI does; otherwise the CI half is a variant,
+  and a variant is the thing this removes. The two original commands are
+  unchanged and still the reproduction check.
+
+### Changed
+
+- `mise.toml` — no version changed. A comment now says it mirrors
+  `package.json` and that the gate fails when the two disagree.
+- `README.md` and `AGENTS.md` — the pin is described as living in
+  `package.json` with three mirrors rather than as living in `mise.toml`, and
+  both gained a CI section. The old AGENTS.md line said "Node is pinned in
+  `mise.toml` … do not add a second pin", which was true when written and
+  wrong the moment the pin had to be readable by npm and by CI.
+
 - `src/lib/roles.ts` — the role vocabulary and the capability matrix, transcribed
   from identity's tenancy authorization: the order and the three names from
   `AllRoles` and `Role.AtLeast`, the matrix from `registerTenancyRoutes`, and the
@@ -69,6 +112,27 @@ All notable changes to parlor are recorded here. The format follows
 
 These are gaps in the *services*, found while building against them. Each one is
 recorded so it is not rediscovered from a UI symptom.
+
+- **`docker build` does not work, and this one is not a gap in a service.**
+  Measured, not inferred: the `deps` stage inherits `NODE_ENV=production` from
+  `base`, so `npm ci` there installs production dependencies only — no
+  `@tailwindcss/postcss`, no `typescript` — and the builder stage dies with
+  `Turbopack build failed … Cannot find module '@tailwindcss/postcss'` from
+  `./src/app/globals.css`. Three faults sit behind that one: the runner stage
+  copies `/app/public`, which does not exist in this repository;
+  `FROM node:22-slim` currently resolves to Node **22.23.3**, not the 22.22.2
+  this repository now pins, so the image would run a different runtime than the
+  suite is verified on; and the `deps` stage copies only `package.json` and
+  `package-lock.json`, so `.npmrc`'s `engine-strict=true` is not in that build
+  context and the mismatch is a warning rather than a failure. The README's
+  Container section tells a new contributor `docker build -t parlor .`, and
+  that command fails on `master` today. Left alone deliberately — this packet's
+  scope is CI, and the image is a deployment surface. The minimal fix is
+  `npm ci --include=dev` in `deps`, `FROM node:22.22.2-slim`, `COPY .npmrc ./`
+  in `deps`, and either a `public/` directory or dropping that `COPY`. The CI
+  `build` job is unaffected: it runs `next build` directly with a full dev
+  install, and asserts that `.next/standalone/server.js` exists precisely
+  because the container path cannot currently be trusted to notice.
 
 - **`identity/openapi/v1.yaml` does not describe the tenancy surface.** The
   document was last changed before the packet that added the implementation was

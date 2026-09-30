@@ -1,0 +1,153 @@
+---
+# parlor CI — the shared half is kit's, the service-specific half is here.
+#
+# The shared workflow is called, not copied: a fix in
+# cafaye/kit/.github/workflows/ci.reusable.yml reaches this repository on the
+# next run with no per-repo PR. The `.github/workflows/` in that path is not
+# decoration — GitHub resolves a reusable workflow at
+# `{owner}/{repo}/.github/workflows/{file}@{ref}` and documents that
+# subdirectories of the workflows directory are unsupported, so the older
+# `cafaye/kit/workflows/ci.reusable.yml@master` resolves to nothing.
+#
+# Three jobs, and the split is the point:
+#
+#   ci     kit's `node` job: the shared contract. Frozen install, lint, test,
+#          plus the coverage step (see the note on why coverage is 0 here).
+#   prime  THIS repository's gate — literally `./bin/prime`, the same command a
+#          developer runs — and the lockfile guard.
+#   build  `tsc --noEmit` on a tree with no generated types, then `next build`,
+#          then an assertion that the output the Dockerfile ships was produced.
+#
+# Why prime and build cannot live in kit's workflow, and are not copies of it:
+# kit owns what every service does the same way. It cannot own which command
+# this repository's own gate is, nor that this repository's build depends on
+# two build-time `NEXT_PUBLIC_*` values, nor that its typecheck must run before
+# `next build` has generated `.next/`. Reaching into a service's script layout
+# or its env contract is exactly the step kit is not allowed to have: it would
+# be kit knowing about parlor, and the next service would fork the file.
+name: ci
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+# Same rule kit's own workflow uses: a second push to a branch makes the first
+# one's answer irrelevant, so it is cancelled rather than waited out.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # -------------------------------------------------------------- the shared
+  ci:
+    name: ci (kit, node)
+    uses: cafaye/kit/.github/workflows/ci.reusable.yml@master
+    with:
+      # `node`, not `bun`: the committed lockfile is package-lock.json, and the
+      # bun job installs frozen from bun.lock. The value follows the lockfile
+      # in the tree, and `tests/validate-ci.sh` fails if the two disagree.
+      language: node
+      working-dir: .
+      # JSON toolchain pin, handed to kit's `actions/setup-node`. The value is
+      # the pin of record from package.json's `engines.node`; the workflow
+      # cannot read a JSON field through kit's inputs, so the number is
+      # restated here and `tests/validate-ci.sh` fails when the restatement
+      # drifts. The two companion jobs below do not restate it: they pass
+      # `node-version-file: package.json`, which setup-node resolves from
+      # `engines.node` directly.
+      versions: '{"node":"22.22.2"}'
+      # Deliberately not set. kit defaults this to 0 so adoption never blocks a
+      # repo on day one, and a gate left at 0 fails nothing. Raising it needs a
+      # coverage command — `npm run coverage` — and coverage needs
+      # @vitest/coverage-v8, which is a new dependency and therefore a manager
+      # decision (PLAN.md §5). Until that lands, the honest state is 0 and this
+      # comment, not a threshold that pretends to be measured. See the report.
+
+  # -------------------------------------------------- the gate, and its guard
+  prime:
+    name: bin/prime
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          # Read out of the repository rather than written here, so the pin
+          # exists in exactly one file for the jobs this repository owns.
+          # setup-node looks in `volta.node`, then `devEngines.runtime`, then
+          # `engines.node`; parlor has only the last.
+          node-version-file: package.json
+      - name: the gate a developer runs
+        run: ./bin/prime
+      # `npm ci` cannot move this file — it exits nonzero instead, which is the
+      # point: a lockfile that disagrees with package.json should stop the
+      # build, not be quietly rewritten. This step covers the other direction,
+      # where something later in the job writes a resolution into the tree and
+      # the run would otherwise go green having changed the thing the next
+      # `npm ci` depends on. `--` so a filename can never be read as a revision.
+      - name: the gate leaves package-lock.json alone
+        run: git diff --exit-code -- package-lock.json
+
+  # ----------------------------------------------- typecheck, then the build
+  # One job, two checks, in this order and the order is the assertion.
+  #
+  # `typecheck` runs first, on a tree where `rm -rf .next` has just happened, so
+  # it cannot pass on types Next generated. Layout props are typed explicitly
+  # rather than with Next's generated `LayoutProps` precisely so that a fresh
+  # clone typechecks — a typecheck that needs a prior build is a typecheck
+  # that has not been run on a clean checkout by anyone.
+  #
+  # `build` runs second because nothing else in CI runs it: vitest renders
+  # components in jsdom and never asks Next to compile a route, so a server
+  # component that imports a browser-only module, a broken client/server
+  # boundary or a prerender that throws is invisible to the test suite. The
+  # suite passing is not a claim that this repository builds.
+  build:
+    name: typecheck + build
+    runs-on: ubuntu-latest
+    env:
+      # Next inlines `NEXT_PUBLIC_*` into the client bundle at build time, so
+      # the values have to be present here or the build is not exercising the
+      # path a deployed build takes. The code has defaults, and those defaults
+      # are localhost — which would make this a build of the artifact nobody
+      # ships. RFC 2606 reserves `.invalid` precisely for a name that must
+      # never resolve, so a build that somehow reached for one fails loudly
+      # instead of quietly phoning home.
+      NEXT_PUBLIC_IDENTITY_URL: https://identity.invalid
+      NEXT_PUBLIC_BILLING_URL: https://billing.invalid
+      # Keeps a telemetry beacon out of the build log and off the network.
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: package.json
+      - name: install the committed lockfile
+        run: npm ci
+      - name: typecheck without generated types
+        run: |
+          rm -rf .next
+          npm run typecheck
+      - name: build
+        run: npm run build
+      # The Dockerfile ships `.next/standalone` and `.next/static` and runs
+      # `node server.js` out of the first. A build that exits 0 without
+      # producing them is a green job over a broken image. This is not
+      # belt-and-braces on the build's exit code: `next build` does not fail
+      # when the standalone output is missing, and `docker build` cannot be
+      # relied on to notice either — it is currently broken for an unrelated
+      # reason (its deps stage inherits NODE_ENV=production, so `npm ci` there
+      # installs no devDependencies and Turbopack cannot resolve
+      # @tailwindcss/postcss). Tracked as a DECISION NEEDED in the parlor-04
+      # report; until the container is fixed, this assertion is the only thing
+      # standing between a green job and an image that cannot start.
+      - name: the output the Dockerfile ships exists
+        run: |
+          set -euo pipefail
+          for artefact in .next/standalone/server.js .next/BUILD_ID; do
+            if [ ! -e "$artefact" ]; then
+              echo "::error::$artefact is missing; the Dockerfile copies it" >&2
+              exit 1
+            fi
+          done
+          echo "standalone output present"

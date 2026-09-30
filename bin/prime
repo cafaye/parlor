@@ -1,10 +1,17 @@
 #!/usr/bin/env bash
 # Prime a fresh checkout of parlor.
 #
-# Two commands on purpose: install EXACTLY the committed lockfile (`npm ci`,
-# which deletes node_modules and refuses to drift), then run the full suite.
-# A green `bin/prime` means the checkout reproduces. Run it before touching
+# Three commands on purpose: install EXACTLY the committed lockfile (`npm ci`,
+# which deletes node_modules and refuses to drift), run the full suite, then
+# check that the tree still says what CI assumes about it. A green `bin/prime`
+# means the checkout reproduces AND the gate is the gate. Run it before touching
 # code, and again before handing work off.
+#
+# `tests/validate-ci.sh` is here rather than only in the workflow on purpose: it
+# is the check that the runtime pin, the lockfile guard and the gate command
+# have not drifted apart, and a check that only runs on a CI runner is a check
+# its author never watched run. It is offline, needs no tool but node and grep,
+# and takes well under a second.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -14,3 +21,6 @@ npm ci
 
 echo "==> npm test"
 npm test
+
+echo "==> tests/validate-ci.sh --self-test"
+bash tests/validate-ci.sh --self-test

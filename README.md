@@ -174,18 +174,20 @@ calling it cross-origin. Until then, `SESSION_TOKEN_KEY` in
 ## Stack
 
 Next.js (App Router) · TypeScript · Tailwind CSS v4 · @tanstack/react-query ·
-vitest · @testing-library/react · Node pinned in `mise.toml`.
+vitest · @testing-library/react · Node pinned in `package.json`.
 
 ## Getting started
 
 ```sh
-mise install      # node from mise.toml
-./bin/prime       # npm ci + npm test
+mise install      # node 22.22.2, the same pin package.json declares
+./bin/prime       # npm ci + npm test + the CI gate
 npm run dev       # http://localhost:3000
 ```
 
 `bin/prime` is the reproduction check: it installs **exactly** the committed
-lockfile and runs the full suite. If it is green, your checkout is sound.
+lockfile, runs the full suite, and then checks that the tree still says what
+CI assumes about it. If it is green, your checkout is sound *and* the gate is
+the gate.
 
 ```sh
 npm test           # vitest, single run
@@ -194,10 +196,72 @@ npm run lint       # eslint
 npm run typecheck  # tsc --noEmit
 ```
 
-## Container
+### The runtime pin is `package.json`, and the gate keeps it honest
+
+`engines.node` is the pin of record: **22.22.2**, the floor jsdom@30 demands.
+`packageManager` records the npm that ships with it. `.npmrc` sets
+`engine-strict=true`, which is what makes that a gate rather than a
+suggestion — with it, `npm ci` exits nonzero on a Node that does not match;
+without it, the same command prints `npm warn EBADENGINE` and installs anyway.
+
+Three other files carry the same number, and that is deliberate: `mise.toml`
+so a developer's local toolchain is the pinned one, the CI workflow so the
+runner is, and `cafaye.yml` records the major line (`"22"`). A number in four
+places is four pins unless something holds them together, so
+`bash tests/validate-ci.sh` fails when they disagree — as a pre-commit-ish
+habit, as part of `bin/prime`, and therefore in CI:
 
 ```sh
-docker build -t parlor .
+bash tests/validate-ci.sh              # 18 checks
+bash tests/validate-ci.sh --self-test  # break a throwaway copy 16 ways,
+                                       # assert each one goes red
+```
+
+## CI
+
+`.github/workflows/ci.yml`, three jobs:
+
+| Job | What it runs | Why it is here |
+| --- | --- | --- |
+| `ci` | kit's reusable workflow, `language: node` | The shared contract. Called, not copied, so a fix in kit lands here with no per-repo PR. |
+| `prime` | `./bin/prime`, then `git diff --exit-code -- package-lock.json` | CI runs the command a developer runs, and fails if the gate moved the lockfile. |
+| `build` | `rm -rf .next && npm run typecheck`, then `npm run build`, then an assertion that `.next/standalone/server.js` and `.next/BUILD_ID` exist | The suite renders components in jsdom and never asks Next to compile a route, so a broken server/client boundary or a failing prerender is invisible to it. |
+
+Two decisions worth knowing about:
+
+- **`lint` is in CI, and it is kit's step.** `npm run lint` runs in the shared
+  `node` job, so there is no second copy of it here to drift.
+- **`typecheck` runs before `next build`, and the order is the assertion.** A
+  typecheck that runs after a build can pass on types Next generated. Layout
+  props are typed explicitly rather than with Next's generated `LayoutProps`
+  precisely so a fresh clone typechecks, and the workflow deletes `.next`
+  first so it has to.
+- **The build is given `NEXT_PUBLIC_IDENTITY_URL` and
+  `NEXT_PUBLIC_BILLING_URL` explicitly.** Next inlines `NEXT_PUBLIC_*` at
+  build time, so an unset value leaves a live `process.env` lookup in a
+  browser bundle — `undefined` there — and the app quietly talks to
+  `localhost`. The workflow passes RFC 2606 `.invalid` names, which resolve
+  nowhere, so a build that somehow reached for one fails loudly.
+
+`language: none` and coverage: kit's coverage gate is **0** here on purpose.
+Raising it needs a `coverage` script, which needs `@vitest/coverage-v8`, which
+is a dependency and therefore a manager decision. A threshold that reports a
+number nobody measured is worse than an honest 0 with a comment.
+
+## Container
+
+> **`docker build` is broken on `master` today**, and this section is the
+> record of that rather than an instruction that works. The `deps` stage
+> inherits `NODE_ENV=production`, so `npm ci` there installs no
+> devDependencies and the builder dies on `Cannot find module
+> '@tailwindcss/postcss'`. Two faults sit behind it — the runner copies an
+> `/app/public` that does not exist, and `node:22-slim` is 22.23.3 rather than
+> the pinned 22.22.2. See CHANGELOG "Known gaps" for the measurements and the
+> minimal fix. The CI `build` job is unaffected and asserts the standalone
+> output the image needs.
+
+```sh
+docker build -t parlor .          # currently fails, see above
 docker run --rm -p 3000:3000 parlor
 ```
 
