@@ -146,6 +146,30 @@ revert, a refactor, a narrower `ANSI_ESCAPE`. §8's prediction that this case
 would "merely SKIP" was wrong, and the version that landed asserts which side of
 the ruling the tree is on instead of skipping quietly.
 
+### 0.6 The gate itself, run under `mise`
+
+Run as `mise x -- ./bin/prime` on this branch, exit 0, and the three proof lines
+as the gate printed them:
+
+```
+ Test Files  17 passed (17)
+      Tests  377 passed (377)
+35 passed, 0 failed, 0 skipped
+self_test: 34 breakages, every check proven able to fail
+```
+
+`0 skipped` in the `validate-ci.sh` tally is reported separately from
+`35 passed` rather than folded into it, because `shellcheck` is installed here
+and that is the only reason its check counted as a pass.
+
+The `mise` wrapper is not ceremony. `engines.node` is 22.22.2 and `.npmrc` sets
+`engine-strict=true`, so on a machine whose ambient Node is a different minor
+the very first command in `bin/prime` exits 1 with `EBADENGINE`. A gate run
+outside `mise` on such a machine is not this repository's gate at all — it is a
+different toolchain's result wearing this one's name — so "the gate passed" is
+only a statement about the tree when the toolchain was pinned first. §8 item 12
+records the sharp edge: the self-test does *not* do this for you.
+
 ---
 
 ## 1. The thing to read first
