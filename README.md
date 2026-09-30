@@ -250,8 +250,18 @@ number nobody measured is worse than an honest 0 with a comment.
 
 ## Container
 
+> **`docker build` is broken on `master` today**, and this section is the
+> record of that rather than an instruction that works. The `deps` stage
+> inherits `NODE_ENV=production`, so `npm ci` there installs no
+> devDependencies and the builder dies on `Cannot find module
+> '@tailwindcss/postcss'`. Two faults sit behind it — the runner copies an
+> `/app/public` that does not exist, and `node:22-slim` is 22.23.3 rather than
+> the pinned 22.22.2. See CHANGELOG "Known gaps" for the measurements and the
+> minimal fix. The CI `build` job is unaffected and asserts the standalone
+> output the image needs.
+
 ```sh
-docker build -t parlor .
+docker build -t parlor .          # currently fails, see above
 docker run --rm -p 3000:3000 parlor
 ```
 

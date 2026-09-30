@@ -113,6 +113,27 @@ All notable changes to parlor are recorded here. The format follows
 These are gaps in the *services*, found while building against them. Each one is
 recorded so it is not rediscovered from a UI symptom.
 
+- **`docker build` does not work, and this one is not a gap in a service.**
+  Measured, not inferred: the `deps` stage inherits `NODE_ENV=production` from
+  `base`, so `npm ci` there installs production dependencies only — no
+  `@tailwindcss/postcss`, no `typescript` — and the builder stage dies with
+  `Turbopack build failed … Cannot find module '@tailwindcss/postcss'` from
+  `./src/app/globals.css`. Three faults sit behind that one: the runner stage
+  copies `/app/public`, which does not exist in this repository;
+  `FROM node:22-slim` currently resolves to Node **22.23.3**, not the 22.22.2
+  this repository now pins, so the image would run a different runtime than the
+  suite is verified on; and the `deps` stage copies only `package.json` and
+  `package-lock.json`, so `.npmrc`'s `engine-strict=true` is not in that build
+  context and the mismatch is a warning rather than a failure. The README's
+  Container section tells a new contributor `docker build -t parlor .`, and
+  that command fails on `master` today. Left alone deliberately — this packet's
+  scope is CI, and the image is a deployment surface. The minimal fix is
+  `npm ci --include=dev` in `deps`, `FROM node:22.22.2-slim`, `COPY .npmrc ./`
+  in `deps`, and either a `public/` directory or dropping that `COPY`. The CI
+  `build` job is unaffected: it runs `next build` directly with a full dev
+  install, and asserts that `.next/standalone/server.js` exists precisely
+  because the container path cannot currently be trusted to notice.
+
 - **`identity/openapi/v1.yaml` does not describe the tenancy surface.** The
   document was last changed before the packet that added the implementation was
   merged, so `POST /v1/accounts` and its nine siblings exist in the service, in
