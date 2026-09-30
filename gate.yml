@@ -59,10 +59,11 @@ gate:
   # `bin/prime` that quietly stopped doing one of the three is red rather than
   # a green with a smaller number in it.
   proof:
-    # THE VITEST SUMMARY, and the only proof in this file that has to cope with
-    # colour. Read the rest of this comment before you "simplify" the pattern;
-    # the pattern is long because of what it has to reject, not because of what
-    # it has to accept.
+    # THE VITEST SUMMARY. Read the rest of this comment before you "simplify"
+    # the pattern, because every clause left in it is here because of something
+    # it has to REJECT — and the one clause that has nothing to do with colour,
+    # the `(?!…\|)`, is the only part of this pattern that ever made it stricter
+    # than the one it replaced.
     #
     # WHAT THE BYTES ACTUALLY ARE. `bin/prime` runs `npm test`, the checker
     # captures that with `subprocess.run(..., capture_output=True)`, and the
@@ -92,59 +93,80 @@ gate:
     # a person can eyeball a regular expression against, which means the
     # obvious way to write a correct pattern is the way that fails.
     #
-    # WHAT IS REDUNDANT AND WHY IT IS HERE ANYWAY. This is a WORKAROUND FOR A
-    # CORE DEFECT, tracked as D13 and redundant once `core-13` lands — the same
-    # treatment `ci.yml`'s block scalar got for its own core-reader gap, and it
-    # is written here rather than only in a report so the next reader meets it
-    # in the file they are about to change. `core-13` changes
-    # `harness/gate_check.py` to strip ANSI from the gate's captured output
-    # before it applies any `proof[].match` — the manager ruled that as MD17,
-    # and it is the right place for the fix because it is one place rather than
-    # one workaround per adopting repository. Once that lands, the
-    # escape-tolerance below is dead weight: core hands this pattern a string
-    # with no escapes in it, the alternation never fires, and the pattern is
-    # exactly as strict as it looks. It is here anyway because a declaration
-    # that is only correct on the day the fix lands is a declaration this
-    # repository cannot gate itself today. Do not carry it past core-13; delete
-    # it, and keep the negative-lookahead half, which is a real tightening and
-    # has nothing to do with colour. `tests/gate-declaration-self-test.sh` says
-    # so out loud: it runs the pre-fix pattern against the same captured bytes
-    # and expects it to be red, and SKIPS that expectation the day core stops
-    # being able to fail.
+    # WHAT CORE DOES WITH THE BYTES, AND WHY THIS PATTERN NO LONGER SAYS
+    # ANYTHING ABOUT THEM. `core` ruling MD17 landed as `core-13` (`c63af27`):
+    # `harness/gate_check.py` strips terminal escapes from the gate's captured
+    # output, in exactly one place — `prove()`, where the output is read — and
+    # applies every `proof[].match` to the stripped text. The log on disk keeps
+    # the raw bytes, because the log is the operator's evidence and a log that
+    # disagreed with the output it records would be a worse lie than the one
+    # being fixed.
     #
-    # THE SAME REASONING IS WHY THE SELF-TEST'S CONTROL RUNS TWICE. A control
-    # that only passes on a machine whose tools do not colourise is a control
-    # that reports the day rather than the repository, which is how this pattern
-    # came to be shipped in a state its own self-test called green. The second
-    # control runs the real gate with `FORCE_COLOR=1` in the environment the
-    # checker captures it in. Do not delete it to save a minute of wall clock.
+    # This pattern used to carry `(?:[ ]|\x1b\[[0-9;]*m)*` three times. That was
+    # a WORKAROUND FOR THAT SAME CORE DEFECT, carried here so the repository
+    # could gate itself before the ruling existed — and it is DELETED. The order
+    # mattered: deleting it before `core-13` landed would have put this proof
+    # back to red on every machine whose tools colourise, which is the defect
+    # this pattern was written in the first place.
+    #
+    # DELETING IT IS A TIGHTENING AND NOT A SIMPLIFICATION, and here is the case
+    # that proves it. The run could match nothing at all, so `Tests` and the
+    # digits could sit next to each other with nothing between them: on the
+    # stripped bytes `      Tests377 passed (377)` the old pattern matched and
+    # read 377, and this one refuses the line. `vitest` always prints a space
+    # there, so a line without one is not a summary this proof should be reading
+    # a floor off. `tests/gate-declaration-self-test.sh` asserts that on the
+    # fixture, and separately asserts that no `match:` in this file names a
+    # terminal escape at all — so putting the tolerance back is a red, not a
+    # question for the next reviewer.
+    #
+    # WHAT CORE DOES NOT STRIP, so nobody has to rediscover it: an UNTERMINATED
+    # escape sequence is left in place on purpose, because consuming it to the
+    # end of the input would swallow the proof line with it and turn an absent
+    # proof into a green. A gate that emits one is malformed, and a malformed
+    # gate is allowed to fail loudly. `core`'s `docs/gate.md` has the table of
+    # what is handled; "The output is matched colour-free" is the section.
+    #
+    # THE SAME REASONING IS WHY THE SELF-TEST'S CONTROL RUNS TWICE, and after
+    # `core-13` the second one has a second job. A control that only passes
+    # where nothing colourises is a control that reports the day, not the
+    # repository, which is how this pattern came to be shipped in a state its own
+    # self-test called green. With `core` stripping, control 1 is now insensitive
+    # to colour by construction — so control 2, which runs the real gate with
+    # `FORCE_COLOR=1` in the environment the checker captures it in, is no longer
+    # testing this declaration. It is the regression control on the STRIPPER:
+    # the day `core` stops stripping, that is the case that goes red, and it is
+    # the only one that would. Do not delete it to save a minute of wall clock.
     #
     # THE PATTERN, PART BY PART, because "it is a long regex" is not a reason:
     #
-    #   (?:[ ]|\x1b\[[0-9;]*m)*   before `Tests` and before the digits. Runs of
-    #                             spaces and SGR sequences in any order, in any
-    #                             number, including none. It cannot swallow a
-    #                             letter or a digit, which is what stops this
-    #                             from being "match a line that says Tests and
-    #                             a number somewhere".
-    #   Tests                     the word. `Test Files  17 passed (17)` is one
-    #                             line above it and does NOT match, because
-    #                             "Tests" is not a prefix of "Test Files" —
-    #                             `Test` is followed by a space, not an `s`.
-    #                             The file count can never satisfy this floor,
-    #                             and that is asserted by a case in the
-    #                             self-test rather than left to a comment.
-    #   ([0-9]+)                  the one and only capture group. The checker
-    #                             reads the floor from exactly one, and reports
-    #                             `gate.proof-invalid` for zero or two, so
-    #                             every other group here is `(?:...)`.
-    #   [ ]+passed                a literal space, then the word. vitest prints
-    #                             `377 passed`, never `377  passed` and never
-    #                             `377green`.
-    #   (?!... \|)                THE TIGHTENING, and the reason a broadened
-    #                             pattern is affordable. A run with a skip, a
-    #                             todo or a failure prints the count and then
-    #                             a separator before the rest of the summary:
+    #   ^[ ]*          the indent `vitest` puts in front of `Tests`, or none of
+    #                  it. A terminal shows that indent and so does the stripped
+    #                  line, and it is the one clause this pattern had before any
+    #                  of this packet's work: the spaces are not the escape
+    #                  tolerance, and deleting the tolerance did not delete them.
+    #   Tests          the word. `Test Files  17 passed (17)` is one line above
+    #                  it and does NOT match, because "Tests" is not a prefix of
+    #                  "Test Files" — `Test` is followed by a space, not an `s`.
+    #                  The file count can never satisfy this floor, and that is
+    #                  asserted by a case in the self-test rather than left to a
+    #                  comment.
+    #   [ ]+           AT LEAST ONE space. This is where the tightening lives:
+    #                  the escape run that used to sit here could stand in for
+    #                  the space and match nothing, and a space that can be
+    #                  absent is not a separator.
+    #   ([0-9]+)       the one and only capture group. The checker reads the
+    #                  floor from exactly one, and reports `gate.proof-invalid`
+    #                  for zero or for two, so every other group here is
+    #                  `(?:...)`.
+    #   [ ]+passed     a literal space, then the word. vitest prints
+    #                  `377 passed`, never `377  passed` and never
+    #                  `377green`.
+    #   (?!…\|)        THE TIGHTENING THAT SURVIVED, and the reason a broadened
+    #                             pattern was affordable in the first place. A run
+    #                             with a skip, a todo or a failure prints the
+    #                             count and then a separator before the rest of
+    #                             the summary:
     #
     #                                 <6 spaces>Tests  2 passed | 1 skipped (3)
     #                                 \x1b[2m      Tests \x1b[22m …2 passed…\x1b[2m | \x1b[22m…1 skipped…
@@ -156,6 +178,14 @@ gate:
     #                             is `gate.proof-missing` and not a smaller
     #                             green — the same rule AGENTS.md already states
     #                             for the end-to-end tier, applied to the suite.
+    #
+    #                             It has nothing to do with colour and it is the
+    #                             half worth keeping if this pattern is ever
+    #                             argued about again. Both spellings — the
+    #                             coloured one above and the plain one — are
+    #                             asserted in the self-test, because a
+    #                             tightening that only holds on one of them is a
+    #                             property of the runner.
     #
     #                             The tail after the separator is deliberately
     #                             NOT constrained. vitest appends ` (377)` and
@@ -172,7 +202,7 @@ gate:
     # parlor has no equivalent, so raising this number when the suite grows is
     # a thing a human has to remember until MD12's machinery lands).
     - id: suite
-      match: '^(?:[ ]|\x1b\[[0-9;]*m)*Tests(?:[ ]|\x1b\[[0-9;]*m)*([0-9]+)[ ]+passed(?!(?:[ ]|\x1b\[[0-9;]*m)*\|)'
+      match: '^[ ]*Tests[ ]+([0-9]+)[ ]+passed(?![ ]*\|)'
       minimum: 377
     # The tally `tests/validate-ci.sh` prints, which is the second half of this
     # gate: the checks that the tree still has the shape CI assumes — one
@@ -185,9 +215,14 @@ gate:
     # to `tput` — `grep -c $'\x1b' tests/validate-ci.sh` is 0. It cannot
     # colourise, so a pattern that tolerated colour here would be matching
     # something the source is incapable of printing, which is a weaker proof
-    # bought for nothing. The self-test asserts that source property, so if
-    # somebody does add colour here the assertion fires and the gate goes red
-    # at the same moment, which is the right order to find out in.
+    # bought for nothing. That was true when the `suite` proof above still
+    # needed a workaround for a checker that could not see colour, and it is
+    # still true now that the checker strips for everybody (MD17) — a tolerance
+    # here is dead weight rather than a weaker match. What changed is that this
+    # is now a RULE with an assertion behind it instead of a comment that
+    # decays. The self-test greps the source and fails if an ESC byte appears,
+    # so if somebody does add colour here the assertion fires and the gate goes
+    # red at the same moment, which is the right order to find out in.
     #
     # The pattern counts CHECKS PASSED and reads the skipped count as a number
     # it deliberately does not floor, because it is not a constant: shellcheck
@@ -315,12 +350,17 @@ ci:
   # this declaration names — so a declaration that listed the build job as the
   # gate would be checked against a job that is not one.
   #
-  # The `prime` job spells that invocation as a `run: |` block and not as a
-  # one-line `run: ./bin/prime`, and the reason is written above the step in the
-  # workflow itself. `core`'s `workflow_run_lines()` only collects block bodies,
-  # so a one-line `run:` is invisible to `gate.ci-disagrees` — a workaround for
-  # a core defect in the same family as the one this packet fixes, and the same
-  # treatment the `suite` proof above got. The reader itself is
-  # `harness/gate_check.py`; the comment in ci.yml has the exact regex.
+  # The `prime` job spells that invocation as a ONE-LINE `run: ./bin/prime`, and
+  # it used to spell it as a `run: |` block instead — a workaround for a
+  # different core reader defect (D12), the same shape of debt as the escape
+  # tolerance the `suite` proof carried. Both are now redundant and both have
+  # been deleted, because `core-12` (`63fd319`) changed
+  # `harness/gate_check.py`'s `workflow_run_lines()` to read every `run:`
+  # spelling: a one-line `run: <command>` is captured by an `inline` group
+  # alongside the block bodies, so nothing has to be spelled the awkward way for
+  # the checker's benefit any more. That was verified rather than assumed — see
+  # the self-test's `one-line-run` case, which asserts the reader sees the
+  # one-line form, and the `ci-disagrees` case above, which asserts it still
+  # sees the step when the command is changed to something else.
   workflow: .github/workflows/ci.yml
   invokes: [./bin/prime]

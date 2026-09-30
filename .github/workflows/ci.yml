@@ -78,33 +78,21 @@ jobs:
           # `engines.node`; parlor has only the last.
           node-version-file: package.json
       - name: the gate a developer runs
-        # A block scalar, and NOT `run: ./bin/prime` on one line. The step does
-        # exactly the same thing either way — this is a spelling change made so
-        # that `core`'s gate checker can see it, and it is the first of the two
-        # workarounds in this repository for a defect in the CHECKER rather than
-        # in this tree.
+        # One line, the ordinary spelling. This used to be a `run: |` block, and
+        # the block was a WORKAROUND: `harness/gate_check.py`'s
+        # `workflow_run_lines()` only collected `run: |` block bodies, so a
+        # one-line `run: <command>` was invisible to `gate.ci-disagrees` and the
+        # step that runs the gate did not count as one. The reader is fixed —
+        # `core-12` (`63fd319`) captured the inline form too — so the awkward
+        # spelling is gone with the reason for it.
         #
-        # A WORKAROUND FOR A CORE DEFECT, tracked as D12, and redundant once
-        # core's reader is fixed. The reason it is written here and not only in
-        # a report is that the next person to read this file is a person about
-        # to "tidy" a one-line `run:` back into shape, and this comment is the
-        # only thing that will stop them.
-        #
-        # `harness/gate_check.py`'s `workflow_run_lines()` only reads `run: |`
-        # block bodies. Its RUN_KEY is `^(?P<indent>\s*)run:\s*(?P<block>[|>][-+]?)?\s*$`,
-        # which a one-line `run: <command>` does not match, so the command on
-        # the right of a plain `run:` is never collected. A `ci.invokes` argv
-        # that appears ONLY in the one-line form is therefore invisible to
-        # `gate.ci-disagrees`, and the check reports that CI does not run the
-        # gate when CI does run it. The same reader also misses
-        # `run: git diff --exit-code` in **`core`'s own** `ci.yml`, so the gap
-        # is in the checker and not in this workflow — which is the whole reason
-        # the answer is a comment in a foreign file's step rather than a fork.
-        #
-        # Do not "tidy" this back to one line. If `gate.ci-disagrees` ever
-        # reports this step, the fix is in core's reader, not here.
-        run: |
-          ./bin/prime
+        # The step does exactly the same thing either way, which is what made it
+        # safe to change and also what made it pointless to keep: nothing about
+        # this job was ever about YAML. `tests/gate-declaration-self-test.sh`
+        # asserts the one-line form is still visible to the checker, and asserts
+        # it goes red the moment this step stops calling the declared argv, so
+        # the redundancy is guarded rather than merely claimed.
+        run: ./bin/prime
       # `npm ci` cannot move this file — it exits nonzero instead, which is the
       # point: a lockfile that disagrees with package.json should stop the
       # build, not be quietly rewritten. This step covers the other direction,

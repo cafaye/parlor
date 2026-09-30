@@ -157,6 +157,56 @@ All notable changes to parlor are recorded here. The format follows
 
 ### Fixed
 
+- **The escape tolerance that was a workaround for a core defect is deleted,
+  and the deletion is a tightening.** `core-13` (`c63af27`) landed MD17:
+  `harness/gate_check.py` strips ANSI escape sequences from the gate's captured
+  output in exactly one place — `prove()`, where the output is read — before it
+  applies any `proof[].match`. The `suite` proof no longer needs the
+  `(?:[ ]|\x1b\[[0-9;]*m)*` runs it carried for that gap, and they are gone:
+
+      - match: '^(?:[ ]|\x1b\[[0-9;]*m)*Tests(?:[ ]|\x1b\[[0-9;]*m)*([0-9]+)[ ]+passed(?!(?:[ ]|\x1b\[[0-9;]*m)*\|)'
+      + match: '^[ ]*Tests[ ]+([0-9]+)[ ]+passed(?![ ]*\|)'
+
+  The runs could match *nothing*, and that is the half that made them a liability
+  rather than only an inconvenience: on the stripped bytes
+  `      Tests377 passed (377)` the old pattern matched and read 377 off it, and
+  the new one refuses the line. `vitest` always prints a space between the label
+  and the count, so a line without one is not a summary a floor should be read
+  from. Both verdicts are asserted on the same fixture in
+  `tests/gate-declaration-self-test.sh`, so the tightening is measured rather
+  than argued.
+
+  The negative lookahead `(?!…\|)` is kept untouched — it has nothing to do with
+  colour, and it is what makes a suite that *skipped* a test
+  `gate.proof-missing` instead of a smaller green. Every other group stays
+  `(?:…)`: the floor is read from exactly one capture group, and there is now a
+  case for what happens when there are two.
+
+  Three new cases and one new assertion guard the deletion rather than trusting
+  a comment: `no-separator` (a summary whose label and count are not separated
+  by a space is refused), `no-separator-under-the-old-pattern` (the same line is
+  accepted under the deleted tolerance, which is what makes the first case mean
+  something), `floor-with-two-capture-groups` (a second group beside the first
+  is `gate.proof-invalid`, not a smaller pattern), and a static check that fails
+  if **any** `match:` in `gate.yml` names a terminal escape, in any spelling and
+  raw ESC included. Putting the tolerance back is now a red, not a question for
+  the next reviewer.
+- **`ci.yml`'s `run: |` block, which was the same kind of workaround, is gone
+  too.** `core-12` (`63fd319`) fixed `workflow_run_lines()` so a one-line
+  `run: <command>` is read rather than invisible to `gate.ci-disagrees`, so the
+  `prime` job spells the gate invocation the ordinary way again. Two cases pin
+  it: `ci-disagrees` rewrites the one-line command in place, and the new
+  `ci-step-deleted` removes the step entirely — so "the checker can see this
+  step" is asserted from both sides instead of assumed from a green control.
+- **The self-test's second control now guards `core`'s stripper rather than this
+  repository's pattern, and says which it is guarding.** With stripping in
+  place, control 1 cannot be made red by colour at all, so the `FORCE_COLOR=1`
+  control is the only case that would go red if `core` ever stopped stripping.
+  The `prefix-pattern-colour` case used to SKIP once core learned to strip; it
+  now asserts which side of MD17 the repository is on and prints which answer it
+  got, because "the pre-fix pattern is green *because* core strips" is a fact
+  worth stating rather than a case with nothing left to say.
+
 - **A gate proof that could not see coloured output, so a green run was
   reported as `gate.proof-missing`.** The `suite` proof reads the vitest
   summary, and the pattern it used — `^[ ]*Tests[ ]+([0-9]+) passed` — is
@@ -169,7 +219,9 @@ All notable changes to parlor are recorded here. The format follows
   same log, that it ran 377 tests, and three other cases failed the same way:
   fixtures that should have been caught by `gate.floor` were caught by
   `gate.proof-missing` instead, because a floor is never read when the proof
-  never matched. The pattern now tolerates SGR sequences between the words.
+  never matched. The pattern now carries no escape handling at all:
+  `core` strips the escapes before it matches, and the space between the
+  label and the count has to be a real space.
 - **A suite that *skipped* a test satisfied the suite proof.** `vitest` writes
   `Tests  2 passed | 1 skipped (3)`, and the old pattern matched that line and
   read 2 off it. The proof now refuses any line where a `|` follows `passed`,

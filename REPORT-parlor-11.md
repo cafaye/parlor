@@ -1,9 +1,20 @@
 # REPORT — parlor-11 (`parlor-11-ansi`)
 
-**Title: the gate declaration's own control is red — finish the packet.**
+**Title: the ANSI repair is landed, and the workaround it needed is now gone.**
 
-Branch `worker/parlor-11-ansi`, based on `master` at `49c9cf3`. Nothing
-pushed, nothing merged, no repository outside `parlor` touched.
+Branch `worker/parlor-11-ansi`, based on `master` at `49c9cf3`. Nothing pushed,
+nothing merged, no repository outside `parlor` touched.
+
+This packet was worked twice, and the document says which half is which:
+
+- **Part one (§1–§9 below) is the previous worker's report**, kept as written,
+  because it is accurate about the state of the tree at `8b6791b` and because
+  throwing away careful analysis to save a rewrite would be its own kind of
+  damage. Three claims in it have since been overtaken by events, and each is
+  marked in place with what superseded it. Nothing else in it has been edited.
+- **Part two (at the very top, §0) is this run**: what the previous worker left
+  behind, the rebase, what `core-13` made redundant, what I deleted, and what
+  I verified.
 
 ---
 
@@ -116,6 +127,11 @@ match: '^(?:[ ]|\x1b\[[0-9;]*m)*Tests(?:[ ]|\x1b\[[0-9;]*m)*([0-9]+)[ ]+passed(?
   (D13), redundant once `core-13` lands. `gate.yml` says so above the pattern,
   in the file, not only here — the next reader is a person about to "simplify"
   a long regex.
+
+  > **SUPERSEDED — this run.** `core-13` (`c63af27`) has landed and the escape
+  > tolerance is deleted, exactly as this paragraph says it should be. The
+  > pattern is now `^[ ]*Tests[ ]+([0-9]+)[ ]+passed(?![ ]*\|)`. See §0.4; the
+  > removal is a tightening, and §0.4 gives the case that measures it.
 - `([0-9]+)` — the only capture group. `gate_check.py` reports
   `gate.proof-invalid` for zero or two, so every other group is `(?:...)`.
 - `(?!…\|)` — **the tightening**, and the reason a broadened pattern is
@@ -170,6 +186,12 @@ prints `0 passed; 14 ignored` has verified nothing") applied to the suite.
 **When `core-13` lands, delete the escape runs and keep the `(?!…\|)`.** The
 negative lookahead has nothing to do with colour and is the only part of this
 pattern that is a net gain.
+
+> **DONE — this run.** The lookahead is untouched and the escape runs are gone.
+> Note the detail the prediction below got wrong: deleting the *whole* run
+> would have been wrong too, because the run also carried the plain spaces and
+> vitest indents that line by six. `[ ]*` stays; only the escape alternative
+> goes. See §0.4.
 
 `expect_red` also gained an optional fifth argument: a substring the finding's
 message must contain. `gate.proof-missing` is emitted once per missing proof,
@@ -263,6 +285,12 @@ Zero skips, and that is not luck: the script's only skip paths are shellcheck
 being absent (it is installed here — 0.11.0 — so the lint ran and passed) and
 the pre-fix-pattern case detecting that `core` has learned to strip ANSI. It
 has not, so that case ran and passed rather than skipping.
+
+> **SUPERSEDED — this run.** `core` has learned to strip ANSI, so that case now
+> takes its other branch. It is no longer a SKIP: it asserts which side of
+> MD17 the repository is on and prints which answer it got, because
+> "the pre-fix pattern is green *because* core strips" is a fact worth stating.
+> See §0.5.
 
 28 cases: 2 controls, 12 static breakages, 5 that run a gate under `--prove`
 (3 of them the repository's real gate, 2 a fast stand-in), 6 fixtures built
@@ -379,6 +407,14 @@ is too.
    about a packet I have not read. The self-test handles the one that can be
    handled (it detects the landing and reports a skip); the other two are
    judgement and belong to whoever merges it.
+
+   > **RESOLVED — this run, partly against the prediction.** `core-13` did
+   > land, the tolerance did become dead weight, and the lookahead survived. Two
+   > of the three predictions were right and one was wrong in an instructive
+   > way: the pre-fix case does not merely SKIP, it now asserts which side of
+   > the ruling the repository is on. The prediction that was quietly wrong is
+   > the one nobody wrote down — see §0.4 on the leading `[ ]*`, which is not
+   > part of the escape tolerance and must not go with it.
 4. **The 79s warm-run timing is one machine, one warm cache.** It is quoted in
    `gate.yml` as a measurement with its date, not as a promise. I did not
    measure a cold run with an empty npm cache, which is the case the 900s

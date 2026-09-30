@@ -137,35 +137,43 @@ in the repository. The format, the checker and the reasoning are `core`'s —
   `test_the_gate_floor_is_not_below_the_suite_core_claims_to_have` to force
   that; **this repository has no equivalent**, so it is a thing a human has to
   remember.
-- **A proof is matched against BYTES, and the bytes are not what a terminal
-  shows.** `vitest` colours its summary, and with `FORCE_COLOR=1` in the
-  environment the line `core` captures is
-  `\x1b[2m      Tests \x1b[22m \x1b[1m\x1b[32m377 passed\x1b[39m…`. A pattern
-  written by looking at the rendered output does not match that, and the
-  checker then reports `gate.proof-missing` about a gate that has just proved,
-  in the same log, that it ran 377 tests. This repository has been bitten: the
-  `suite` proof shipped as `^[ ]*Tests[ ]+([0-9]+) passed` and was red on any
-  machine whose tools colourise. **Read the captured log, not the screen.**
-- **The escape tolerance in that pattern is a workaround for a core defect
-  (D13), redundant once `core-13` lands.** `core` ruling MD17 puts the fix in
-  `gate_check.py` — strip ANSI before matching — which is one place rather than
-  one workaround per adopting repository. Until then the repository carries its
-  own, and `gate.yml` says so above the pattern. When core strips, delete the
-  `(?:[ ]|\x1b\[[0-9;]*m)*` runs and **keep the `(?!…\|)`**: that half is a
-  real tightening with nothing to do with colour, and it is what makes a suite
-  that *skipped* a test `gate.proof-missing` rather than a smaller green.
+- **Write a proof for the line a TERMINAL SHOWS, because `core` strips the
+  escapes first.** `vitest` colours its summary, so with `FORCE_COLOR=1` in the
+  environment the bytes `core` writes to its log are
+  `\x1b[2m      Tests \x1b[22m \x1b[1m\x1b[32m377 passed\x1b[39m…`. Since
+  `core-13` (MD17) the checker removes terminal escapes in `prove()` before it
+  applies any `proof[].match`, so what a pattern is given is the rendered line.
+  This repository was bitten before that ruling landed: `suite` shipped as
+  `^[ ]*Tests[ ]+([0-9]+) passed`, could not match the captured bytes, and the
+  checker reported `gate.proof-missing` about a gate that had just proved, in
+  the same log, that it ran 377 tests. **Do not write escape tolerance.** It is
+  dead weight now that core strips, it also WEAKENS the pattern (the run could
+  match nothing, standing in for a space that has to be there), and
+  `tests/gate-declaration-self-test.sh` fails if any `match:` in `gate.yml`
+  names a terminal escape in any spelling.
+- **The negative lookahead is the half worth keeping, and it has nothing to do
+  with colour.** `[ ]+passed(?![ ]*\|)` refuses a
+  `Tests  2 passed | 1 skipped (3)` line, so a suite that *skipped* a test is
+  `gate.proof-missing` rather than a smaller green — the rule this file already
+  states for the end-to-end tier, applied to the suite. Both the coloured and
+  the plain spelling are asserted, because a tightening that only holds on one
+  of them is a property of the runner rather than of the declaration.
+- **One capture group, and only one.** The floor is read from exactly one, so
+  every other group in a pattern here is `(?:…)`. `core` reports
+  `gate.proof-invalid` for zero groups and for two, and the self-test has a
+  case for each.
 - **The other two proofs carry no escape tolerance on purpose.** The
   `35 passed, …` tally and the `self_test: …` line are both bash `printf`s in
   `tests/validate-ci.sh`, which contains no ESC byte and no `tput`, so it
   cannot colourise. The self-test asserts that source property, so a
   future attempt to add colour there is caught in the same commit that the
   proofs go red.
-- **Do not put `run: <command>` on one line in `ci.yml`.** `core`'s checker
-  reads a workflow's `run: |` block bodies and nothing else, so a one-line
-  `run:` is invisible to `gate.ci-disagrees` and the step that runs the gate
-  stops counting as one. That is a workaround for a core defect too (D12), the
-  `prime` job uses a block scalar for this reason, and the comment above it
-  says why; do not "tidy" it back.
+- **A one-line `run: <command>` in `ci.yml` is fine, and it is what the file
+  says.** `core-12` (`63fd319`) fixed the reader that used to miss it, so the
+  `run: |` block the `prime` job carried as a workaround is gone. Both halves of
+  "the checker can see this step" are asserted rather than assumed: the
+  `ci-disagrees` case rewrites the one-line command in place, and the
+  `ci-step-deleted` case removes the whole step.
 - **`bash tests/gate-declaration-self-test.sh` proves the declaration is
   load-bearing** — a control, then every breakage asserted to go red naming the
   finding it expects, then one documented blind spot asserted to stay green. It
@@ -173,13 +181,16 @@ in the repository. The format, the checker and the reasoning are `core`'s —
   vendored here, and the proof cases each run the whole gate. It needs `core`
   beside this repository or `CAFAYE_CORE_HARNESS`; without either it exits 2,
   never 0.
-- **THE CONTROL RUNS TWICE, and the second run is the one that matters.** Once
+- **THE CONTROL RUNS TWICE, and the second run guards something else now.** Once
   as before, and once with `FORCE_COLOR=1` in the environment the checker
-  captures the gate in. A control that only passes where nothing colourises is
-  reporting the day, not the repository — which is exactly how a red control got
-  shipped as a green one here, and why **a self-test's own control going red
-  BLOCKS a packet** (D13). It is not a finding to append to a report; it is the
-  thing that decides whether the rest of the report means anything.
+  captures the gate in. It was written when `core` did NOT strip, so the second
+  control was the one that could see colour; a control that only passes where
+  nothing colourises reports the day, not the repository, which is exactly how a
+  red control got shipped as a green one here, and why **a self-test's own
+  control going red BLOCKS a packet** (D13). Now that core strips, control 1
+  cannot be made red by colour at all, and control 2 is the regression control
+  on the **stripper**: the day `core` stops stripping, that is the case that goes
+  red and the only one that would.
 - **The colour cases reproduce captured bytes, not an impression of them.** The
   fixtures in that script are transcriptions of lines captured from a real run
   of this repository's own gate. A fixture that re-rendered the output by hand

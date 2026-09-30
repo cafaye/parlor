@@ -39,6 +39,16 @@
 # reason it happens to be green. `tests/gate-declaration-self-test.sh` and the
 # fixtures below exist so the next runner change cannot quietly take that back.
 #
+# AND WHAT `core-13` CHANGED, so the reader of this file is not misled by the
+# paragraph above. `core` ruling MD17 landed: `gate_check.py` strips ANSI from
+# the gate's captured output once, in `prove()`, before any pattern is applied.
+# The escape tolerance that pattern carried while core could not see colour is
+# deleted from `gate.yml` — see the proof's own comment — and the pattern is
+# now exactly as strict as it looks. That does NOT make the second control
+# redundant: with stripping in place, control 1 cannot be made red by colour,
+# and control 2 is the only case here that goes red when the stripping goes
+# away. See the comment on control 2 for what it is guarding now.
+#
 # THE HOUSE STYLE, AND WHERE IT COMES FROM
 #
 # The shape is `tests/validate-ci.sh --self-test`'s: a sandbox seeded from
@@ -351,28 +361,35 @@ $CHECK_OUT"
 # the `suite` proof's pattern, spelled ONCE
 # --------------------------------------------------------------------------
 #
-# Four cases edit this pattern and one case replaces it with the pre-fix one.
-# Spelling it out five times in this file means spelling it wrong in four of
-# them the first time gate.yml changes, and the failure is a self-test that
-# stops breaking what it says it breaks — the exact defect `edit` below exists
-# to catch, caught by `edit` instead. So the parts are named and the four
-# variants are built from the same two of them.
+# Four cases edit this pattern and two replace it. Spelling it out six times in
+# this file means spelling it wrong in five of them the first time gate.yml
+# changes, and the failure is a self-test that stops breaking what it says it
+# breaks — the exact defect `edit` below exists to catch, caught by `edit`
+# instead. So the parts are named and every variant is built from them.
 #
-# `esc_run` is the "spaces and SGR sequences, in any order" run, and it is
-# spelled with SINGLE quotes so the backslashes reach the string literally:
-# this file is bash and the backslash is a regex escape, not a shell one.
-# Verified byte-for-byte against gate.yml below, which is the only assertion
-# that keeps the five spellings from drifting apart silently.
-esc_run='(?:[ ]|\x1b\[[0-9;]*m)*'
-suite_ok="^${esc_run}Tests${esc_run}([0-9]+)[ ]+passed(?!${esc_run}\|)"
+# `suite_head` is the anchored prefix every spelling below shares: the indent
+# vitest puts in front of `Tests`, the word, and at least one space after it.
+# The last of those is not decoration. The pattern used to carry
+# `(?:[ ]|\x1b\[[0-9;]*m)*` in its place, an escape run that could match NOTHING
+# and so stood in for the space; `core-13` (MD17) made core strip the escapes
+# before it matches, the run was dead weight that also weakened the clause, and
+# it is deleted. `no-separator` below is the case that says the weakening went
+# with it.
+suite_head='^[ ]*Tests[ ]+'
+suite_ok="${suite_head}([0-9]+)[ ]+passed(?![ ]*\|)"
 # breaks the middle clause, leaving a `(` the pattern cannot compile
-suite_uncompilable="^${esc_run}Tests${esc_run}([0-9]+ passed"
+suite_uncompilable="${suite_head}([0-9]+ passed"
 # the same line with the capture group removed, so the floor has nothing to read
-suite_no_group="^${esc_run}Tests${esc_run}[0-9]+[ ]+passed(?!${esc_run}\|)"
+suite_no_group="${suite_head}[0-9]+[ ]+passed(?![ ]*\|)"
+# a SECOND group beside the first. The floor is read from exactly one, so this
+# is not a smaller pattern, it is an invalid declaration.
+suite_two_groups="${suite_head}([0-9]+)[ ]+passed(?![ ]*\|)(.*)$"
 # a well-formed pattern the gate's output never contains
-suite_wrong_word="^${esc_run}Tests${esc_run}([0-9]+)[ ]+green"
-# what this packet replaced. Only ever used to prove the replacement mattered.
+suite_wrong_word="${suite_head}([0-9]+)[ ]+green"
+# what this packet replaced, and what the escape tolerance then replaced. Both
+# are used only to prove that the replacements mattered.
 suite_prefix='^[ ]*Tests[ ]+([0-9]+) passed'
+suite_tolerant="^(?:[ ]|\\x1b\\[[0-9;]*m)*Tests(?:[ ]|\\x1b\\[[0-9;]*m)*([0-9]+)[ ]+passed(?!(?:[ ]|\\x1b\\[[0-9;]*m)*\\|)"
 
 SUITE_MATCH="match: '${suite_ok}'"
 if ! grep -qF "$SUITE_MATCH" "$DECLARATION"; then
@@ -418,11 +435,25 @@ fi
 #
 # `FORCE_COLOR=1` is put in the environment the CHECKER runs the gate in, not
 # in this script's, because `gate_check.py` passes no `env=` of its own — it is
-# one line in `core` that decides whether a proof can ever see colour, and until
-# core-13 changes that line it is the only honest place to set it from here.
+# one line in `core` that decides whether a proof can ever see colour.
 #
-# COST, STATED: this is a second full gate run, so it is the slowest case in
-# the script. It is the slowest because it is the only case that runs the real
+# WHAT THIS CASE IS FOR NOW, which is not what it was for. It was written when
+# `core` did NOT strip ANSI (MD17, landed as `core-13`): control 1 was
+# therefore a control on this repository's pattern, and control 2 was the one
+# that could actually see colour. Core strips now, so control 1 is INSENSITIVE
+# to colour by construction — no declaration can make it red by being wrong
+# about escapes — and control 2 no longer tests this declaration either.
+#
+# What it tests now is the STRIPPER, and that is not a downgrade. It runs the
+# real `bin/prime` in a real fresh clone with colour forced on, so the day
+# `core` stops stripping — a revert, a refactor, a narrower `ANSI_ESCAPE` — the
+# gate's output reaches the pattern with escapes in it and this control goes
+# red, and it is the only case in this script that would. Deleting it to save a
+# minute of wall clock would delete the only thing standing between "core
+# quietly stopped stripping" and "every proof in the fleet is a guess".
+#
+# COST, STATED: this is a second full gate run, so it is the slowest case in the
+# script. It is the slowest because it is the only case that runs the real
 # `npm ci`, the real 377-test suite and the real 34-breakage self-test with the
 # bytes the defect was about, and a cheaper control would be a control that
 # could go green without the gate having run at all — which is the defect this
@@ -491,17 +522,36 @@ edit "$SANDBOX/gate.yml" \
 expect_red 'a declaration naming a CI workflow that is not in this repository' \
   "$SANDBOX" 'gate.ci-missing'
 
+# The `run:` line alone, on its own line, with its own indentation. Anchoring on
+# the bare argv would hit the first MENTION of it in the file, which is a
+# comment in the header, and leave the step untouched — a self-test that breaks
+# nothing. Anchoring on the `name:`/`run:` PAIR does not work either: the step
+# carries a comment block between them, so the two lines are not adjacent.
+# `run: ./bin/prime` occurs exactly once in this workflow and `edit` fails loudly
+# if that ever stops being true.
 seed_sandbox ci-disagrees
-# Anchored on newlines because gate.yml's comment about this very check names
-# `./bin/prime` — a plain first-match replacement would have edited the comment
-# and left the workflow alone, which is a self-test that breaks nothing.
 edit "$SANDBOX/.github/workflows/ci.yml" \
   "
-          ./bin/prime
+        run: ./bin/prime
 " "
-          echo the gate is optional
+        run: echo the gate is optional
 "
-expect_red 'a CI workflow that no longer invokes the gate' \
+expect_red 'a CI workflow whose one-line `run:` no longer invokes the gate' \
+  "$SANDBOX" 'gate.ci-disagrees'
+
+seed_sandbox ci-command-removed
+# The negative twin, and the reason control 1 is worth reading. That control is
+# green on a workflow whose ONLY `run:` invocation of the declared argv is the
+# one-line form, which means a reader collecting block bodies only would make
+# control 1 red — the fix in `core-12` is what makes it green. A green case with
+# no red twin cannot say which of the two is doing the work, so here the
+# command goes and the argv is absent from every `run:` body in the file. The
+# finding has to be the same one.
+edit "$SANDBOX/.github/workflows/ci.yml" \
+  "
+        run: ./bin/prime
+" ""
+expect_red 'a CI workflow whose gate step carries no command at all' \
   "$SANDBOX" 'gate.ci-disagrees'
 
 # --- the external half, which is the defect the whole format is for ---------
@@ -570,14 +620,43 @@ expect_red 'a gate that proves 377 tests where the declaration promised 3770' \
   "$SANDBOX" 'gate.floor' --prove "proof 'suite'"
 
 seed_sandbox floor-with-no-capture-group
-# The other half of the same finding, and the one only --prove can see: the
-# pattern compiles and the declaration is well formed, and the floor is
-# promised against a capture group that is not there. A checker that read that
-# as "no floor" would accept a suite of any size.
+# One half of a finding: the pattern compiles and the declaration is well
+# formed, and the floor is promised against a capture group that is not there.
+# A checker that read that as "no floor" would accept a suite of any size.
 edit "$SANDBOX/gate.yml" \
   "$SUITE_MATCH" "match: '$suite_no_group'"
 expect_red 'a proof with a floor and no capture group to read the floor from' \
   "$SANDBOX" 'gate.proof-invalid' --prove "proof 'suite'"
+
+seed_sandbox floor-with-two-capture-groups
+# The other half, and the rule every other group in this pattern obeys: it is
+# `(?:...)`. A floor is read from EXACTLY ONE group, and a second one is not a
+# smaller pattern — it is an ambiguous declaration, because "the number" is no
+# longer a single thing in the pattern. `core` says so in words and in the
+# checker (`compiled.groups != 1` in `prove()`), and this is the case that says
+# it in this repository.
+#
+# It has to MATCH for the finding to be the one being tested: `core` reports
+# the missing proof first and returns, so a second group on a pattern that
+# matched nothing would be reported as `gate.proof-missing` and this case would
+# pass for the wrong reason. The gate below therefore prints every proof, in
+# colour, and exits 0 — which also makes this the cheapest case in the
+# `--prove` group.
+edit "$SANDBOX/gate.yml" \
+  "$SUITE_MATCH" "match: '$suite_two_groups'"
+write "$SANDBOX/bin/prime" <<'SH'
+#!/usr/bin/env bash
+# Every proof the declaration names, coloured, and nothing else. The point is
+# that the pattern matches: only then is the finding about the SECOND group
+# rather than about an absent line.
+set -euo pipefail
+printf '\033[2m      Tests \033[22m \033[1m\033[32m377 passed\033[39m\033[22m\033[90m (377)\033[39m\n'
+printf '35 passed, 0 failed, 0 skipped\n'
+printf 'self_test: 34 breakages, every check proven able to fail\n'
+SH
+chmod +x "$SANDBOX/bin/prime"
+expect_red 'a proof with a floor and a SECOND capture group beside it' \
+  "$SANDBOX" 'gate.proof-invalid' --prove "2 capture group(s)"
 
 seed_sandbox gate-ran-and-failed
 # The other half of the contract: the proofs were all there and the gate is
@@ -627,6 +706,13 @@ write "$SANDBOX/bin/prime" <<'SH'
 # the pre-fix `suite` pattern could not survive, and it is here so the next
 # change to vitest's reporter, to `core`'s capture, or to this declaration is
 # measured against the same bytes.
+#
+# It is also, now, the case that `core-13` is measured against. Nothing in this
+# repository's pattern mentions colour any more: the escapes arrive, `core`
+# strips them in `prove()`, and what the pattern is given is the line a
+# terminal shows. If a change to the stripper ever let an escape through, this
+# case is where it shows up — which is why it is a green expectation and not
+# decoration.
 set -euo pipefail
 printf '\033[2m Test Files \033[22m \033[1m\033[32m17 passed\033[39m\033[22m\033[90m (17)\033[39m\n'
 printf '\033[2m      Tests \033[22m \033[1m\033[32m377 passed\033[39m\033[22m\033[90m (377)\033[39m\n'
@@ -637,10 +723,68 @@ chmod +x "$SANDBOX/bin/prime"
 expect_green 'the captured bytes of a real green run, with colour: the three proofs are satisfied' \
   "$SANDBOX" --prove
 
-# The three cases that are the PRICE of the escape tolerance, and the reason
-# the pattern is allowed to be longer than the line it has to match. Each is
-# the same coloured fixture with one thing wrong, so each is also a check that
-# the tolerance did not swallow the defect along with the escapes.
+# --- and the line the escape tolerance used to accept -----------------------
+# The PRICE of the escape tolerance was never the escaped bytes, which are
+# gone by the time any pattern sees them. It was that the run could match
+# NOTHING, which means `Tests` and the number could be adjacent with no space
+# between them at all. This pair is the whole argument for deleting it.
+#
+# The fixture is the real coloured bytes with BOTH spaces after `Tests` removed,
+# so what is left is the shape a reporter that colourised the label and the
+# count with no gap between them would write. It is synthetic on purpose: it is
+# the boundary. Core strips it to `      Tests377 passed (377)` — a line vitest
+# has never printed and never will.
+seed_sandbox no-separator
+write "$SANDBOX/bin/prime" <<'SH'
+#!/usr/bin/env bash
+# The real coloured bytes, minus the spaces between the label and the count.
+# Stripped, this line is `      Tests377 passed (377)`.
+set -euo pipefail
+printf '\033[2m      Tests\033[22m\033[1m\033[32m377 passed\033[39m\033[22m\033[90m (377)\033[39m\n'
+printf '35 passed, 0 failed, 0 skipped\n'
+printf 'self_test: 34 breakages, every check proven able to fail\n'
+SH
+chmod +x "$SANDBOX/bin/prime"
+expect_red 'a summary line whose label and count are not separated by a space' \
+  "$SANDBOX" 'gate.proof-missing' --prove "proof 'suite'"
+
+seed_sandbox no-separator-under-the-old-pattern
+# The other half, and the reason the case above is not a curiosity. Put the
+# escape tolerance back — only this one pattern, in this one sandbox — and the
+# SAME fixture is green, because the run stands in for the missing space and
+# the floor is satisfied off a line vitest would never print.
+#
+# This is the assertion that deletion is a TIGHTENING. Without it, "the new
+# pattern refuses this line" could just mean the new pattern refuses
+# everything, which the control already rules out; with it, the two verdicts
+# differ because of the one clause that was deleted.
+#
+# THE FIXTURE IS WRITTEN AGAIN HERE, IDENTICALLY, and that is load-bearing
+# rather than duplication: the only difference between the two sandboxes may be
+# the pattern. Left to seed itself, this sandbox would run the repository's REAL
+# gate, whose summary line has the spaces in it, and it would go green for a
+# reason that has nothing to do with the clause under test — a green that
+# agrees with the green the control already reports. It would still be a true
+# statement, and it would be evidence of nothing.
+edit "$SANDBOX/gate.yml" \
+  "$SUITE_MATCH" "match: '$suite_tolerant'"
+write "$SANDBOX/bin/prime" <<'SH'
+#!/usr/bin/env bash
+# Byte-for-byte the same gate as the case above, which is the whole point.
+set -euo pipefail
+printf '\033[2m      Tests\033[22m\033[1m\033[32m377 passed\033[39m\033[22m\033[90m (377)\033[39m\n'
+printf '35 passed, 0 failed, 0 skipped\n'
+printf 'self_test: 34 breakages, every check proven able to fail\n'
+SH
+chmod +x "$SANDBOX/bin/prime"
+expect_green 'the same line, under the escape tolerance that was deleted: the missing space was absorbed' \
+  "$SANDBOX" --prove
+
+# The three defects this proof has to REJECT, each on the same coloured fixture
+# with one thing wrong. They were the price of the escape tolerance while it was
+# here — a pattern broad enough to see colour is a pattern broad enough to match
+# the wrong line — and they outlived it, so they are asserted on their own terms
+# now: each is a defect vitest really does produce, and each has to be red.
 
 seed_sandbox colour-lost-tests
 write "$SANDBOX/bin/prime" <<'SH'
@@ -705,14 +849,31 @@ chmod +x "$SANDBOX/bin/prime"
 expect_red 'a coloured run that printed the FILE count where the test count should be' \
   "$SANDBOX" 'gate.proof-missing' --prove "proof 'suite'"
 
-# --- and the tolerance is not carrying the weight on its own ---------------
-# The negative twin of the first colour case, and the one that says WHY the
-# pattern is what it is. `core-13` changes `gate_check.py` to strip ANSI before
-# matching (MD17), and the day it does, this pattern stops being red here and
-# the case has nothing left to assert — so it is reported as a SKIP, with the
-# reason, rather than left to fail on a repository that is more correct than it
-# was written to expect. A skip that is printed is allowed; a skip that hides
-# is the thing this packet is about.
+# --- which side of MD17 `core` is on, asserted rather than skipped ---------
+# The negative twin of the first colour case. It answers one question with one
+# exit code: does `core` strip ANSI before it applies a pattern?
+#
+#   pre-fix pattern + captured coloured bytes -> gate.proof-missing
+#                                              => core does NOT strip, and the
+#                                                 workaround this packet deleted
+#                                                 would still have been needed
+#   pre-fix pattern + captured coloured bytes -> exit 0
+#                                              => core DOES strip (MD17, landed),
+#                                                 the pre-fix pattern is not a
+#                                                 defect any more, and deleting
+#                                                 the escape tolerance changed
+#                                                 nothing about what this
+#                                                 declaration accepts
+#
+# It used to SKIP on the second answer, on the reasoning that a case with
+# nothing left to assert should not claim to have asserted something. That was
+# the wrong call and it hid a real fact: the branch tells you which side of a
+# core ruling the repository is on, and that is worth asserting. The third
+# branch below is the one that stays a failure — an exit code that is neither of
+# these means the checker changed in a way nobody wrote a case for.
+#
+# Both outcomes are printed in full, so a reader is told which one happened
+# rather than being handed a tick.
 seed_sandbox prefix-pattern-colour
 edit "$SANDBOX/gate.yml" \
   "$SUITE_MATCH" "match: '$suite_prefix'"
@@ -737,13 +898,70 @@ if [ "$EDIT_APPLIED" -eq 0 ]; then
     "the edit that restores the pre-fix pattern did not apply, so the sandbox ran the
 CURRENT pattern and this case's answer is about the wrong regex"
 elif [ "$CHECK_CODE" -eq 1 ] && printf '%s' "$CHECK_OUT" | grep -qF "FAIL gate.proof-missing: "; then
-  ok "the pattern this packet replaced, on the same captured coloured bytes, is \`gate.proof-missing\` — the defect was real and is gone"
+  ok "the pattern this packet replaced is \`gate.proof-missing\` on those bytes: core does NOT strip, so the escape tolerance this packet deleted would still have been needed"
 elif [ "$CHECK_CODE" -eq 0 ]; then
-  skipped "core now strips ANSI before matching a proof (MD17), so the pre-fix pattern is no longer a defect and this case has nothing left to assert"
+  ok "the pattern this packet replaced is GREEN on those same bytes: core strips ANSI before matching (MD17), which is why the escape tolerance was dead weight and why deleting it changed nothing here"
 else
   no "the pattern this packet replaced, on the same captured coloured bytes" \
-    "expected gate.proof-missing or exit 0, got $CHECK_CODE
+    "expected gate.proof-missing (core does not strip) or exit 0 (it does), got $CHECK_CODE
 $CHECK_OUT"
+fi
+
+# --- and no proof in this file names a terminal escape at all ---------------
+# The regression guard on the deletion itself. Every case above proves the
+# pattern behaves correctly; none of them notices if somebody PUTS THE TOLERANCE
+# BACK, because a pattern that tolerates escapes still satisfies every green
+# case and every red case whose defect is a skip, a lost test or a missing
+# separator — it just accepts the boundary line as well. This one notices.
+#
+# It reads the `match:` scalars and refuses any of them that contains a byte or
+# an escape that can name a terminal sequence. Scoped to `match:` deliberately:
+# the comments in gate.yml quote the captured bytes on purpose, and a check that
+# failed on those would have to be deleted the moment somebody explained them.
+# The token list is the whole set of ways the deleted run could be spelled —
+# `ESC` raw, or any of the five standard backslash escapes, or the SGR shape
+# itself — so re-adding it in any of those forms is caught.
+if declare_escapes=$(LC_ALL=C "$PY" - "$DECLARATION" <<'PY'
+import re, sys
+from pathlib import Path
+
+# Every way the deleted run could be spelled again, and nothing else:
+#   * the ESC byte itself, 7-bit or 8-bit, raw or as a backslash escape;
+#   * an SGR-shaped character class, `[0-9;]*m` and its private-parameter
+#     variants, which is what the run was written around.
+# A character class with letters in it is deliberately NOT flagged: `[a-z]` is
+# an ordinary thing for a proof to match and flagging it would make this case
+# wrong for every declaration except this one.
+# The `-` goes LAST in that class so it is a literal hyphen rather than a
+# range operator: without it the class held digits and not the `-` an SGR
+# character class is written with, and the token could never match anything.
+TOKENS = re.compile(r'\x1b|\x9b|\\x1[bB]|\\x9[bB]|\\033|\\e|\\u001[bB]|\[[0-9;:?-]*\][*+?]*m')
+
+path = Path(sys.argv[1])
+offenders, patterns = [], 0
+for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+    line = raw.strip()
+    if not line.startswith("match:"):
+        continue
+    patterns += 1
+    body = line[len("match:"):].strip().strip("'\"")
+    for token in TOKENS.finditer(body):
+        offenders.append(f"line {number}: {token.group(0)!r} in {body}")
+if not patterns:
+    print("gate.yml declares no match: pattern at all, which is a broken file")
+    raise SystemExit(1)
+if offenders:
+    print("\n  ".join(offenders))
+    raise SystemExit(1)
+PY
+); then
+  ok "no proof pattern in gate.yml names a terminal escape, which is what makes the escape tolerance deleted rather than dormant"
+else
+  no "no proof pattern in gate.yml names a terminal escape, which is what makes the escape tolerance deleted rather than dormant" \
+    "a \`match:\` pattern in gate.yml can match a terminal escape:
+$declare_escapes
+core strips ANSI before matching (MD17), so a tolerance here is not a workaround
+— it is a pattern that also accepts the lines it should refuse"
 fi
 
 # --- why the OTHER two proofs carry no escape tolerance ---------------------
