@@ -3,6 +3,13 @@
 # @asamuzakjp/*, w3c-xmlserializer) now requires ^22.22.2. Pin that floor so
 # `npm ci` installs warning-free. Stays on the Node 22 LTS line, matching the
 # `node:22-slim` base in the Dockerfile.
+#
+# This is a MIRROR, not the source. The pin of record is `engines.node` in
+# package.json, which npm and CI read; this file is how mise hands a developer
+# that same version, and `.npmrc`'s engine-strict is what turns the two
+# disagreeing into a red build instead of a surprise.
+# `tests/validate-ci.sh` fails when they drift apart. Change the number in
+# package.json and here, in the same commit.
 node = "22.22.2"
 
 [tasks.test]
