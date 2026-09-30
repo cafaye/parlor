@@ -6,10 +6,14 @@ parlor-specific part.
 
 ## What this repo is
 
-The cafaye app shell. The shell itself is thin — app router, Tailwind v4, theme
-tokens, health surfaces, test rig — and the auth screens sit on top of it:
-`/register`, `/login`, and a session-aware header. If you are looking for a
-dashboard, settings, admin or shadcn/ui, you are looking at a later packet.
+The cafaye web app: app router, Tailwind v4, theme tokens, health surfaces, test
+rig — and the screens built against identity's and billing's real contracts.
+Auth (`/register`, `/login`, a session-aware header), accounts and invitations
+(`/accounts`, `/accounts/[accountId]`, `/invitations/[token]`), and the two
+billing surfaces the contract actually declares (`/billing/plans`,
+`/billing/customers`). If you are looking for a dashboard, settings, admin,
+shadcn/ui or a subscription screen, you are looking at a later packet — see
+CHANGELOG "Known gaps" for the five service-side gaps this build works around.
 
 ## Setup
 
@@ -58,8 +62,17 @@ House rule (PLAN.md §3): write the test, watch it fail, then implement.
 ## Identity
 
 `src/lib/identity.ts` is the **only** file that knows the identity contract:
-`POST /v1/users`, `POST /v1/session`, `DELETE /v1/session`, `GET /v1/me`. Base
-URL from `NEXT_PUBLIC_IDENTITY_URL` (default `http://localhost:8080`).
+`POST /v1/users`, `POST /v1/session`, `DELETE /v1/session`, `GET /v1/me`, and
+the ten tenancy routes under `/v1/accounts` and `/v1/invitations`. Base URL from
+`NEXT_PUBLIC_IDENTITY_URL` (default `http://localhost:8080`).
+
+- **The tenancy shapes are transcribed from the service's handler, not from its
+  OpenAPI document** — `identity/internal/httpapi/accounts.go`, because
+  `identity/openapi/v1.yaml` does not describe any of them (see CHANGELOG
+  "Known gaps"). If the document lands and disagrees with the handler, the
+  handler is right and the file is the bug, same as every other contract
+  disagreement in this repo. **Do not** "fix" these shapes to match the document
+  without checking which side moved.
 
 - **The transport is a parameter.** `createIdentityClient({baseUrl, transport})`.
   Never call `fetch` from a screen, a form or a context. A component test
@@ -115,6 +128,47 @@ Non-negotiable, because it is the property the screen exists to protect:
 - Never render a field message the person did not cause, and never render an
   internal code, host, or port.
 
+## Roles and capabilities
+
+- `src/lib/roles.ts` holds the role order, the capability matrix, and the
+  invitable-role list. It is a **transcription** of identity's
+  `registerTenancyRoutes` and `Service.InviteRole`, so it is a reason not to
+  *offer* a control and never a reason to believe one would have worked. The
+  service answers 403 to anything it gets wrong, and the screen defers to that.
+- `can(role, capability)` is how a screen asks. If you add a capability, add the
+  row to the matrix test in the same commit — that table is the guard, and it was
+  broken on purpose to prove it.
+- A control for an action the service will refuse is worse than no control. "Leave"
+  is not offered to an owner, an admin is not offered the admin invite option, and
+  the last owner gets no usable "remove": each of those is a guaranteed 422.
+- `slugify` and `validateAccountName` mirror the service so a name is refused
+  before a round trip. The service is the authority; if they disagree, the
+  service is right.
+
+## Billing
+
+- `src/lib/billing.ts` is a **separate** client with its own `BillingError`.
+  Billing is a different service with its own codes, and a change to identity's
+  envelope should not be a change to this one. Same envelope shape, no shared
+  code.
+- **No identity session token is sent to billing.** The contract declares
+  `security: []` with no `securitySchemes` and records the gap itself. Handing a
+  live identity session token to a service that does not authenticate it puts a
+  credential in a third party's request logs for nothing. This is deliberate; do
+  not "helpfully" add the header.
+- `/billing/customers` is labelled as the **whole platform's** list, because the
+  service scopes that collection by nothing. Do not put it behind account
+  tenancy or call it somebody's billing page.
+- **No subscription screen exists, and one cannot be built yet.** billing's master
+  contract has no `/v1/subscriptions*` and `Customer` has no plan field, so "you
+  are on X", upgrade, downgrade, cancel and the five subscription states have
+  nowhere to read from. That is `parlor-04`, after billing-04's contract merges.
+- `amount_minor` is an integer, always. `formatMoney` is the only division in the
+  codebase and it happens last. Do not add a hand-written currency exponent table
+  and do not do arithmetic on amounts anywhere else.
+- `processor_customer_id` is always null in v0. No row may imply a card is on
+  file.
+
 ## Theme
 
 - `src/styles/tokens.css` is the **only** place theme values live.
@@ -141,9 +195,13 @@ Non-negotiable, because it is the property the screen exists to protect:
 ## Layout
 
 ```
-src/app/            routes: page, login/, register/, healthz/, readyz/,
+src/app/            routes: page, login/, register/, accounts/,
+                    accounts/[accountId]/, invitations/[token]/,
+                    billing/plans/, billing/customers/, healthz/, readyz/,
                     providers.tsx — the client provider stack, mounted by layout
-src/lib/            identity.ts (contract), token-store.ts, auth.tsx (session)
+src/lib/            identity.ts (identity contract), roles.ts (role vocabulary),
+                    accounts.ts (tenancy queries), money.ts, billing.ts,
+                    billing-context.tsx, token-store.ts, auth.tsx (session)
 src/components/ui/  primitives: one per file, re-exported from index.ts
 src/components/shell/  session-aware chrome (header)
 src/styles/         tokens.css — the theme
