@@ -213,7 +213,7 @@ habit, as part of `bin/prime`, and therefore in CI:
 
 ```sh
 bash tests/validate-ci.sh              # 18 checks
-bash tests/validate-ci.sh --self-test  # break a throwaway copy 15 ways,
+bash tests/validate-ci.sh --self-test  # break a throwaway copy 16 ways,
                                        # assert each one goes red
 ```
 

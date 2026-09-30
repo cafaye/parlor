@@ -51,7 +51,7 @@ output the Dockerfile copies exists).
 - **`tests/validate-ci.sh` is part of the gate, not a CI extra.** It checks the
   shape of the tree CI assumes — the pin, the lockfile contract, the gate
   command, that every `npm run` the workflow calls still exists. Its
-  `--self-test` breaks a throwaway copy 15 ways and asserts each one goes red;
+  `--self-test` breaks a throwaway copy 16 ways and asserts each one goes red;
   a check that has only ever been green has verified nothing.
 - **Do not write `grep -q` into that script inside a pipeline.** Under
   `set -o pipefail`, `grep -q` exits on its first match and the writer takes

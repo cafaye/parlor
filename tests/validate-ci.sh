@@ -2,9 +2,10 @@
 # The half of parlor's gate that checks the gate.
 #
 # `bin/prime` proves the checkout reproduces: `npm ci` from the committed
-# lockfile, then the suite. This proves the *shape* of that checkout is still
-# what CI assumes — one runtime pin, one lockfile contract, one gate command.
-# Both run from `bin/prime`, so neither can drift away from a developer.
+# lockfile, the suite, and then this. This proves the *shape* of that checkout
+# is still what CI assumes — one runtime pin, one lockfile contract, one gate
+# command. Both run from `bin/prime`, so neither can drift away from a
+# developer.
 #
 # Why a script and not a review: every check here is a claim CI makes about this
 # repository. A `versions:` string that disagrees with `package.json`, an
@@ -18,11 +19,15 @@
 # the checks are about which commands appear, not about the shape of the tree,
 # and a partial parse is a worse reader than a grep that says what it wants.
 #
-#   bash tests/validate-ci.sh             the checks
-#   bash tests/validate-ci.sh --self-test  prove they can fail (13 breakages)
+#   bash tests/validate-ci.sh              the checks
+#   bash tests/validate-ci.sh --self-test  prove they can fail (16 breakages,
+#                                         plus the opposite case)
 #
 # `--self-test` is part of the gate, not an extra. A check nobody has watched
-# go red is a check that has verified nothing (PLAN.md §1).
+# go red is a check that has verified nothing (PLAN.md §1). It has already paid
+# for itself: it found the `grep -q`-under-pipefail defect documented at
+# `found()` below, which made one check report PASS on a tree it had just
+# broken.
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -83,10 +88,12 @@ pkg_has_script() {
   node -e 'const s=(require(process.argv[1]).scripts)||{};process.stdout.write(process.argv[2] in s ? "yes" : "no")' "$PKG" "$1"
 }
 
-# The pin of record. It lives in package.json because that is the one file
-# npm, Corepack and CI all read; mise.toml mirrors it for the local toolchain
-# and the workflow passes it to kit. One number, three declarations, and the
-# checks below are what make them one number.
+# The pin of record. It lives in package.json because that is the one file npm,
+# Corepack and CI all read. mise.toml mirrors it for a developer's local
+# toolchain, the workflow restates it for kit, and cafaye.yml records the major
+# line. That is the same number in four places, which is four pins unless
+# something holds them together — these functions and the checks below are that
+# something.
 pin_of_record() {
   pkg_field engines.node
 }
@@ -211,16 +218,21 @@ fi
 # coarsening, not a competing pin. The exact number is not ours to write there
 # (the manifest is core's shape and pantry excludes parlor for it), so this
 # checks the one thing that can be checked: the major has to agree.
+#
+# The empty case is handled explicitly. `"$MANIFEST_NODE".*` with an empty
+# MANIFEST_NODE is the pattern `.*`, which matches every pin — a check that
+# passes when the line it reads is missing is a check that verifies nothing,
+# which is the whole failure mode this file exists to prevent.
 MANIFEST_NODE=$(node_major_in_manifest)
-case "$PIN" in
-  "$MANIFEST_NODE".*)
-    ok "cafaye.yml's node major ($MANIFEST_NODE) agrees with the pin"
-    ;;
-  *)
-    no "cafaye.yml's node major agrees with the pin" \
-      "the manifest declares node \"$MANIFEST_NODE\", the pin is $PIN"
-    ;;
-esac
+if [ -z "$MANIFEST_NODE" ]; then
+  no "cafaye.yml declares a node major" \
+    "spec.runtime.node is absent from the manifest, so there is nothing to agree with"
+elif [ "${PIN#"$MANIFEST_NODE".}" != "$PIN" ]; then
+  ok "cafaye.yml's node major ($MANIFEST_NODE) agrees with the pin"
+else
+  no "cafaye.yml's node major agrees with the pin" \
+    "the manifest declares node \"$MANIFEST_NODE\", the pin is $PIN"
+fi
 
 if [ "$(manifest_scalar packageManager)" = "npm" ]; then
   ok "cafaye.yml declares npm as the package manager"
@@ -364,7 +376,7 @@ self_test() {
   }
 
   # Baseline first: a self-test that cannot see the copy go green in the first
-  # place proves nothing about the thirteen breakages that follow.
+  # place proves nothing about the breakages that follow.
   seed_sandbox
   if ! bash "$SANDBOX/tests/validate-ci.sh" >/dev/null 2>&1; then
     echo "self_test: the pristine copy does not pass; the breakages below prove nothing" >&2
@@ -388,7 +400,8 @@ self_test() {
     "prime-not-the-manifests-gate|sed -i '' 's|prime: ./bin/prime|prime: ./bin/other|' '$SANDBOX/cafaye.yml'" \
     "no-engines-field|node -e 'const f=process.argv[1];const p=require(f);delete p.engines;require(\"fs\").writeFileSync(f,JSON.stringify(p,null,2))' '$SANDBOX/package.json'" \
     "range-instead-of-a-pin|sed -i '' 's|\"node\": \"22.22.2\"|\"node\": \"^22\"|' '$SANDBOX/package.json'" \
-    "no-lockfile|sed -i '' 's|packageManager: npm|packageManager: pnpm|' '$SANDBOX/cafaye.yml'"
+    "no-lockfile|sed -i '' 's|packageManager: npm|packageManager: pnpm|' '$SANDBOX/cafaye.yml'" \
+    "manifest-forgets-its-node|sed -i '' '/^    node: \"22\"$/d' '$SANDBOX/cafaye.yml'"
   do
     name=${proof%%|*}
     breakage=${proof#*|}
@@ -421,6 +434,18 @@ self_test() {
   printf 'self_test: %d breakages, every check proven able to fail\n' "$proofs"
 }
 
+# The tally prints in both modes, and the exit code reflects both halves.
+# `--self-test` used to be dispatched before the tally and exited without
+# reading `$fail`, so `bin/prime` — which runs the self-test — would have
+# printed no count and returned 0 on a tree whose real checks had failed. The
+# self-test's own baseline would have caught it and said so, but a gate that
+# needs a second mechanism to notice a failure is a gate with a hole in it.
+printf '\n%d passed, %d failed, %d skipped\n' "$pass" "$fail" "$skip"
+if [ "$fail" -ne 0 ]; then
+  echo "the checks above failed; not running --self-test on a broken tree" >&2
+  exit 1
+fi
+
 if [ $# -gt 0 ]; then
   if [ "$1" = "--self-test" ]; then
     if [ ! -f "$WF" ]; then
@@ -434,5 +459,4 @@ if [ $# -gt 0 ]; then
   exit 2
 fi
 
-printf '\n%d passed, %d failed, %d skipped\n' "$pass" "$fail" "$skip"
-[ "$fail" -eq 0 ]
+exit 0

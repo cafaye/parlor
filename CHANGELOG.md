@@ -21,7 +21,7 @@ All notable changes to parlor are recorded here. The format follows
   checks over the runtime pin, the lockfile contract, the gate command, the
   npm scripts the workflow calls, and the agreement between `package.json`,
   `mise.toml`, the workflow and `cafaye.yml`. `--self-test` breaks a
-  throwaway copy 15 ways and asserts each one goes red, plus the opposite
+  throwaway copy 16 ways and asserts each one goes red, plus the opposite
   case: a comment that merely *mentions* `npm install` must not fail the check
   that forbids it. It reads the workflow as text with anchored greps, so it
   needs no PyYAML, no yq and no jq.
