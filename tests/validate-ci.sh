@@ -112,10 +112,16 @@ pkg_has_script() {
 
 # The pin of record. It lives in package.json because that is the one file npm,
 # Corepack and CI all read. mise.toml mirrors it for a developer's local
-# toolchain, the workflow restates it for kit, and cafaye.yml records the major
-# line. That is the same number in four places, which is four pins unless
-# something holds them together — these functions and the checks below are that
-# something.
+# toolchain, the workflow restates it for kit. That is the same number in three
+# places, which is three pins unless something holds them together — these
+# functions and the checks below are that something.
+#
+# It used to be four: cafaye.yml recorded the major line too. It does not
+# anymore, and that is not this file losing interest. Core's manifest schema
+# sets additionalProperties:false and has no `runtime` key, so the draft
+# manifest's `spec.runtime.node` was a violation rather than a mirror — the file
+# is now core's shape and every key in it is one core allows. The manifest's
+# silence is checked below, so the fourth pin cannot grow back.
 pin_of_record() {
   pkg_field engines.node
 }
@@ -128,12 +134,27 @@ pin_in_workflow() {
   sed -n "s/.*\"node\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" "$WF" | head -1
 }
 
-node_major_in_manifest() {
-  sed -n 's/^[[:space:]]*node:[[:space:]]*"\([^"]*\)".*/\1/p' "$MANIFEST" | head -1
+# Whether cafaye.yml declares `key` as a real key, printing "yes" or nothing.
+#
+# Comments are stripped first, and that is not tidiness. This manifest now
+# records the facts it dropped *inside prose*, at length — a comment naming
+# `node: "22"` and one saying why it is gone — so a reader that does not strip
+# comments finds every one of them "declared". A check that reads its subject out
+# of a sentence about its subject has not read the subject. This is the same trap
+# `code_lines` documents for the workflow below, met from the other side.
+#
+# It prints the empty string for absent rather than exiting non-zero, so the
+# caller writes `[ -n "$(...)" ]` and reads the answer directly.
+manifest_declares() {
+  sed 's/[[:space:]]*#.*$//' "$MANIFEST" \
+    | sed -n "s/^[[:space:]]*$1[[:space:]]*:.*/yes/p" \
+    | head -1
 }
 
-manifest_scalar() {
-  sed -n "s/^[[:space:]]*$1:[[:space:]]*\(.*\)$/\1/p" "$MANIFEST" | head -1
+# The message every one of these four checks shares: the key is absent from
+# core's schema, so writing it here is drift the moment someone adds it back.
+manifest_is_core_owned() {
+  printf 'cafaye.yml has a `%s:` key; core'"'"'s manifest schema has no place for it, and the fact belongs in the file named above' "$1"
 }
 
 # The workflow with its comments stripped, so every command check below reads
@@ -236,31 +257,51 @@ else
     "the workflow passes ${WF_PIN:-<none>} to kit; package.json pins ${PIN:-<none>}"
 fi
 
-# The draft manifest records the major line ("22"), which is a deliberate
-# coarsening, not a competing pin. The exact number is not ours to write there
-# (the manifest is core's shape and pantry excludes parlor for it), so this
-# checks the one thing that can be checked: the major has to agree.
+# The manifest is silent about the node pin, and that is the check.
 #
-# The empty case is handled explicitly. `"$MANIFEST_NODE".*` with an empty
-# MANIFEST_NODE is the pattern `.*`, which matches every pin — a check that
-# passes when the line it reads is missing is a check that verifies nothing,
-# which is the whole failure mode this file exists to prevent.
-MANIFEST_NODE=$(node_major_in_manifest)
-if [ -z "$MANIFEST_NODE" ]; then
-  no "cafaye.yml declares a node major" \
-    "spec.runtime.node is absent from the manifest, so there is nothing to agree with"
-elif [ "${PIN#"$MANIFEST_NODE".}" != "$PIN" ]; then
-  ok "cafaye.yml's node major ($MANIFEST_NODE) agrees with the pin"
+# The pin of record is engines.node in package.json, mirrored by mise.toml and
+# the workflow; the three checks above hold those together. The manifest cannot
+# be a fourth mirror, because core's schema sets additionalProperties:false and
+# has no `runtime` key — `spec.runtime.node` is a violation the harness reports,
+# not a mirror anything reads.
+#
+# So what remains is the check that stops a fourth copy being written back by
+# somebody who finds `node: "22"` useful. Nothing else here can catch it: core's
+# contract checker is the one thing that reads the manifest against the schema,
+# and it is offline-only precisely because `bin/prime` must not need a sibling
+# core checkout. Without this, the key would land and sit here disagreeing with
+# the pin until the next time somebody bumped Node.
+#
+# The empty case needs no special handling, which is the whole reason it is
+# worth stating: the predicate answers "does this key exist", so "absent" is the
+# passing answer and there is no pattern that matches every input when a line
+# goes missing. The earlier form of this check read the major out of the manifest
+# and compared it, and needed four lines of comment to explain why a missing line
+# had to be handled separately. This one cannot pass by accident.
+if [ -z "$(manifest_declares node)" ]; then
+  ok "cafaye.yml declares no node pin, so the pin stays in its three homes"
 else
-  no "cafaye.yml's node major agrees with the pin" \
-    "the manifest declares node \"$MANIFEST_NODE\", the pin is $PIN"
+  no "cafaye.yml declares no node pin, so the pin stays in its three homes" \
+    "$(manifest_is_core_owned node)"
 fi
 
-if [ "$(manifest_scalar packageManager)" = "npm" ]; then
-  ok "cafaye.yml declares npm as the package manager"
+# The package manager is the one fact whose check had to MOVE rather than
+# invert. package.json records `packageManager: npm@10.9.7` and nothing checked
+# it; the manifest recorded the bare word `npm` and that was the only place the
+# package manager was checked at all. Checking the manifest's silence alone
+# would have quietly deleted the check, which is the failure this file exists to
+# catch, so the assertion lands on package.json instead — one file shallower and
+# one word more precise, since the field carries a version and `npm` did not.
+#
+# Both halves are in this one check on purpose: "npm is the package manager" and
+# "package.json is the only place that says so" are one fact with two failure
+# modes, and splitting them would spend a check slot on the arithmetic.
+PM=$(pkg_field packageManager)
+if [ "${PM%%@*}" = "npm" ] && [ -z "$(manifest_declares packageManager)" ]; then
+  ok "package.json declares npm as the package manager, and only package.json does"
 else
-  no "cafaye.yml declares npm as the package manager" \
-    "found '$(manifest_scalar packageManager)'"
+  no "package.json declares npm as the package manager, and only package.json does" \
+    "package.json's packageManager is '${PM:-<absent>}'${PM:+} (want npm@<version>)$( [ -n "$(manifest_declares packageManager)" ] && printf '; ' && manifest_is_core_owned packageManager )"
 fi
 
 # --- `npm ci`, never `npm install` ------------------------------------------
@@ -335,18 +376,31 @@ else
     "found: ${prime_commands:-<nothing>}"
 fi
 
-# The manifest already names the gate, so the two can be held to each other.
-if [ "$(manifest_scalar prime)" = "./bin/prime" ]; then
-  ok "cafaye.yml's quality.prime is ./bin/prime"
+# The manifest no longer names the gate, and these two checks replace the ones
+# that held the two answers to each other.
+#
+# Previously `spec.quality.prime` said ./bin/prime and this file compared it to
+# the script, on the reasoning that "if the two can disagree, one of them is
+# lying." The disagreement is now impossible rather than prevented: the gate is
+# declared once, by bin/prime itself, and CI is checked above to run that script
+# (`CI runs ./bin/prime`). The manifest's `spec.quality` had no place in core's
+# schema, so keeping the comparison would have meant keeping the draft.
+#
+# What replaces it is the check that stops the manifest naming a gate again.
+# That is not hypothetical politeness: a manifest that says `./bin/other` reads
+# as authoritative to anyone who reads the manifest first, and bin/prime would
+# keep passing, because the workflow check is looking at the workflow.
+if [ -z "$(manifest_declares prime)" ]; then
+  ok "cafaye.yml declares no gate command, so bin/prime is the only answer"
 else
-  no "cafaye.yml's quality.prime is ./bin/prime" \
-    "found '$(manifest_scalar prime)'"
+  no "cafaye.yml declares no gate command, so bin/prime is the only answer" \
+    "$(manifest_is_core_owned prime)"
 fi
-if [ "$(manifest_scalar test)" = "npm test" ]; then
-  ok "cafaye.yml's quality.test is npm test, which is what bin/prime runs"
+if [ -z "$(manifest_declares test)" ]; then
+  ok "cafaye.yml declares no test command, so bin/prime is the only answer"
 else
-  no "cafaye.yml's quality.test is npm test" \
-    "found '$(manifest_scalar test)'"
+  no "cafaye.yml declares no test command, so bin/prime is the only answer" \
+    "$(manifest_is_core_owned test)"
 fi
 
 # ---------------------------------------------------------------------------
@@ -755,17 +809,17 @@ self_test() {
     "language-bun|sed -i '' 's|language: node|language: bun|' '$SANDBOX/.github/workflows/ci.yml'" \
     "pin-drifts-into-ci|sed -i '' 's|\"node\":\"[^\"]*\"|\"node\":\"24.0.0\"|' '$SANDBOX/.github/workflows/ci.yml'" \
     "pin-drifts-in-mise|sed -i '' 's|^node = .*|node = \"20.11.0\"|' '$SANDBOX/mise.toml'" \
-    "manifest-major-disagrees|sed -i '' 's|node: \"22\"|node: \"20\"|' '$SANDBOX/cafaye.yml'" \
+    "manifest-reintroduces-a-node-pin|printf 'node: \"20\"\n' >>'$SANDBOX/cafaye.yml'" \
     "npm-install-in-ci|sed -i '' 's|npm ci|npm install \\&\\& npm ci|' '$SANDBOX/.github/workflows/ci.yml'" \
     "no-lockfile-guard|sed -i '' '/git diff --exit-code/d' '$SANDBOX/.github/workflows/ci.yml'" \
     "stale-script-name|sed -i '' 's|npm run typecheck|npm run typecheckp|' '$SANDBOX/.github/workflows/ci.yml'" \
     "ci-does-not-run-prime|sed -i '' 's|\\./bin/prime|echo skipping the gate|' '$SANDBOX/.github/workflows/ci.yml'" \
     "npm-install-in-prime|sed -i '' 's|^npm ci\$|npm install|' '$SANDBOX/bin/prime'" \
-    "prime-not-the-manifests-gate|sed -i '' 's|prime: ./bin/prime|prime: ./bin/other|' '$SANDBOX/cafaye.yml'" \
+    "manifest-reintroduces-a-gate-command|printf 'prime: ./bin/other\n' >>'$SANDBOX/cafaye.yml'" \
     "no-engines-field|node -e 'const f=process.argv[1];const p=require(f);delete p.engines;require(\"fs\").writeFileSync(f,JSON.stringify(p,null,2))' '$SANDBOX/package.json'" \
     "range-instead-of-a-pin|sed -i '' 's|\"node\": \"22.22.2\"|\"node\": \"^22\"|' '$SANDBOX/package.json'" \
-    "no-lockfile|sed -i '' 's|packageManager: npm|packageManager: pnpm|' '$SANDBOX/cafaye.yml'" \
-    "manifest-forgets-its-node|sed -i '' '/^    node: \"22\"$/d' '$SANDBOX/cafaye.yml'" \
+    "package-manager-is-not-npm|node -e 'const f=process.argv[1];const p=require(f);p.packageManager=\"pnpm@10.9.7\";require(\"fs\").writeFileSync(f,JSON.stringify(p,null,2))' '$SANDBOX/package.json'" \
+    "manifest-reintroduces-a-test-command|printf 'test: npm run other\n' >>'$SANDBOX/cafaye.yml'" \
     "no-e2e-workflow|rm -f '$SANDBOX/.github/workflows/e2e.yml'" \
     "e2e-in-the-per-commit-gate|printf '      - run: ./bin/e2e\n' >>'$SANDBOX/.github/workflows/ci.yml'" \
     "e2e-in-bin-prime|printf 'npm run e2e\n' >>'$SANDBOX/bin/prime'" \

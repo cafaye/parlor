@@ -1,148 +1,195 @@
-# cafaye.yml — DRAFT manifest for parlor.
+# cafaye.yml — the cafaye project manifest for parlor.
 #
-# STATUS: draft. The authoritative cafaye.yml schema lands with `core` v0
-# (PLAN.md Phase 0); `core` owns the format and this file gets reconciled when
-# it does. Do not build tooling against this shape yet — read it as intent.
+# The schema is owned by cafaye/core, not by this repository:
+# ../core/schemas/cafaye.manifest.schema.json. That schema sets
+# additionalProperties:false, so every key below is one core allows and the
+# `v0-draft` document this file used to be is not a variant of it — it was a
+# different document, and the harness reported nine violations of it, one of
+# which was the missing `core:` that every other service declares.
 #
-# What is stable even in draft form:
-#   - `healthz` / `readyz` paths and response shapes are the platform contract.
-#     Probe them; do not rename them.
-#   - `deps: none` is a placeholder that becomes a real dependency list once
-#     Phase 2 wires identity/billing/courier checks into /readyz.
+# Checked against a sibling core checkout with:
+#
+#   ../core/harness/bin/cafaye-contract --core ../core .
+#
+# That exits 0 to conform, 1 to not conform, 2 when the check could not run. It
+# reads core's published VERSION, so it is a real answer and not a presence
+# test. It is not in bin/prime, because bin/prime must stay offline and this
+# needs a core checkout; wiring it in is a follow-up with core in CI.
 
-apiVersion: cafaye/v0-draft
-kind: service
+name: parlor
 
-metadata:
-  name: parlor
-  version: 0.1.0
-  summary: >-
-    The cafaye app shell: App Router + Tailwind v4 theme, health surfaces and a
-    test rig. Template buyers own the resulting code.
+description: The cafaye web app: App Router shell, health surfaces, and the screens built against identity's and billing's live contracts.
 
-spec:
-  runtime:
-    language: typescript
-    framework: nextjs
-    node: "22"
-    packageManager: npm
-    build:
-      command: npm run build
-      output: standalone
-    serve:
-      command: npm start
-      port: 3000
+language: typescript
 
-  http:
-    port: 3000
-    routes:
-      - path: /
-        kind: page
-        phase: 2
-        note: Landing placeholder. Phase 2 replaces it with the product shell.
-      - path: /register
-        kind: page
-        phase: 2
-        note: >-
-          Account creation. POST /v1/users. A 422 places each failure on its own
-          field; a 409 says the address is taken.
-      - path: /login
-        kind: page
-        phase: 2
-        note: >-
-          Sign in. POST /v1/session. One generic sentence for every refusal, so
-          the screen cannot be used to enumerate accounts.
-      - path: /healthz
-        kind: route
-        method: GET
-        phase: 1
-        probe: liveness
-        response:
-          status: 200
-          body:
-            status: ok
-      - path: /readyz
-        kind: route
-        method: GET
-        phase: 1
-        probe: readiness
-        response:
-          status: 200
-          body:
-            status: ok
-            deps: none
+# What `core:` means for THIS service, stated plainly because it is not the
+# coupling it is for the other nine.
+#
+# **parlor vendors no core bytes.** Measured on this branch, not assumed:
+#   - no `.cafaye/core` directory and no vendir lockfile;
+#   - no `MUSE_CORE_SCHEMAS`-shaped env var and no core path in the Dockerfile;
+#   - no core entry in package.json, direct or transitive-by-vendoring;
+#   - neither CI workflow checks out cafaye/core at all.
+# So `^0.2.0` is NOT a build-time pin. Nothing here is compiled against, or
+# copied from, a core checkout, and a change under core's schemas/ cannot break
+# `npm test` in this repository by any path I can find.
+#
+# What it *is* is the generation of the core specification whose conventions
+# this code implements, which is a real dependency and worth a real constraint:
+#   - `src/lib/identity.ts` and `src/lib/billing.ts` parse and produce
+#     `application/problem+json` per RFC 9457 because
+#     core/docs/openapi-conventions.md requires it of every cafaye service;
+#   - `/healthz` and `/readyz` answer shapes this file's predecessor called
+#     "the platform contract", and tests/validate-ci.sh plus the route tests
+#     hold those keys stable.
+#
+# `^0.2.0` and not `>=0.1.0` because the constraint should name what the code
+# was written against, not the loosest thing that would pass a checker.
+#
+# The two documents this repository actually leans on are unchanged between
+# core's published tag v0.2.0 and core's current master, so `^0.2.0` describes
+# both and there is no drift hiding in the range:
+#
+#   $ git -C ../core diff --stat v0.2.0^{} master -- docs/openapi-conventions.md
+#   (no output)
+#   $ git -C ../core diff --stat v0.2.0^{} master -- schemas/cafaye.manifest.schema.json
+#   (no output)
+#
+# Which is worth saying precisely, because `schemas/` as a directory HAS moved
+# since the tag — core-15-tenancy added schemas/tenant-isolation.schema.json.
+# The manifest schema this file is written against has not, and that new schema
+# does not name parlor anywhere, so nothing here is compiling against a contract
+# that moved underneath it. That is the check this declaration makes possible,
+# and it is why the honest answer was a constraint rather than an omission.
+#
+# The honest gap this cannot close: nothing detects that a future convention
+# change in core reaches parlor without a person carrying it here. That is a
+# real cost of a convention-level dependency and it is stated rather than papered
+# over with a dependency that does not exist.
+core: ^0.2.0
 
-  # The browser calls identity directly; nothing is proxied through this
-  # process, so there is no build-time coupling and no startup check. /readyz
-  # still reports "none": a real probe is its own packet, because whether a
-  # slow identity should mean "not ready" is a decision and not a default.
-  dependencies:
-    - name: identity
-      phase: 2
-      base_url_env: NEXT_PUBLIC_IDENTITY_URL
-      default_base_url: http://localhost:8080
-      endpoints:
-        - POST /v1/users
-        - POST /v1/session
-        - DELETE /v1/session
-        - GET /v1/me
-      error_envelope: >-
-        RFC 9457 problem+json per core/docs/openapi-conventions.md, with the
-        {error:{...}} shape from the identity-02 brief also accepted. Unsettled;
-        the client reads both.
-      session: >-
-        Token in localStorage, not a cookie. The identity session cookie is
-        HttpOnly and the browser reaches identity cross-origin, so a BFF route
-        owns this before it can be a cookie. See README, "Sessions".
+# `exposes` is OMITTED, and that is a finding rather than an oversight.
+#
+# parlor serves HTTP traffic — it is a Next.js app, with /healthz and /readyz as
+# route handlers — and the manifest schema's own description says a service that
+# serves traffic must declare at least one of `api`/`events`. parlor can declare
+# neither, honestly:
+#
+#   - `events`: it publishes none and subscribes to none. It is a browser client
+#     of identity and billing, not a participant in the bus. Naming a type here
+#     would be a claim no code makes, and `event.unknown-published` is right to
+#     reject one.
+#   - `api`: this repository ships no OpenAPI document. Writing one now would be
+#     inventing an artifact, not describing this app, and it would not even be
+#     green to hand over: core's `openapi.paths-are-versioned` requires every
+#     path to carry a `/vN` prefix, and the health surfaces this platform
+#     mandates are deliberately unversioned. That collision is a real finding
+#     about the platform and it belongs to its own packet, not to a manifest
+#     rewrite.
+#
+# So the absence is stated here rather than filled with something that satisfies
+# a checker. Core's harness has the matching warning for exactly this case
+# (`openapi.no-document`), it is a warning rather than a rule by design, and
+# `exposes.api` is a one-line change the day a document exists.
+#
+# The cost, stated: while this stands, a client generated from this manifest gets
+# no HTTP surface for parlor, and nothing checks the app's routes against a
+# contract. That is a smaller thing than a document that lies.
 
-  container:
-    image: cafaye/parlor
-    dockerfile: Dockerfile
-    port: 3000
-    user: nextjs
+# parlor publishes no events and consumes none, per core's manifest conventions.
+# `consumes` and `exposes.events` are omitted rather than left as empty lists:
+# an empty list asserts "we checked and there are none", and the reason there are
+# none is a fact about the code, not a convention default.
 
-  # The end-to-end tier is NOT in `prime`. `bin/prime` is a pre-commit hook and
-  # a per-commit gate; a whole stack of containers, three image builds and a
-  # browser download are not either, and a gate that takes minutes is a gate
-  # people stop running. `end_to_end` is named separately so a tool can find it
-  # without having to read a convention out of a script.
-  quality:
-    test: npm test
-    lint: npm run lint
-    typecheck: npm run typecheck
-    prime: ./bin/prime
-    end_to_end: ./bin/e2e
+dependencies:
+  # The browser calls identity directly from `src/lib/identity.ts` and
+  # `src/lib/auth.tsx` — sign in, sign out, register, accounts, invitations all
+  # go through it, and the session state in auth.tsx is derived from it. The app
+  # has no meaning without it.
+  - name: identity
+    required: true
+  # Billing is a separate client (`src/lib/billing.ts`) behind two screens, and
+  # both render an error state rather than failing: `/billing/plans` and
+  # `/billing/customers` each check `isError` and show a state. `false` here
+  # means the app runs without it, degraded, which is measured from those two
+  # components rather than assumed.
+  - name: billing
+    required: false
+#
+# `version:` is deliberately absent from both. It means "the dependency's own
+# contract version", and neither identity nor billing publishes one: neither
+# carries a `version` key in its manifest, because core's schema has no such
+# key. guard declares `version: ^0.1.0` for identity with a comment admitting it
+# is "the platform's initial core range rather than a version identity has
+# shipped" — a placeholder that reads like a fact. Inventing one here would be
+# the same error with less honesty about it.
 
-  # The whole-stack topology the end-to-end tier drives. It is not cafaye
-  # service metadata: `caf dev` owns the local stack for developing against one
-  # service, and this is the harness's own. What is worth recording here is the
-  # port block, because it is the one fact a person on this machine needs before
-  # they run anything, and because a published port that is a literal is a
-  # collision the second developer hits.
-  e2e:
-    compose: e2e/docker-compose.yml
-    harness: bin/e2e
-    port_block: 16000-16099
-    entrypoints:
-      - name: edge
-        port: 16000
-        note: >-
-          The origin a browser loads. /v1/* goes to identity, everything else to
-          parlor. It exists because identity serves no CORS headers, so a
-          browser cannot call it from the app's own origin; e2e/edge.conf states
-          the measurement and the two fixes that belong in identity and parlor.
-      - name: parlor
-        port: 16003
-        note: The app under test, also published directly so "the app is up" and "the edge reaches it" are two facts.
-      - name: identity
-        port: 16080
-        note: Built from ../identity. Reached by the browser through the edge.
-      - name: guard
-        port: 16081
-        note: Built from ../guard. Reached directly by the stack's readiness assertions.
-    prerequisites:
-      - docker with the compose v2 plugin
-      - curl
-      - unzip
-      - goose (pinned; identity's own documented migration tool)
-      - sibling checkouts at ../identity and ../guard
+repository:
+  # SSH only. An HTTPS remote for a cafaye repo is a policy violation (PLAN.md §1).
+  # Read from `git remote get-url origin`, not assumed from the pattern.
+  url: git@github.com:cafaye/parlor.git
+  defaultBranch: master
+  visibility: public
+
+owner:
+  team: parlor
+  contact: parlor@cafaye.com
+
+# ---------------------------------------------------------------------------
+# Dropped from the v0-draft manifest, with the information kept here rather than
+# deleted. `additionalProperties:false` means these were violations, not
+# extensions, so core has nowhere to put them and neither does this file. Each
+# names the place the fact now lives, which is the point: a reader who wants the
+# port block or the gate command should not have to read it out of a contract.
+#
+#   apiVersion: cafaye/v0-draft / kind: service
+#       Neither key is in core's schema. `kind: service` is implied — the schema
+#       is a service manifest and describes one object — and core freezes the
+#       format, so this repository does not version it.
+#
+#   metadata.version: 0.1.0
+#       package.json's `version`, which is the package's version and not a
+#       contract version. Core tracks spec versions through `core:` and through
+#       git; a third version number in this file is the footgun identity's
+#       manifest calls out.
+#
+#   metadata.summary
+#       Became `description` above.
+#
+#   spec.runtime.*
+#       `node: "22"` and `packageManager: npm` were coarse mirrors of the
+#       runtime pin, and the exact number is not a contract fact. The pin of
+#       record is `engines.node` in package.json; mise.toml and
+#       .github/workflows/ci.yml mirror it; tests/validate-ci.sh fails when the
+#       mirrors drift and now also fails if the manifest grows a fourth copy.
+#       `build.command` and `serve.command` are package.json scripts; the
+#       container shape is the Dockerfile.
+#
+#   spec.http.routes
+#       The routes are Next.js App Router files, so the router is the source of
+#       truth and a manifest listing paths is a second copy that drifts. /healthz
+#       and /readyz are src/app/healthz/route.ts and src/app/readyz/route.ts,
+#       each with a test beside it. Their response keys are still platform
+#       contract; AGENTS.md, "Health surfaces" holds that, and if either shape
+#       changes this file does not need to change with it.
+#
+#   spec.container.*
+#       Dockerfile. `image: cafaye/parlor` and `user: nextjs` are both already
+#       stated there, and an image name is not part of a service's contract.
+#
+#   spec.quality.*
+#       `test`, `lint`, `typecheck` are package.json scripts, which is where npm
+#       and CI already read them. `prime: ./bin/prime` and
+#       `end_to_end: ./bin/e2e` are gates, not contract: the per-commit gate is
+#       bin/prime and the whole-stack tier is bin/e2e, and naming them here
+#       created a third place that had to be held in agreement. tests/validate-ci.sh
+#       now asserts the manifest declares neither, so the answer stays one file.
+#
+#   spec.e2e.*
+#       The stack is e2e/docker-compose.yml, the same-origin edge and why it
+#       exists are in e2e/edge.conf, the lifecycle and bounded readiness poll are
+#       bin/e2e-stack, the port block and its fallbacks are playwright.config.ts,
+#       and the tier is bin/e2e. It was never cafaye service metadata: `caf dev`
+#       owns the local stack for developing against one service, and this is the
+#       harness's own.
+# ---------------------------------------------------------------------------
