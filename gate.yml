@@ -1,0 +1,324 @@
+# gate.yml — how parlor is gated, declared rather than guessed.
+#
+# WHY THIS FILE EXISTS. `core` ships the format (schemas/gate.schema.json) and
+# the checker (harness/gate_check.py), and its own docs/gate.md measures the
+# thing this file answers: across the fifteen repositories in this workspace,
+# "run the gate" had five different spellings, and every one of the bad runs was
+# found by a person getting it wrong rather than by a check. parlor was already
+# in the majority spelling — `mise run prime` — so the file here is not about
+# which command runs. It is about the three things a mise task structurally
+# cannot hold, and that a next reader would otherwise have to infer:
+#
+#   1. WHAT the gate needs from the machine that is not this repository. See
+#      `external` below. The honest answer used to live in a comment at the top
+#      of mise.toml, and a comment is not checkable.
+#   2. WHETHER THE GATE RAN, as opposed to exited zero. See `proof` below.
+#   3. THAT CI RUNS THE SAME GATE. See `ci` below.
+#
+# Every number in this file was read out of a real run of this repository's gate
+# on 2026-09-30, not copied from another repository's declaration, and every
+# one of them was read out of CAPTURED BYTES rather than off a terminal. The
+# last clause is not a style note: the `suite` proof below was written by
+# somebody who read a terminal, and that is the whole reason this file was
+# wrong once. See the proof's own comment.
+version: 1
+name: parlor
+
+gate:
+  # An argv, never a shell string, so the exit code is the gate's own. This
+  # fleet's one recorded false green was `... | tail -45; echo "PRIME EXIT=$?"`
+  # under zsh, where `$?` is tail's exit code and tail is always 0.
+  command: [./bin/prime]
+  # The fleet's spelling, and it is already the one AGENTS.md documents. Named
+  # here so `mise run prime` and gate.yml cannot be two different gates.
+  miseTask: prime
+  # The file behind the command, and the file `[tasks.prime].run` must resolve
+  # to. `mise.toml` says `run = "./bin/prime"`; the checker cross-checks that
+  # against this line, so a task that drifted onto another file is a finding
+  # rather than a quiet disagreement.
+  entrypoint: bin/prime
+  # Deliberately generous, and the reasoning is the same as core's. The long
+  # pole is `npm ci` on a COLD checkout: on this machine two runs took 46s and
+  # 16s, both with node_modules absent and the npm cache warm, and a fresh CI
+  # runner with an empty cache and a cold registry connection is minutes. A warm
+  # run of this gate is about a minute end to end (the install, ~25s of vitest,
+  # the rest the static checks and their self-test). A budget tight enough to be
+  # a bug detector would be a flake generator on the first CI run of the day,
+  # and a timeout that fires on a cold cache is `gate.timeout`, which reads as
+  # "the gate hung" and is really "the budget was a guess".
+  timeoutSeconds: 900
+  # Three proofs, because `bin/prime` runs three separately-countable things
+  # and "the gate exited 0" says nothing about any of them. A proof is a line
+  # the gate's own output must contain, with a floor read from one capture
+  # group, so a run that skipped a step and exited zero is a FAILURE and not a
+  # smaller green. This is the defect in `cafaye-rb`, where the database tier
+  # never executed once and the run printed `ok`. Each of the three below is
+  # the one line that cannot appear unless its step ran to the end, so a
+  # `bin/prime` that quietly stopped doing one of the three is red rather than
+  # a green with a smaller number in it.
+  proof:
+    # THE VITEST SUMMARY, and the only proof in this file that has to cope with
+    # colour. Read the rest of this comment before you "simplify" the pattern;
+    # the pattern is long because of what it has to reject, not because of what
+    # it has to accept.
+    #
+    # WHAT THE BYTES ACTUALLY ARE. `bin/prime` runs `npm test`, the checker
+    # captures that with `subprocess.run(..., capture_output=True)`, and the
+    # bytes on disk in the checker's `gate.log` for the summary line are, with
+    # colour forced on:
+    #
+    #     \x1b[2m      Tests \x1b[22m \x1b[1m\x1b[32m377 passed\x1b[39m\x1b[22m\x1b[90m (377)\x1b[39m
+    #
+    # and with colour off:
+    #
+    #     <6 spaces>Tests  377 passed (377)
+    #
+    # Both were measured, from two runs of this repository's own gate on
+    # 2026-09-30 that differ only in FORCE_COLOR. `^[ ]*` — which is what this
+    # pattern said when the manager found it red — cannot match the first,
+    # because the line begins with an escape and not with a space, and so the
+    # checker reported `gate.proof-missing` about a gate that had proved, in
+    # the same log, that it ran 377 tests. Three other cases failed the same
+    # way, all of them fixtures that should have been caught by `gate.floor`
+    # and were caught by `gate.proof-missing` instead, because the floor is
+    # never read when the proof never matched.
+    #
+    # WHY THE ORIGINAL WAS WRONG. It was written by reading a terminal. A
+    # person looking at vitest's output sees `Tests  377 passed` in plain text
+    # whether or not the bytes behind it are decorated. The checker reads the
+    # bytes. Those are two different streams and only one of them is something
+    # a person can eyeball a regular expression against, which means the
+    # obvious way to write a correct pattern is the way that fails.
+    #
+    # WHAT IS REDUNDANT AND WHY IT IS HERE ANYWAY. This is a WORKAROUND FOR A
+    # CORE DEFECT, tracked as D13 and redundant once `core-13` lands — the same
+    # treatment `ci.yml`'s block scalar got for its own core-reader gap, and it
+    # is written here rather than only in a report so the next reader meets it
+    # in the file they are about to change. `core-13` changes
+    # `harness/gate_check.py` to strip ANSI from the gate's captured output
+    # before it applies any `proof[].match` — the manager ruled that as MD17,
+    # and it is the right place for the fix because it is one place rather than
+    # one workaround per adopting repository. Once that lands, the
+    # escape-tolerance below is dead weight: core hands this pattern a string
+    # with no escapes in it, the alternation never fires, and the pattern is
+    # exactly as strict as it looks. It is here anyway because a declaration
+    # that is only correct on the day the fix lands is a declaration this
+    # repository cannot gate itself today. Do not carry it past core-13; delete
+    # it, and keep the negative-lookahead half, which is a real tightening and
+    # has nothing to do with colour. `tests/gate-declaration-self-test.sh` says
+    # so out loud: it runs the pre-fix pattern against the same captured bytes
+    # and expects it to be red, and SKIPS that expectation the day core stops
+    # being able to fail.
+    #
+    # THE SAME REASONING IS WHY THE SELF-TEST'S CONTROL RUNS TWICE. A control
+    # that only passes on a machine whose tools do not colourise is a control
+    # that reports the day rather than the repository, which is how this pattern
+    # came to be shipped in a state its own self-test called green. The second
+    # control runs the real gate with `FORCE_COLOR=1` in the environment the
+    # checker captures it in. Do not delete it to save a minute of wall clock.
+    #
+    # THE PATTERN, PART BY PART, because "it is a long regex" is not a reason:
+    #
+    #   (?:[ ]|\x1b\[[0-9;]*m)*   before `Tests` and before the digits. Runs of
+    #                             spaces and SGR sequences in any order, in any
+    #                             number, including none. It cannot swallow a
+    #                             letter or a digit, which is what stops this
+    #                             from being "match a line that says Tests and
+    #                             a number somewhere".
+    #   Tests                     the word. `Test Files  17 passed (17)` is one
+    #                             line above it and does NOT match, because
+    #                             "Tests" is not a prefix of "Test Files" —
+    #                             `Test` is followed by a space, not an `s`.
+    #                             The file count can never satisfy this floor,
+    #                             and that is asserted by a case in the
+    #                             self-test rather than left to a comment.
+    #   ([0-9]+)                  the one and only capture group. The checker
+    #                             reads the floor from exactly one, and reports
+    #                             `gate.proof-invalid` for zero or two, so
+    #                             every other group here is `(?:...)`.
+    #   [ ]+passed                a literal space, then the word. vitest prints
+    #                             `377 passed`, never `377  passed` and never
+    #                             `377green`.
+    #   (?!... \|)                THE TIGHTENING, and the reason a broadened
+    #                             pattern is affordable. A run with a skip, a
+    #                             todo or a failure prints the count and then
+    #                             a separator before the rest of the summary:
+    #
+    #                                 <6 spaces>Tests  2 passed | 1 skipped (3)
+    #                                 \x1b[2m      Tests \x1b[22m …2 passed…\x1b[2m | \x1b[22m…1 skipped…
+    #
+    #                             The old pattern matched both of those and
+    #                             read 2, or 377, off a suite that had skipped.
+    #                             This one refuses any line where, after
+    #                             `passed`, the next thing is a `|`. So a skip
+    #                             is `gate.proof-missing` and not a smaller
+    #                             green — the same rule AGENTS.md already states
+    #                             for the end-to-end tier, applied to the suite.
+    #
+    #                             The tail after the separator is deliberately
+    #                             NOT constrained. vitest appends ` (377)` and
+    #                             this pattern does not care, so a future format
+    #                             change in the summary's tail is not a red
+    #                             gate; only the `|` is load-bearing.
+    #
+    # 377 is what the suite has today, so the floor is a decrease-detector and
+    # not a budget: a suite that quietly lost forty tests cannot report itself
+    # as passing. It is the only place in parlor that writes down how many tests
+    # there are, which is deliberate — there is no ratchet test here forcing it
+    # to stay in step (see the report: core has
+    # `test_the_gate_floor_is_not_below_the_suite_core_claims_to_have`, and
+    # parlor has no equivalent, so raising this number when the suite grows is
+    # a thing a human has to remember until MD12's machinery lands).
+    - id: suite
+      match: '^(?:[ ]|\x1b\[[0-9;]*m)*Tests(?:[ ]|\x1b\[[0-9;]*m)*([0-9]+)[ ]+passed(?!(?:[ ]|\x1b\[[0-9;]*m)*\|)'
+      minimum: 377
+    # The tally `tests/validate-ci.sh` prints, which is the second half of this
+    # gate: the checks that the tree still has the shape CI assumes — one
+    # runtime pin, `npm ci` and not `npm install`, the gate command, the
+    # end-to-end tier's shape. 35 is this machine's count.
+    #
+    # NO ESCAPE TOLERANCE HERE, and the difference is measured rather than
+    # assumed. This line is a bash `printf` in `tests/validate-ci.sh` (line 825),
+    # and that file contains no byte that can start an ANSI escape and no call
+    # to `tput` — `grep -c $'\x1b' tests/validate-ci.sh` is 0. It cannot
+    # colourise, so a pattern that tolerated colour here would be matching
+    # something the source is incapable of printing, which is a weaker proof
+    # bought for nothing. The self-test asserts that source property, so if
+    # somebody does add colour here the assertion fires and the gate goes red
+    # at the same moment, which is the right order to find out in.
+    #
+    # The pattern counts CHECKS PASSED and reads the skipped count as a number
+    # it deliberately does not floor, because it is not a constant: shellcheck
+    # is installed on this machine (so the line reads `35 passed, 0 failed, 0
+    # skipped`) and is not installed on every machine (so it would read
+    # `35 passed, 0 failed, 1 skipped`). A floor on the total would be a
+    # different number in the two places, which is the "green badge means
+    # different things on different machines" defect in miniature. The skip is
+    # still visible in the line, and `bin/prime` prints it, so a reader can see
+    # it — a skipped check is not a passing check and this declaration does not
+    # pretend otherwise.
+    - id: ci-shape-checks
+      match: '^([0-9]+) passed, [0-9]+ failed, [0-9]+ skipped$'
+      minimum: 35
+    # And the self-test, which is what makes the 35 above load-bearing: 34
+    # throwaway copies of the tree, each broken one way, each asserted to go
+    # red. A gate that runs the 35 checks but silently stopped proving they can
+    # fail would still print `35 passed` — this is the line that says the
+    # rubber stamp was pressed.
+    #
+    # Also a bash `printf` in the same file (line 816) and also plain by
+    # construction, for the same measured reason. `^self_test:` is anchored
+    # hard enough that nothing else in a vitest or npm log can be mistaken for
+    # it; the earlier `self_test:` lines this script prints on a failure do not
+    # match either, because the pattern needs the digits immediately after the
+    # colon.
+    - id: check-self-test
+      match: '^self_test: ([0-9]+) breakages'
+      minimum: 34
+  # NOT PROVED, and named here rather than left to be discovered: a proof is a
+  # line of output. `377 passed` proves 377 tests ran; it does not prove the
+  # tests touched identity, because they do not — the identity and billing
+  # clients are stubbed in the render rig and `src/lib/identity.test.ts`
+  # replaces global fetch with a function that throws. Proving that the tests
+  # hit what they claim to is MD12's collect-then-run machinery, owed in `caf`,
+  # and core's harness/gate_findings.json names it as a thing this format does
+  # not do.
+
+external:
+  # NOT self-contained, and saying so is the point of the field. Two things
+  # this repository does not carry: `node_modules/` is gitignored, so a fresh
+  # clone has none of the 553 entries package-lock.json resolves, and there is
+  # no vendored Node. A declaration that called this self-contained would be
+  # describing a gate nobody has ever run on a clean machine — the same defect
+  # as identity's gate being green against a database nobody had migrated,
+  # told the other way round.
+  selfContained: false
+  requirements:
+    # Every requirement here names a command you can paste and what you see
+    # when it is not satisfied, because a requirement nobody can check is a
+    # promise nobody kept. The two `satisfy.command` values below are bare
+    # names, so core's checker reports them as `gate.requirement-unproven` —
+    # a WARNING that never moves the exit code, and correctly so: `npm` and
+    # `mise` are claims about the machine, not about this tree, and a checker
+    # that ran them would be red on a laptop and green on CI. That is the
+    # design, not an oversight, and the two warnings a `gate-check` run prints
+    # on this repository are expected.
+    - kind: toolchain
+      # The pin of record is `engines.node` in package.json; mise.toml mirrors
+      # it for a developer's local toolchain and `.npmrc` is what makes the
+      # two disagreeing into a red build. The brief for this packet names
+      # `templates/mise.toml` as the thing a toolchain has to be pinned in; this
+      # repository has no `templates/` directory and never has — its mirror is
+      # `mise.toml` at the root, and `tests/validate-ci.sh` fails the gate when
+      # it and package.json and the workflow disagree. That is a real
+      # difference from the brief's phrasing and it is the whole reason
+      # requirements are enumerated per repository instead of copied.
+      name: Node 22.22.2 and the npm that ships with it, as pinned in package.json and mise.toml
+      satisfy:
+        command: [mise, install]
+        # Demonstrated, not asserted: with `engines.node` set to 99.0.0 and
+        # `.npmrc`'s `engine-strict=true` left alone, `npm ci` exits 1 and
+        # prints `npm error code EBADENGINE` / `npm error engine Unsupported
+        # engine`. A wrong Node is therefore a red `bin/prime` at its second
+        # command, not a suite that quietly passed on a different runtime.
+        # Measured on this machine, where the ambient Node outside this
+        # directory is a different minor than the one mise.toml pins.
+        unmet: npm ci exits 1 with `npm error code EBADENGINE`, and bin/prime stops at its second command
+    - kind: network
+      # ONCE, on a cold checkout only. `npm ci` resolves package-lock.json's
+      # entries from the registry on a checkout that has no node_modules;
+      # after that `bin/prime` needs no network at all, and a warm second run
+      # in the same working tree is offline apart from npm's own audit fetch.
+      name: the npm registry, ONCE, on a cold checkout only — the entries in package-lock.json
+      satisfy:
+        # `npm ci` rather than `./bin/prime`, deliberately. `core` spells its
+        # network requirement as a repository-relative path — `[tests/setup.sh]`
+        # — because that repository HAS a separate installer script for the
+        # checker to point at. This one does not: `bin/prime` folds the
+        # install into the gate, so naming the gate as the thing that satisfies
+        # its own requirement would be a reader being told to run the whole
+        # test suite to find out whether it has a network. `npm ci` is the
+        # command that actually resolves the missing thing, and it is what
+        # `bin/prime`'s first line runs.
+        command: [npm, ci]
+        unmet: node_modules/ does not exist, or npm ci exits nonzero with a network error
+  # NOT REQUIRED, and named here so nobody goes looking for them, because every
+  # one of these is a thing a reader of `bin/prime` cannot see and might
+  # reasonably assume:
+  #
+  #   * NO DATABASE and NO SERVICE. The suite is vitest in jsdom with no
+  #     listener and no socket; identity and billing are stubbed. The Postgres
+  #     and Redis in `e2e/docker-compose.yml`, and docker, curl, unzip, goose
+  #     and the sibling `../identity` and `../guard` checkouts, all belong to
+  #     `./bin/e2e` — a different tier in a different workflow, deliberately
+  #     kept out of the per-commit gate by a check in tests/validate-ci.sh.
+  #   * NO CREDENTIAL. Nothing in the gate reads a secret, and nothing in it
+  #     writes one.
+  #   * NO SHELLCHECK. It is optional: `tests/validate-ci.sh` lints itself with
+  #     it when it is installed and prints SKIP when it is not. The tally this
+  #     declaration floors counts checks PASSED, which is the same number either
+  #     way — see the `ci-shape-checks` proof above.
+
+ci:
+  # `ci.yml`, and not `e2e.yml`. The `prime` job in ci.yml runs `./bin/prime` —
+  # literally the same argv a developer types, which is the point: if the
+  # workflow and the gate can disagree, one of them is lying. `e2e.yml` is the
+  # whole-stack tier and does not call this gate at all, so declaring it here
+  # would be `gate.ci-disagrees` and, worse, would be a lie.
+  #
+  # Note what is NOT declared here and should not be: that ci.yml also has a
+  # `ci` job running kit's reusable workflow and a `build` job running
+  # typecheck + next build. They are not the gate. `bin/prime` is the gate, and
+  # core's checker asks one question of a workflow — does it invoke the argv
+  # this declaration names — so a declaration that listed the build job as the
+  # gate would be checked against a job that is not one.
+  #
+  # The `prime` job spells that invocation as a `run: |` block and not as a
+  # one-line `run: ./bin/prime`, and the reason is written above the step in the
+  # workflow itself. `core`'s `workflow_run_lines()` only collects block bodies,
+  # so a one-line `run:` is invisible to `gate.ci-disagrees` — a workaround for
+  # a core defect in the same family as the one this packet fixes, and the same
+  # treatment the `suite` proof above got. The reader itself is
+  # `harness/gate_check.py`; the comment in ci.yml has the exact regex.
+  workflow: .github/workflows/ci.yml
+  invokes: [./bin/prime]
