@@ -101,8 +101,48 @@ spec:
     port: 3000
     user: nextjs
 
+  # The end-to-end tier is NOT in `prime`. `bin/prime` is a pre-commit hook and
+  # a per-commit gate; a whole stack of containers, three image builds and a
+  # browser download are not either, and a gate that takes minutes is a gate
+  # people stop running. `end_to_end` is named separately so a tool can find it
+  # without having to read a convention out of a script.
   quality:
     test: npm test
     lint: npm run lint
     typecheck: npm run typecheck
     prime: ./bin/prime
+    end_to_end: ./bin/e2e
+
+  # The whole-stack topology the end-to-end tier drives. It is not cafaye
+  # service metadata: `caf dev` owns the local stack for developing against one
+  # service, and this is the harness's own. What is worth recording here is the
+  # port block, because it is the one fact a person on this machine needs before
+  # they run anything, and because a published port that is a literal is a
+  # collision the second developer hits.
+  e2e:
+    compose: e2e/docker-compose.yml
+    harness: bin/e2e
+    port_block: 16000-16099
+    entrypoints:
+      - name: edge
+        port: 16000
+        note: >-
+          The origin a browser loads. /v1/* goes to identity, everything else to
+          parlor. It exists because identity serves no CORS headers, so a
+          browser cannot call it from the app's own origin; e2e/edge.conf states
+          the measurement and the two fixes that belong in identity and parlor.
+      - name: parlor
+        port: 16003
+        note: The app under test, also published directly so "the app is up" and "the edge reaches it" are two facts.
+      - name: identity
+        port: 16080
+        note: Built from ../identity. Reached by the browser through the edge.
+      - name: guard
+        port: 16081
+        note: Built from ../guard. Reached directly by the stack's readiness assertions.
+    prerequisites:
+      - docker with the compose v2 plugin
+      - curl
+      - unzip
+      - goose (pinned; identity's own documented migration tool)
+      - sibling checkouts at ../identity and ../guard

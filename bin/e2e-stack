@@ -192,7 +192,10 @@ build() {
   local started elapsed status
   started=$(date +%s)
   set +e
-  compose_timed "$BUILD_TIMEOUT" build
+  # `E2E_BUILD_FLAGS` exists for one measurement: `--no-cache`, for the cold-run
+  # number in the report. It is an array on purpose, so a caller cannot smuggle
+  # a second command in through a string.
+  compose_timed "$BUILD_TIMEOUT" build ${E2E_BUILD_FLAGS[@]+"${E2E_BUILD_FLAGS[@]}"}
   status=$?
   set -e
   elapsed=$(elapsed_since "$started")
