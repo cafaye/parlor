@@ -19,6 +19,16 @@ export type StubIdentity = IdentityClient & {
   login: MockedFunction<IdentityClient["login"]>;
   logout: MockedFunction<IdentityClient["logout"]>;
   me: MockedFunction<IdentityClient["me"]>;
+  listAccounts: MockedFunction<IdentityClient["listAccounts"]>;
+  createAccount: MockedFunction<IdentityClient["createAccount"]>;
+  getAccount: MockedFunction<IdentityClient["getAccount"]>;
+  renameAccount: MockedFunction<IdentityClient["renameAccount"]>;
+  deleteAccount: MockedFunction<IdentityClient["deleteAccount"]>;
+  listMembers: MockedFunction<IdentityClient["listMembers"]>;
+  inviteMember: MockedFunction<IdentityClient["inviteMember"]>;
+  acceptInvitation: MockedFunction<IdentityClient["acceptInvitation"]>;
+  changeMemberRole: MockedFunction<IdentityClient["changeMemberRole"]>;
+  removeMember: MockedFunction<IdentityClient["removeMember"]>;
 };
 
 const unscripted = (method: string) =>
@@ -32,6 +42,16 @@ export function stubIdentity(overrides: Partial<IdentityClient> = {}): StubIdent
     login: vi.fn(overrides.login ?? unscripted("login")),
     logout: vi.fn(overrides.logout ?? unscripted("logout")),
     me: vi.fn(overrides.me ?? unscripted("me")),
+    listAccounts: vi.fn(overrides.listAccounts ?? unscripted("listAccounts")),
+    createAccount: vi.fn(overrides.createAccount ?? unscripted("createAccount")),
+    getAccount: vi.fn(overrides.getAccount ?? unscripted("getAccount")),
+    renameAccount: vi.fn(overrides.renameAccount ?? unscripted("renameAccount")),
+    deleteAccount: vi.fn(overrides.deleteAccount ?? unscripted("deleteAccount")),
+    listMembers: vi.fn(overrides.listMembers ?? unscripted("listMembers")),
+    inviteMember: vi.fn(overrides.inviteMember ?? unscripted("inviteMember")),
+    acceptInvitation: vi.fn(overrides.acceptInvitation ?? unscripted("acceptInvitation")),
+    changeMemberRole: vi.fn(overrides.changeMemberRole ?? unscripted("changeMemberRole")),
+    removeMember: vi.fn(overrides.removeMember ?? unscripted("removeMember")),
   } as StubIdentity;
 }
 
@@ -52,3 +72,12 @@ export function anIdentityError(
     fieldErrors: extra.fieldErrors ?? [],
   });
 }
+
+/**
+ * The signed-in user a tenancy test runs as.
+ *
+ * The account screens need somebody whose id they can compare a member row
+ * against, so it is a constant rather than a default argument: a test that
+ * cares which member is "you" should have to say so.
+ */
+export const THE_USER: User = aUser({ id: "usr_me_0001", email: "kaka@example.com" });

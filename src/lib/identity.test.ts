@@ -10,6 +10,7 @@ import {
   type Transport,
   type TransportRequest,
 } from "./identity";
+import { MAX_NAME_LENGTH } from "./roles";
 
 /**
  * Hand-rolled transport. No msw: the surface is four endpoints, and a recording
@@ -59,6 +60,25 @@ const problem = (
   });
 
 const CREDENTIALS = { email: "kaka@example.com", password: "correct horse" };
+
+/**
+ * Awaits a call that must fail and hands back the `IdentityError`.
+ *
+ * Better than `.catch(error => error as IdentityError)`, which types as
+ * `T | IdentityError` and so lets a test read `.status` off a success value —
+ * and which silently passes if the call resolves, since there is no failure to
+ * notice. This one throws if the promise resolved, so "it failed" is part of
+ * what the test proved.
+ */
+async function theFailure(promise: Promise<unknown>): Promise<IdentityError> {
+  try {
+    await promise;
+  } catch (error) {
+    if (error instanceof IdentityError) return error;
+    throw error;
+  }
+  throw new Error("expected the call to be refused, but it resolved");
+}
 
 let baseUrl: string;
 
@@ -407,5 +427,341 @@ describe("fieldErrorMessage", () => {
 
     expect(message).toBe("Email is not valid.");
     expect(message).not.toContain("something_new_in_the_contract");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The tenancy surface: accounts, members and invitations.
+//
+// Every request and response shape below is transcribed from the service's own
+// handler, `identity/internal/httpapi/accounts.go` — the `json:` tags on
+// accountResponse, accountListItem, membershipResponse, invitationResponse and
+// the five request bodies, and the status codes in registerTenancyRoutes and
+// writeTenancyError. These are the merged implementation's shapes, not guesses
+// from a document: `identity/openapi/v1.yaml` on master does not describe the
+// tenancy surface at all (see the packet report), so the handler is the only
+// authority there is.
+// ---------------------------------------------------------------------------
+
+const ACCOUNT_ID = "acc_1a2b3c";
+const USER_ID = "usr_9f8e7d";
+
+/** accountResponse, as handleCreateAccount and handleGetAccount write it. */
+const anAccount = (overrides: Record<string, unknown> = {}) => ({
+  id: ACCOUNT_ID,
+  name: "Acme Corp",
+  slug: "acme-corp",
+  personal: false,
+  role: "owner",
+  created_at: "2026-09-01T10:00:00Z",
+  updated_at: "2026-09-01T10:00:00Z",
+  ...overrides,
+});
+
+/** accountListItem — the same row without members and without updated_at. */
+const anAccountListItem = (overrides: Record<string, unknown> = {}) => ({
+  id: ACCOUNT_ID,
+  name: "Acme Corp",
+  slug: "acme-corp",
+  personal: false,
+  role: "owner",
+  created_at: "2026-09-01T10:00:00Z",
+  ...overrides,
+});
+
+/** membershipResponse, as handleAcceptInvitation and handleChangeRole write it. */
+const aMembership = (overrides: Record<string, unknown> = {}) => ({
+  account_id: ACCOUNT_ID,
+  user_id: USER_ID,
+  role: "member",
+  created_at: "2026-09-02T11:00:00Z",
+  ...overrides,
+});
+
+/** invitationResponse — the 201, which is the only place the token appears. */
+const anInvitation = (overrides: Record<string, unknown> = {}) => ({
+  id: "inv_5e4d3c",
+  account_id: ACCOUNT_ID,
+  email: "newcomer@example.com",
+  role: "member",
+  token: "inv_tok_9z8y7x",
+  expires_at: "2026-09-08T10:00:00Z",
+  created_at: "2026-09-01T10:05:00Z",
+  ...overrides,
+});
+
+describe("tenancy: the request each endpoint makes", () => {
+  it("lists the caller's accounts", async () => {
+    const { transport, calls } = stubTransport(() => json(200, [anAccountListItem()]));
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const accounts = await client.listAccounts("tok_abc");
+
+    expect(calls[0].method).toBe("GET");
+    expect(calls[0].url).toBe(`${baseUrl}/v1/accounts`);
+    expect(calls[0].headers.Authorization).toBe("Bearer tok_abc");
+    expect(accounts).toEqual([anAccountListItem()]);
+  });
+
+  it("reads a memberless list item without inventing the fields it lacks", async () => {
+    // accountListItem has no `members` and no `updated_at`. A client that
+    // fabricated them would be showing a detail response on a list page.
+    const { transport } = stubTransport(() => json(200, [anAccountListItem()]));
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const [account] = await client.listAccounts("tok_abc");
+
+    expect(account).not.toHaveProperty("members");
+    expect(account).not.toHaveProperty("updated_at");
+  });
+
+  it("creates an account from a name alone", async () => {
+    const { transport, calls } = stubTransport(() => json(201, anAccount()));
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await client.createAccount("tok_abc", { name: "Acme Corp" });
+
+    expect(calls[0].method).toBe("POST");
+    expect(calls[0].url).toBe(`${baseUrl}/v1/accounts`);
+    // The owner is the caller and the slug is derived; neither is the client's
+    // to send, and the service's request body has exactly one field.
+    expect(JSON.parse(calls[0].body as string)).toEqual({ name: "Acme Corp" });
+  });
+
+  it("reads one account by id", async () => {
+    const { transport, calls } = stubTransport(() => json(200, anAccount()));
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await client.getAccount("tok_abc", ACCOUNT_ID);
+
+    expect(calls[0].method).toBe("GET");
+    expect(calls[0].url).toBe(`${baseUrl}/v1/accounts/${ACCOUNT_ID}`);
+  });
+
+  it("renames with PATCH and sends only a name", async () => {
+    const { transport, calls } = stubTransport(() => json(200, anAccount({ name: "Acme Ltd" })));
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const renamed = await client.renameAccount("tok_abc", ACCOUNT_ID, { name: "Acme Ltd" });
+
+    expect(calls[0].method).toBe("PATCH");
+    expect(calls[0].url).toBe(`${baseUrl}/v1/accounts/${ACCOUNT_ID}`);
+    expect(JSON.parse(calls[0].body as string)).toEqual({ name: "Acme Ltd" });
+    expect(renamed.name).toBe("Acme Ltd");
+  });
+
+  it("lists members, which is a wrapper and not an array", async () => {
+    // handleListMembers answers {memberships, role} so a client rendering the
+    // panel knows the caller's own role without a third request.
+    const { transport, calls } = stubTransport(() =>
+      json(200, { memberships: [aMembership()], role: "owner" }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const panel = await client.listMembers("tok_abc", ACCOUNT_ID);
+
+    expect(calls[0].url).toBe(`${baseUrl}/v1/accounts/${ACCOUNT_ID}/members`);
+    expect(panel.role).toBe("owner");
+    expect(panel.memberships).toHaveLength(1);
+  });
+
+  it("invites with an email and a role", async () => {
+    const { transport, calls } = stubTransport(() => json(201, anInvitation()));
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const invitation = await client.inviteMember("tok_abc", ACCOUNT_ID, {
+      email: "newcomer@example.com",
+      role: "member",
+    });
+
+    expect(calls[0].method).toBe("POST");
+    expect(calls[0].url).toBe(`${baseUrl}/v1/accounts/${ACCOUNT_ID}/invitations`);
+    expect(JSON.parse(calls[0].body as string)).toEqual({
+      email: "newcomer@example.com",
+      role: "member",
+    });
+    // The token is returned exactly once, by this endpoint and no other.
+    expect(invitation.token).toBe("inv_tok_9z8y7x");
+  });
+
+  it("accepts an invitation by token, with no account in the path", async () => {
+    const { transport, calls } = stubTransport(() => json(200, aMembership()));
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const membership = await client.acceptInvitation("tok_abc", { token: "inv_tok_9z8y7x" });
+
+    expect(calls[0].method).toBe("POST");
+    expect(calls[0].url).toBe(`${baseUrl}/v1/invitations/accept`);
+    expect(JSON.parse(calls[0].body as string)).toEqual({ token: "inv_tok_9z8y7x" });
+    expect(membership.role).toBe("member");
+  });
+
+  it("changes a member's role by user id", async () => {
+    const { transport, calls } = stubTransport(() => json(200, aMembership({ role: "admin" })));
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await client.changeMemberRole("tok_abc", ACCOUNT_ID, USER_ID, { role: "admin" });
+
+    expect(calls[0].method).toBe("PATCH");
+    expect(calls[0].url).toBe(`${baseUrl}/v1/accounts/${ACCOUNT_ID}/members/${USER_ID}`);
+    expect(JSON.parse(calls[0].body as string)).toEqual({ role: "admin" });
+  });
+
+  it("removes a member and expects no body back", async () => {
+    const { transport, calls } = stubTransport(() => new Response(null, { status: 204 }));
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await expect(client.removeMember("tok_abc", ACCOUNT_ID, USER_ID)).resolves.toBeUndefined();
+
+    expect(calls[0].method).toBe("DELETE");
+    expect(calls[0].url).toBe(`${baseUrl}/v1/accounts/${ACCOUNT_ID}/members/${USER_ID}`);
+  });
+
+  it("deletes an account and expects no body back", async () => {
+    const { transport, calls } = stubTransport(() => new Response(null, { status: 204 }));
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await expect(client.deleteAccount("tok_abc", ACCOUNT_ID)).resolves.toBeUndefined();
+
+    expect(calls[0].method).toBe("DELETE");
+    expect(calls[0].url).toBe(`${baseUrl}/v1/accounts/${ACCOUNT_ID}`);
+  });
+
+  it("sends the bearer token on every tenancy call", async () => {
+    // Every account route resolves a session first, so a tenancy call without
+    // the token is a guaranteed 401.
+    const { transport, calls } = stubTransport((call) =>
+      call.method === "DELETE" ? new Response(null, { status: 204 }) : json(200, []),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await client.listAccounts("tok_abc");
+    await client.getAccount("tok_abc", ACCOUNT_ID);
+    await client.deleteAccount("tok_abc", ACCOUNT_ID);
+
+    for (const call of calls) {
+      expect(call.headers.Authorization).toBe("Bearer tok_abc");
+    }
+  });
+});
+
+describe("tenancy: the failures the service declares", () => {
+  // The table in writeTenancyError. Which of these a screen renders differently
+  // is the whole reason they are tested individually: a 404 and a 403 are two
+  // different sentences to a person even though both are refusals.
+  const cases: Array<[number, string]> = [
+    [401, "unauthorized"],
+    [403, "forbidden"],
+    [404, "not_found"],
+    [409, "conflict"],
+    [410, "gone"],
+    [422, "validation_failed"],
+    [500, "internal"],
+  ];
+
+  it.each(cases)("keeps the %i status and code through to the error", async (status, code) => {
+    const { transport } = stubTransport(() => problem(status, { code, title: "Refused" }));
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const failure = await theFailure(client.listAccounts("tok_abc"));
+
+    expect(failure).toBeInstanceOf(IdentityError);
+    expect(failure.status).toBe(status);
+    expect(failure.code).toBe(code);
+  });
+
+  it("reports an expired invitation as gone, distinctly from an unknown one", async () => {
+    // The service maps both ErrInvitationExpired and ErrInvitationUsed to 410,
+    // and ErrInvitationNotFound to 404 "so a guessed token is useless". The
+    // accept page has to be able to tell those two apart, and it can only do it
+    // from the status.
+    const expired = stubTransport(() =>
+      problem(410, { code: "gone", title: "Gone", detail: "this invitation has expired; ask for a new one" }),
+    );
+    const unknown = stubTransport(() =>
+      problem(404, { code: "not_found", title: "Not found", detail: "no invitation matches that token" }),
+    );
+
+    const a = await theFailure(
+      createIdentityClient({ baseUrl, transport: expired.transport }).acceptInvitation("tok_abc", {
+        token: "t",
+      }),
+    );
+    const b = await theFailure(
+      createIdentityClient({ baseUrl, transport: unknown.transport }).acceptInvitation("tok_abc", {
+        token: "t",
+      }),
+    );
+
+    expect(a.status).toBe(410);
+    expect(b.status).toBe(404);
+  });
+
+  it("carries a last-owner refusal as a field error on the role", async () => {
+    const { transport } = stubTransport(() =>
+      problem(422, {
+        code: "validation_failed",
+        title: "Validation failed",
+        errors: [{ field: "role", code: "last_owner" }],
+      }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const failure = await theFailure(
+      client.changeMemberRole("tok_abc", ACCOUNT_ID, USER_ID, { role: "member" }),
+    );
+
+    expect(failure.status).toBe(422);
+    expect(failure.fieldErrors).toEqual([{ field: "role", code: "last_owner" }]);
+  });
+
+  it("carries a not-invitable refusal as a field error on the role", async () => {
+    const { transport } = stubTransport(() =>
+      problem(422, {
+        code: "validation_failed",
+        title: "Validation failed",
+        errors: [{ field: "role", code: "not_invitable" }],
+      }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const failure = await theFailure(
+      client.inviteMember("tok_abc", ACCOUNT_ID, { email: "a@example.com", role: "admin" }),
+    );
+
+    expect(failure.fieldErrors).toEqual([{ field: "role", code: "not_invitable" }]);
+  });
+});
+
+describe("fieldErrorMessage: the tenancy codes", () => {
+  it("says a blank name is required, not invalid", () => {
+    // The service keeps these apart because they mean different things to the
+    // person filling in the form.
+    expect(fieldErrorMessage("name", "required")).toBe("Name is required.");
+  });
+
+  it("asks for a name it can make a handle from", () => {
+    expect(fieldErrorMessage("name", "invalid_format")).toMatch(/letter or number/i);
+  });
+
+  it("quotes the maximum length for a long name", () => {
+    expect(fieldErrorMessage("name", "too_long")).toContain(String(MAX_NAME_LENGTH));
+  });
+
+  it("explains that only an owner may hand out admin", () => {
+    expect(fieldErrorMessage("role", "not_invitable")).toMatch(/admin or member/i);
+  });
+
+  it("explains that an account keeps an owner", () => {
+    expect(fieldErrorMessage("role", "last_owner")).toMatch(/owner/i);
+  });
+
+  it("explains that the role is not one the service knows", () => {
+    expect(fieldErrorMessage("role", "unknown_role")).toMatch(/role/i);
+  });
+
+  it("never leaks an unknown tenancy code into the sentence", () => {
+    const message = fieldErrorMessage("role", "some_future_code");
+    expect(message).not.toContain("some_future_code");
   });
 });

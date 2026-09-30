@@ -1,12 +1,16 @@
 /**
  * Typed client for the identity service.
  *
- * The four endpoints this file speaks are fixed by contract:
+ * The endpoints this file speaks are fixed by contract:
  *
  *   POST   /v1/users     201 {id,email} | 422 | 409
  *   POST   /v1/session  200 {token,expires_at} | 401
  *   DELETE /v1/session  204
  *   GET    /v1/me        200 {id,email} | 401
+ *
+ * and the tenancy surface the same service exposes under /v1/accounts and
+ * /v1/invitations. See "The tenancy surface" below for where those shapes come
+ * from, which is not the place you would expect.
  *
  * Two decisions are worth stating up front, because both will look like
  * accidents otherwise.
@@ -22,6 +26,8 @@
  *    can never reach the network by accident, and a future BFF proxy is a
  *    different transport rather than a rewrite of every screen.
  */
+
+import { MAX_NAME_LENGTH, type Role } from "@/lib/roles";
 
 /** Where identity runs when nothing says otherwise: the compose stack. */
 export const DEFAULT_IDENTITY_URL = "http://localhost:8080";
@@ -39,12 +45,107 @@ export type Credentials = { email: string; password: string };
 export type User = { id: string; email: string };
 export type Session = { token: string; expires_at: string };
 
+// ---------------------------------------------------------------------------
+// The tenancy surface
+//
+// These shapes are transcribed from the service's own handler — the `json:` tags
+// on accountResponse, accountListItem, membershipResponse, invitationResponse
+// and the five request bodies in `identity/internal/httpapi/accounts.go` — and
+// the status codes from its `registerTenancyRoutes` and `writeTenancyError`.
+//
+// They are NOT transcribed from `identity/openapi/v1.yaml`, because that
+// document does not describe any of them. The document was last changed before
+// the packet that added the tenancy implementation was merged, so the routes
+// exist in the service and in its tests but not in the published contract. The
+// handler is the stricter authority anyway — a struct tag is the wire, and a
+// document is a description of one — but the gap is real and is the first thing
+// that should be closed on the service side. Until it is, this file is the
+// client half of a contract that has not been written down yet.
+// ---------------------------------------------------------------------------
+
+/**
+ * An account, as the caller sees it.
+ *
+ * `role` is the CALLER's role in this account and not a property of the
+ * account, which is why it travels on every response: without it a client
+ * cannot decide whether to render a settings form, and answering that needs a
+ * round trip for a value the authorization layer has already resolved.
+ */
+export type Account = {
+  id: string;
+  name: string;
+  slug: string;
+  personal: boolean;
+  role: Role;
+  created_at: string;
+  updated_at: string;
+};
+
+/**
+ * The account detail response.
+ *
+ * `members` is `omitempty` on the wire and absent on a list, and the absence is
+ * meaningful: an empty list and no list are different answers, so this is
+ * optional rather than defaulted to `[]`.
+ */
+export type AccountDetail = Account & { members?: Membership[] };
+
+/**
+ * One row of `GET /v1/accounts`.
+ *
+ * Its own type rather than a trimmed `Account`, because the service sends
+ * neither `members` nor `updated_at` here and a list is "a navigation aid
+ * carrying the minimum a client needs to render a row and open it".
+ */
+export type AccountListItem = {
+  id: string;
+  name: string;
+  slug: string;
+  personal: boolean;
+  role: Role;
+  created_at: string;
+};
+
+/** A membership: an account, a user, and a role. */
+export type Membership = {
+  account_id: string;
+  user_id: string;
+  role: Role;
+  created_at: string;
+};
+
+/**
+ * The member panel's response.
+ *
+ * A wrapper rather than an array so a client rendering the panel knows the
+ * caller's own role without a third request.
+ */
+export type MemberList = { memberships: Membership[]; role: Role };
+
+/**
+ * A pending invitation, and on creation its one-time token.
+ *
+ * `token` appears here and nowhere else: there is no endpoint that re-reads it
+ * and no column that stores it, only its digest. It is returned because until
+ * courier exists, returning it is the only way an invitation can be delivered
+ * at all. Nothing here may store it.
+ */
+export type Invitation = {
+  id: string;
+  account_id: string;
+  email: string;
+  role: Role;
+  token: string;
+  expires_at: string;
+  created_at: string;
+};
+
 /** One `{field, code}` pair out of a 422. The codes are contract vocabulary. */
 export type FieldError = { field: string; code: string };
 
 export type TransportRequest = {
   url: string;
-  method: "GET" | "POST" | "DELETE";
+  method: "GET" | "POST" | "PATCH" | "DELETE";
   headers: Record<string, string>;
   body?: string;
 };
@@ -56,6 +157,30 @@ export type IdentityClient = {
   login(credentials: Credentials): Promise<Session>;
   logout(token: string): Promise<void>;
   me(token: string): Promise<User>;
+
+  // The tenancy surface. Every one of these takes the session token, because
+  // every account route resolves a session before it does anything else, and
+  // the token doubles as the path segment's authority: a call without it is a
+  // 401 rather than a 403.
+  listAccounts(token: string): Promise<AccountListItem[]>;
+  createAccount(token: string, input: { name: string }): Promise<Account>;
+  getAccount(token: string, accountId: string): Promise<AccountDetail>;
+  renameAccount(token: string, accountId: string, input: { name: string }): Promise<Account>;
+  deleteAccount(token: string, accountId: string): Promise<void>;
+  listMembers(token: string, accountId: string): Promise<MemberList>;
+  inviteMember(
+    token: string,
+    accountId: string,
+    input: { email: string; role: Role },
+  ): Promise<Invitation>;
+  acceptInvitation(token: string, input: { token: string }): Promise<Membership>;
+  changeMemberRole(
+    token: string,
+    accountId: string,
+    userId: string,
+    input: { role: Role },
+  ): Promise<Membership>;
+  removeMember(token: string, accountId: string, userId: string): Promise<void>;
 };
 
 export class IdentityError extends Error {
@@ -123,6 +248,32 @@ export function createIdentityClient(
     login: (credentials) => send(transport, `${base}/v1/session`, "POST", { body: credentials }),
     logout: (token) => send(transport, `${base}/v1/session`, "DELETE", { token }),
     me: (token) => send(transport, `${base}/v1/me`, "GET", { token }),
+
+    listAccounts: (token) => send(transport, `${base}/v1/accounts`, "GET", { token }),
+    createAccount: (token, input) =>
+      send(transport, `${base}/v1/accounts`, "POST", { token, body: input }),
+    getAccount: (token, accountId) =>
+      send(transport, `${base}/v1/accounts/${accountId}`, "GET", { token }),
+    renameAccount: (token, accountId, input) =>
+      send(transport, `${base}/v1/accounts/${accountId}`, "PATCH", { token, body: input }),
+    deleteAccount: (token, accountId) =>
+      send(transport, `${base}/v1/accounts/${accountId}`, "DELETE", { token }),
+    listMembers: (token, accountId) =>
+      send(transport, `${base}/v1/accounts/${accountId}/members`, "GET", { token }),
+    inviteMember: (token, accountId, input) =>
+      send(transport, `${base}/v1/accounts/${accountId}/invitations`, "POST", {
+        token,
+        body: input,
+      }),
+    acceptInvitation: (token, input) =>
+      send(transport, `${base}/v1/invitations/accept`, "POST", { token, body: input }),
+    changeMemberRole: (token, accountId, userId, input) =>
+      send(transport, `${base}/v1/accounts/${accountId}/members/${userId}`, "PATCH", {
+        token,
+        body: input,
+      }),
+    removeMember: (token, accountId, userId) =>
+      send(transport, `${base}/v1/accounts/${accountId}/members/${userId}`, "DELETE", { token }),
   };
 }
 
@@ -250,6 +401,14 @@ function readProblemFieldErrors(value: unknown): FieldError[] {
 
 /** Turns one contract field code into a sentence for a person. */
 export function fieldErrorMessage(field: string, code: string): string {
+  // The tenancy codes first, because a role failure is a sentence about what
+  // the service will not let you do rather than about the shape of a value, and
+  // the generic fallbacks below would flatten all four of them into "Role is
+  // not valid." — which is true, useless, and the same sentence for four
+  // different mistakes.
+  const tenancy = tenancyFieldMessage(field, code);
+  if (tenancy) return tenancy;
+
   const label = fieldLabel(field);
   switch (code) {
     case "required":
@@ -261,12 +420,43 @@ export function fieldErrorMessage(field: string, code: string): string {
         ? `Use at least ${MIN_PASSWORD_LENGTH} characters.`
         : `${label} is too short.`;
     case "too_long":
-      return `${label} is too long.`;
+      // The name has a published bound, so the sentence can quote it rather
+      // than say "too long" and send somebody to look it up.
+      return field === "name"
+        ? `Use ${MAX_NAME_LENGTH} characters or fewer.`
+        : `${label} is too long.`;
     default:
       // An unknown code is a gap in this table, not something to show a person.
       // It stays on the error for telemetry; the sentence stays plain.
       return `${label} is not valid.`;
   }
+}
+
+/**
+ * The tenancy field codes, which the service declares in its own package.
+ *
+ * `internal/accounts/accounts.go` calls these "part of the contract and
+ * clients may switch on them", so each one gets a sentence that says what
+ * actually happened rather than what shape a value had.
+ */
+function tenancyFieldMessage(field: string, code: string): string | null {
+  if (field === "name" && code === "invalid_format") {
+    // ValidateName's third rule. A name with nothing sluggable in it would
+    // produce an empty slug, and a slug is NOT NULL and unique — so the service
+    // refuses it rather than turning a 422 into a 500. Saying so is more use
+    // than "Name is not valid."
+    return "Use a name with at least one letter or number in it.";
+  }
+  if (field === "role" && code === "not_invitable") {
+    return "An invitation may carry the admin or member role.";
+  }
+  if (field === "role" && code === "last_owner") {
+    return "This account must keep at least one owner.";
+  }
+  if (field === "role" && code === "unknown_role") {
+    return "Choose a role this account recognises.";
+  }
+  return null;
 }
 
 function fieldLabel(field: string): string {
