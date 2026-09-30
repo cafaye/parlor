@@ -65,14 +65,22 @@ skipped() {
   printf 'SKIP  %s\n' "$1"
 }
 
-# Read one scalar out of package.json. Absent key reads as the empty string
-# rather than throwing, so a missing pin fails a check instead of the script.
+# Read one field out of package.json, by dotted path. An absent key reads as
+# the empty string rather than throwing, so a missing pin fails a check with a
+# sentence about the pin rather than a stack trace about the reader.
 pkg_field() {
-  node -e 'const p=require(process.argv[1]);const v=p[process.argv[2]];process.stdout.write(v===undefined?"":String(v))' "$PKG" "$1"
+  node -e '
+    let v = require(process.argv[1]);
+    for (const key of process.argv[2].split(".")) {
+      if (v === null || typeof v !== "object" || !(key in v)) { v = undefined; break }
+      v = v[key];
+    }
+    process.stdout.write(v === undefined ? "" : String(v));
+  ' "$PKG" "$1"
 }
 
-pkg_script() {
-  node -e 'const p=require(process.argv[1]);const s=p.scripts||{};process.stdout.write(process.argv[3] in s?"yes":"no")' "$PKG" "$1"
+pkg_has_script() {
+  node -e 'const s=(require(process.argv[1]).scripts)||{};process.stdout.write(process.argv[2] in s ? "yes" : "no")' "$PKG" "$1"
 }
 
 # The pin of record. It lives in package.json because that is the one file
@@ -99,6 +107,31 @@ manifest_scalar() {
   sed -n "s/^[[:space:]]*$1:[[:space:]]*\(.*\)$/\1/p" "$MANIFEST" | head -1
 }
 
+# The workflow with its comments stripped, so every command check below reads
+# what the workflow *does* rather than what it says about itself. Without this,
+# a comment explaining "never npm install here" fails the very check that
+# forbids npm install — and a check that punishes the warning it should be
+# encouraging is a check that gets deleted within a month.
+code_lines() {
+  sed 's/[[:space:]]*#.*$//' "$1" | grep -v '^[[:space:]]*$'
+}
+
+# NOT `some-pipeline | grep -q pattern`. Under `set -o pipefail` that is a trap:
+# `grep -q` exits on its first match, the writer on the left takes SIGPIPE and
+# exits 141, and the pipeline reports 141 — so a check that found exactly what
+# it was looking for reads as "not found" and passes. It was not a theory: the
+# `npm install` check below reported PASS on a tree the self-test had just
+# broken, for this reason and no other. Every match here is captured into a
+# variable and tested for emptiness, which has no early exit to lose.
+# `|| true` is for grep's exit 1 on no match, not for hiding a failure.
+found() {
+  grep -E "$1" || true
+}
+
+found_fixed() {
+  grep -F "$1" || true
+}
+
 # --- the workflow exists, and calls kit at the path that resolves -----------
 if [ -f "$WF" ]; then
   ok "ci.yml exists"
@@ -108,14 +141,14 @@ else
   exit 1
 fi
 
-if grep -qF "$USES_LINE" "$WF"; then
+if [ -n "$(code_lines "$WF" | found_fixed "$USES_LINE")" ]; then
   ok "calls kit's reusable workflow at the documented path"
 else
   no "calls kit's reusable workflow at the documented path" \
     "expected the line: $USES_LINE"
 fi
 
-if grep -qF "$DEAD_USES" "$WF"; then
+if [ -n "$(code_lines "$WF" | found_fixed "$DEAD_USES")" ]; then
   no "no call to the unreachable kit path" \
     "$DEAD_USES resolves to nothing; a caller using it has a red build"
 else
@@ -151,7 +184,7 @@ PIN=$(pin_of_record)
 if [ -z "$PIN" ]; then
   no "package.json pins the runtime" \
     "engines.node is absent, so a pin that lives only in the workflow is a pin the next contributor silently loses"
-elif printf '%s' "$PIN" | grep -qE '[\^~><*xX[:space:]]'; then
+elif [ -n "$(printf '%s' "$PIN" | found '[\^~><*xX[:space:]]')" ]; then
   no "the runtime pin is exact" \
     "engines.node is \"$PIN\"; a range lets a suite pass on whichever patch the image was cached with"
 else
@@ -201,15 +234,17 @@ fi
 # it is the one install that refuses to drift. `npm install` in a CI path
 # resolves that disagreement silently and writes the resolution into the
 # tree, so the disagreement reaches master dressed as a passing build.
-if grep -rnE '(^|[^-[:alnum:]])npm[[:space:]]+install' "$ROOT/.github" "$PRIME" 2>/dev/null; then
+npm_installs=$({ code_lines "$WF"; cat "$PRIME"; } | found '(^|[^-[:alnum:]])npm[[:space:]]+install')
+if [ -n "$npm_installs" ]; then
   no "no npm install in any CI path" \
-    "found above; npm ci is the frozen install and npm install is not"
+    "found: $npm_installs — npm ci is the frozen install and npm install is not"
 else
-  ok "no npm install in any CI path"
+  ok "no npm install in any CI path (prose ignored)"
 fi
 
 # --- the lockfile guard ----------------------------------------------------
-if grep -qE 'git[[:space:]]+diff[[:space:]]+--exit-code([^[:space:]]|[[:space:]]+--)?[[:space:]].*'"$LOCKFILE" "$WF"; then
+guard=$(code_lines "$WF" | found 'git[[:space:]]+diff[[:space:]]+--exit-code([^[:space:]]|[[:space:]]+--)?[[:space:]].*'"$LOCKFILE")
+if [ -n "$guard" ]; then
   ok "CI fails when the gate moves $LOCKFILE"
 else
   no "CI fails when the gate moves $LOCKFILE" \
@@ -221,9 +256,9 @@ fi
 # it would read as infrastructure noise on the one run that should have been
 # about the code.
 missing_scripts=""
-called_scripts=$(grep -oE 'npm run [a-zA-Z0-9:_-]+' "$WF" | awk '{print $3}' | sort -u)
+called_scripts=$(code_lines "$WF" | grep -oE 'npm run [a-zA-Z0-9:_-]+' | awk '{print $3}' | sort -u)
 for script in $called_scripts; do
-  if [ "$(pkg_script "$script")" = "no" ]; then
+  if [ "$(pkg_has_script "$script")" = "no" ]; then
     missing_scripts="$missing_scripts $script"
   fi
 done
@@ -243,7 +278,7 @@ fi
 # Done means #5: the gate in CI is the command a developer runs, not a
 # hand-assembled list of npm scripts. If the two can disagree, one of them is
 # lying, and only the shared one can be trusted.
-if grep -qF './bin/prime' "$WF"; then
+if [ -n "$(code_lines "$WF" | found_fixed './bin/prime')" ]; then
   ok "CI runs ./bin/prime"
 else
   no "CI runs ./bin/prime" \
@@ -305,65 +340,83 @@ fi
 # the working tree being green — which is the only way it can be run at the
 # moment the tree is deliberately broken.
 self_test() {
-  local sandbox proofs=0
-  sandbox=$(mktemp -d)
-  trap 'rm -rf "${sandbox:?}"' EXIT
+  local proofs=0 proof name breakage
+  # Deliberately not `local`: the EXIT trap below is global, and a local would
+  # be out of scope by the time the trap runs — leaving the sandbox behind, or
+  # erroring on a set -u reference to a variable that no longer exists.
+  SANDBOX=$(mktemp -d)
+  trap 'rm -rf "${SANDBOX:-/nonexistent}"' EXIT
 
-  mkdir -p "$sandbox/tests" "$sandbox/.github/workflows" "$sandbox/bin"
-  cp "$ROOT/tests/validate-ci.sh" "$sandbox/tests/validate-ci.sh"
-  cp "$PRIME" "$sandbox/bin/prime"
-  cp "$PKG" "$sandbox/package.json"
-  cp "$MISE" "$sandbox/mise.toml"
-  cp "$MANIFEST" "$sandbox/cafaye.yml"
-  cp "$WF" "$sandbox/.github/workflows/ci.yml"
+  # Every file the checks read, copied verbatim. The lockfile comes along
+  # because a sandbox without it fails the "a committed lockfile exists" check
+  # and the baseline would be red for a reason that has nothing to do with the
+  # breakages under test.
+  seed_sandbox() {
+    rm -rf "${SANDBOX:?:?}"/*
+    mkdir -p "$SANDBOX/tests" "$SANDBOX/.github/workflows" "$SANDBOX/bin"
+    cp "$ROOT/tests/validate-ci.sh" "$SANDBOX/tests/validate-ci.sh"
+    cp "$PRIME" "$SANDBOX/bin/prime"
+    cp "$PKG" "$SANDBOX/package.json"
+    cp "$MISE" "$SANDBOX/mise.toml"
+    cp "$MANIFEST" "$SANDBOX/cafaye.yml"
+    cp "$ROOT/$LOCKFILE" "$SANDBOX/$LOCKFILE"
+    cp "$WF" "$SANDBOX/.github/workflows/ci.yml"
+  }
 
   # Baseline first: a self-test that cannot see the copy go green in the first
-  # place proves nothing about the twelve breakages that follow.
-  if ! bash "$sandbox/tests/validate-ci.sh" >/dev/null 2>&1; then
+  # place proves nothing about the thirteen breakages that follow.
+  seed_sandbox
+  if ! bash "$SANDBOX/tests/validate-ci.sh" >/dev/null 2>&1; then
     echo "self_test: the pristine copy does not pass; the breakages below prove nothing" >&2
     return 1
   fi
   echo "  ok   the pristine copy passes"
 
-  # Each breakage is a file under $sandbox and the sed that breaks it.
-  local proof
+  # Each breakage is a name and the sed that breaks it.
   for proof in \
-    "rm-workflow|rm -f '$sandbox/.github/workflows/ci.yml'" \
-    "dead-uses-path|sed -i '' 's|\.github/workflows/ci\.reusable|workflows/ci.reusable|' '$sandbox/.github/workflows/ci.yml'" \
-    "language-bun|sed -i '' 's|language: node|language: bun|' '$sandbox/.github/workflows/ci.yml'" \
-    "pin-drifts-into-ci|sed -i '' 's|\"node\":\"[^\"]*\"|\"node\":\"24.0.0\"|' '$sandbox/.github/workflows/ci.yml'" \
-    "pin-drifts-in-mise|sed -i '' 's|^node = .*|node = \"20.11.0\"|' '$sandbox/mise.toml'" \
-    "manifest-major-disagrees|sed -i '' 's|node: \"22\"|node: \"20\"|' '$sandbox/cafaye.yml'" \
-    "npm-install-in-ci|sed -i '' 's|npm ci|npm install \\&\\& npm ci|' '$sandbox/.github/workflows/ci.yml'" \
-    "no-lockfile-guard|sed -i '' '/git diff --exit-code/d' '$sandbox/.github/workflows/ci.yml'" \
-    "stale-script-name|sed -i '' 's|npm run typecheck|npm run typecheckp|' '$sandbox/.github/workflows/ci.yml'" \
-    "ci-does-not-run-prime|sed -i '' 's|\\./bin/prime|echo skipping the gate|' '$sandbox/.github/workflows/ci.yml'" \
-    "npm-install-in-prime|sed -i '' 's|^npm ci$|npm install|' '$sandbox/bin/prime'" \
-    "prime-not-the-manifests-gate|sed -i '' 's|prime: ./bin/prime|prime: ./bin/other|' '$sandbox/cafaye.yml'" \
-    "no-engines-field|node -e 'const f=process.argv[1];const p=require(f);delete p.engines;require(\"fs\").writeFileSync(f,JSON.stringify(p,null,2))' '$sandbox/package.json'"
+    "rm-workflow|rm -f '$SANDBOX/.github/workflows/ci.yml'" \
+    "dead-uses-path|sed -i '' 's|\.github/workflows/ci\.reusable|workflows/ci.reusable|' '$SANDBOX/.github/workflows/ci.yml'" \
+    "language-bun|sed -i '' 's|language: node|language: bun|' '$SANDBOX/.github/workflows/ci.yml'" \
+    "pin-drifts-into-ci|sed -i '' 's|\"node\":\"[^\"]*\"|\"node\":\"24.0.0\"|' '$SANDBOX/.github/workflows/ci.yml'" \
+    "pin-drifts-in-mise|sed -i '' 's|^node = .*|node = \"20.11.0\"|' '$SANDBOX/mise.toml'" \
+    "manifest-major-disagrees|sed -i '' 's|node: \"22\"|node: \"20\"|' '$SANDBOX/cafaye.yml'" \
+    "npm-install-in-ci|sed -i '' 's|npm ci|npm install \\&\\& npm ci|' '$SANDBOX/.github/workflows/ci.yml'" \
+    "no-lockfile-guard|sed -i '' '/git diff --exit-code/d' '$SANDBOX/.github/workflows/ci.yml'" \
+    "stale-script-name|sed -i '' 's|npm run typecheck|npm run typecheckp|' '$SANDBOX/.github/workflows/ci.yml'" \
+    "ci-does-not-run-prime|sed -i '' 's|\\./bin/prime|echo skipping the gate|' '$SANDBOX/.github/workflows/ci.yml'" \
+    "npm-install-in-prime|sed -i '' 's|^npm ci\$|npm install|' '$SANDBOX/bin/prime'" \
+    "prime-not-the-manifests-gate|sed -i '' 's|prime: ./bin/prime|prime: ./bin/other|' '$SANDBOX/cafaye.yml'" \
+    "no-engines-field|node -e 'const f=process.argv[1];const p=require(f);delete p.engines;require(\"fs\").writeFileSync(f,JSON.stringify(p,null,2))' '$SANDBOX/package.json'" \
+    "range-instead-of-a-pin|sed -i '' 's|\"node\": \"22.22.2\"|\"node\": \"^22\"|' '$SANDBOX/package.json'" \
+    "no-lockfile|sed -i '' 's|packageManager: npm|packageManager: pnpm|' '$SANDBOX/cafaye.yml'"
   do
-    local name=${proof%%|*}
-    local breakage=${proof#*|}
+    name=${proof%%|*}
+    breakage=${proof#*|}
 
     # One throwaway copy per breakage, seeded from the pristine one.
-    rm -rf "${sandbox:?}"/.github "${sandbox:?}"/bin "${sandbox:?}"/tests/validate-ci.sh \
-      "${sandbox:?}"/package.json "${sandbox:?}"/mise.toml "${sandbox:?}"/cafaye.yml
-    mkdir -p "$sandbox/.github/workflows" "$sandbox/bin"
-    cp "$ROOT/tests/validate-ci.sh" "$sandbox/tests/validate-ci.sh"
-    cp "$PRIME" "$sandbox/bin/prime"
-    cp "$PKG" "$sandbox/package.json"
-    cp "$MISE" "$sandbox/mise.toml"
-    cp "$MANIFEST" "$sandbox/cafaye.yml"
-    cp "$WF" "$sandbox/.github/workflows/ci.yml"
-
+    seed_sandbox
+    # shellcheck disable=SC2086  # the breakage list is deliberately a string
     eval "$breakage"
-    if bash "$sandbox/tests/validate-ci.sh" >/dev/null 2>&1; then
+    if bash "$SANDBOX/tests/validate-ci.sh" >/dev/null 2>&1; then
       printf 'self_test: %s did NOT go red — that check cannot fail\n' "$name" >&2
       return 1
     fi
     proofs=$((proofs + 1))
     printf '  ok   %s goes red\n' "$name"
   done
+
+  # The other direction, and the one that keeps the gate usable: a workflow
+  # whose *comments* say "npm ci, never npm install" must still pass. A check
+  # that punishes the warning it wants written is a check that gets deleted.
+  seed_sandbox
+  printf '# a comment that says npm install must not fail the check\n' \
+    >>"$SANDBOX/.github/workflows/ci.yml"
+  if bash "$SANDBOX/tests/validate-ci.sh" >/dev/null 2>&1; then
+    printf '  ok   a comment mentioning npm install does not go red\n'
+  else
+    echo "self_test: prose mentioning npm install went red; the checks read comments" >&2
+    return 1
+  fi
 
   printf 'self_test: %d breakages, every check proven able to fail\n' "$proofs"
 }
