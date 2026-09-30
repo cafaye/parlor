@@ -118,6 +118,74 @@ because the stack builds their images from those checkouts.
   part: it has no skip mechanism at all, and two readers of its report fail the
   run when fewer than two tests passed.
 
+## The gate is declared, not guessed
+
+`gate.yml` at the root declares what gates this repository: the command, the
+file behind it, the mise task it has to resolve to, the three lines the gate's
+own output must contain, and what the gate needs from the machine that is not
+in the repository. The format, the checker and the reasoning are `core`'s —
+`schemas/gate.schema.json`, `harness/gate_check.py`, `docs/gate.md`.
+
+- **`selfContained: false` is the honest answer, and it is a claim somebody has
+  to re-check when the gate changes.** `node_modules/` is gitignored, so a
+  fresh clone needs the registry once, and no Node is vendored. Both are
+  enumerated with a `satisfy` command and what "unmet" looks like. A
+  requirement nobody can demonstrate is worse than no requirement.
+- **The three `proof` floors are decrease-detectors, not budgets:** 377 vitest
+  tests, 35 `validate-ci.sh` checks, 34 self-test breakages. Adding a test means
+  raising `minimum: 377` in `gate.yml` in the same commit. `core` has
+  `test_the_gate_floor_is_not_below_the_suite_core_claims_to_have` to force
+  that; **this repository has no equivalent**, so it is a thing a human has to
+  remember.
+- **A proof is matched against BYTES, and the bytes are not what a terminal
+  shows.** `vitest` colours its summary, and with `FORCE_COLOR=1` in the
+  environment the line `core` captures is
+  `\x1b[2m      Tests \x1b[22m \x1b[1m\x1b[32m377 passed\x1b[39m…`. A pattern
+  written by looking at the rendered output does not match that, and the
+  checker then reports `gate.proof-missing` about a gate that has just proved,
+  in the same log, that it ran 377 tests. This repository has been bitten: the
+  `suite` proof shipped as `^[ ]*Tests[ ]+([0-9]+) passed` and was red on any
+  machine whose tools colourise. **Read the captured log, not the screen.**
+- **The escape tolerance in that pattern is a workaround for a core defect
+  (D13), redundant once `core-13` lands.** `core` ruling MD17 puts the fix in
+  `gate_check.py` — strip ANSI before matching — which is one place rather than
+  one workaround per adopting repository. Until then the repository carries its
+  own, and `gate.yml` says so above the pattern. When core strips, delete the
+  `(?:[ ]|\x1b\[[0-9;]*m)*` runs and **keep the `(?!…\|)`**: that half is a
+  real tightening with nothing to do with colour, and it is what makes a suite
+  that *skipped* a test `gate.proof-missing` rather than a smaller green.
+- **The other two proofs carry no escape tolerance on purpose.** The
+  `35 passed, …` tally and the `self_test: …` line are both bash `printf`s in
+  `tests/validate-ci.sh`, which contains no ESC byte and no `tput`, so it
+  cannot colourise. The self-test asserts that source property, so a
+  future attempt to add colour there is caught in the same commit that the
+  proofs go red.
+- **Do not put `run: <command>` on one line in `ci.yml`.** `core`'s checker
+  reads a workflow's `run: |` block bodies and nothing else, so a one-line
+  `run:` is invisible to `gate.ci-disagrees` and the step that runs the gate
+  stops counting as one. That is a workaround for a core defect too (D12), the
+  `prime` job uses a block scalar for this reason, and the comment above it
+  says why; do not "tidy" it back.
+- **`bash tests/gate-declaration-self-test.sh` proves the declaration is
+  load-bearing** — a control, then every breakage asserted to go red naming the
+  finding it expects, then one documented blind spot asserted to stay green. It
+  is deliberately **not** in `bin/prime`: the checker is `core`'s and is not
+  vendored here, and the proof cases each run the whole gate. It needs `core`
+  beside this repository or `CAFAYE_CORE_HARNESS`; without either it exits 2,
+  never 0.
+- **THE CONTROL RUNS TWICE, and the second run is the one that matters.** Once
+  as before, and once with `FORCE_COLOR=1` in the environment the checker
+  captures the gate in. A control that only passes where nothing colourises is
+  reporting the day, not the repository — which is exactly how a red control got
+  shipped as a green one here, and why **a self-test's own control going red
+  BLOCKS a packet** (D13). It is not a finding to append to a report; it is the
+  thing that decides whether the rest of the report means anything.
+- **The colour cases reproduce captured bytes, not an impression of them.** The
+  fixtures in that script are transcriptions of lines captured from a real run
+  of this repository's own gate. A fixture that re-rendered the output by hand
+  would be testing the fixture. If `vitest`'s reporter changes, re-capture the
+  bytes and update the fixtures — do not make them pass by loosening them.
+
 ## Tests first
 
 House rule (PLAN.md §3): write the test, watch it fail, then implement.

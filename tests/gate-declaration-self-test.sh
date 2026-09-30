@@ -347,6 +347,42 @@ $CHECK_OUT"
   return 0
 }
 
+# --------------------------------------------------------------------------
+# the `suite` proof's pattern, spelled ONCE
+# --------------------------------------------------------------------------
+#
+# Four cases edit this pattern and one case replaces it with the pre-fix one.
+# Spelling it out five times in this file means spelling it wrong in four of
+# them the first time gate.yml changes, and the failure is a self-test that
+# stops breaking what it says it breaks — the exact defect `edit` below exists
+# to catch, caught by `edit` instead. So the parts are named and the four
+# variants are built from the same two of them.
+#
+# `esc_run` is the "spaces and SGR sequences, in any order" run, and it is
+# spelled with SINGLE quotes so the backslashes reach the string literally:
+# this file is bash and the backslash is a regex escape, not a shell one.
+# Verified byte-for-byte against gate.yml below, which is the only assertion
+# that keeps the five spellings from drifting apart silently.
+esc_run='(?:[ ]|\x1b\[[0-9;]*m)*'
+suite_ok="^${esc_run}Tests${esc_run}([0-9]+)[ ]+passed(?!${esc_run}\|)"
+# breaks the middle clause, leaving a `(` the pattern cannot compile
+suite_uncompilable="^${esc_run}Tests${esc_run}([0-9]+ passed"
+# the same line with the capture group removed, so the floor has nothing to read
+suite_no_group="^${esc_run}Tests${esc_run}[0-9]+[ ]+passed(?!${esc_run}\|)"
+# a well-formed pattern the gate's output never contains
+suite_wrong_word="^${esc_run}Tests${esc_run}([0-9]+)[ ]+green"
+# what this packet replaced. Only ever used to prove the replacement mattered.
+suite_prefix='^[ ]*Tests[ ]+([0-9]+) passed'
+
+SUITE_MATCH="match: '${suite_ok}'"
+if ! grep -qF "$SUITE_MATCH" "$DECLARATION"; then
+  echo "gate-declaration-self-test: gate.yml does not contain the pattern this script builds." >&2
+  echo "  looked for: $SUITE_MATCH" >&2
+  echo "  Every colour case below depends on this being the declaration's own" >&2
+  echo "  spelling. Refusing rather than running a suite that breaks nothing." >&2
+  exit 1
+fi
+
 printf '==> seeding a fresh clone per breakage under %s\n\n' "$WORK"
 
 # --------------------------------------------------------------------------
@@ -495,7 +531,7 @@ seed_sandbox proof-uncompilable
 # runtime to discover. The brief names this case explicitly — a proof pattern
 # that does not compile is a DEFECT, not "no proof required".
 edit "$SANDBOX/gate.yml" \
-  "match: '^[ ]*Tests[ ]+([0-9]+) passed'" "match: '^[ ]*Tests[ ]+([0-9]+ passed'"
+  "$SUITE_MATCH" "match: '$suite_uncompilable'"
 expect_red 'a proof whose pattern does not compile, which would otherwise read as "no proof required"' \
   "$SANDBOX" 'gate.schema'
 
@@ -524,7 +560,7 @@ seed_sandbox proof-matches-nothing
 # and all 35 checks, and fails only because the declaration promised a line
 # that line is not on.
 edit "$SANDBOX/gate.yml" \
-  "match: '^[ ]*Tests[ ]+([0-9]+) passed'" "match: '^[ ]*Tests[ ]+([0-9]+) green'"
+  "$SUITE_MATCH" "match: '$suite_wrong_word'"
 expect_red 'a proof regex that matches nothing the gate actually prints' \
   "$SANDBOX" 'gate.proof-missing' --prove "proof 'suite'"
 
@@ -539,7 +575,7 @@ seed_sandbox floor-with-no-capture-group
 # promised against a capture group that is not there. A checker that read that
 # as "no floor" would accept a suite of any size.
 edit "$SANDBOX/gate.yml" \
-  "match: '^[ ]*Tests[ ]+([0-9]+) passed'" "match: '^[ ]*Tests[ ]+[0-9]+ passed'"
+  "$SUITE_MATCH" "match: '$suite_no_group'"
 expect_red 'a proof with a floor and no capture group to read the floor from' \
   "$SANDBOX" 'gate.proof-invalid' --prove "proof 'suite'"
 
@@ -679,8 +715,7 @@ expect_red 'a coloured run that printed the FILE count where the test count shou
 # is the thing this packet is about.
 seed_sandbox prefix-pattern-colour
 edit "$SANDBOX/gate.yml" \
-  "match: '^(?:[ ]|\\x1b\\[[0-9;]*m)*Tests(?:[ ]|\\x1b\\[[0-9;]*m)*([0-9]+)[ ]+passed(?!(?:[ ]|\\x1b\\[[0-9;]*m)*\\|)'" \
-  "match: '^[ ]*Tests[ ]+([0-9]+) passed'"
+  "$SUITE_MATCH" "match: '$suite_prefix'"
 write "$SANDBOX/bin/prime" <<'SH'
 #!/usr/bin/env bash
 # The same captured coloured bytes, against the pattern this packet replaced.
@@ -752,6 +787,10 @@ fi
 # Written whole rather than edited, because a blind spot that only reproduces
 # through a two-step sed is a blind spot nobody will ever re-run.
 seed_sandbox blind-spot-self-contained-true
+# Hand-written rather than built from $SUITE_MATCH, and deliberately minimal:
+# this case is about `external`, and a whole-file `write` with a quoted heredoc
+# is the only way to keep a declaration this small readable. The pattern here
+# is the plain pre-fix spelling and is not what the colour cases exercise.
 write "$SANDBOX/gate.yml" <<'YML'
 # Schema-valid, and false. This gate runs `npm ci`, which needs the registry.
 version: 1

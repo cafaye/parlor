@@ -41,11 +41,13 @@ gate:
   # pole is `npm ci` on a COLD checkout: on this machine two runs took 46s and
   # 16s, both with node_modules absent and the npm cache warm, and a fresh CI
   # runner with an empty cache and a cold registry connection is minutes. A warm
-  # run of this gate is about a minute end to end (the install, ~25s of vitest,
-  # the rest the static checks and their self-test). A budget tight enough to be
-  # a bug detector would be a flake generator on the first CI run of the day,
-  # and a timeout that fires on a cold cache is `gate.timeout`, which reads as
-  # "the gate hung" and is really "the budget was a guess".
+  # run of this gate — node_modules present, npm cache warm — measured 79s end
+  # to end on 2026-09-30 (`real 79.02s`), of which `npm ci` was 11s and vitest
+  # 7.8s and the rest the static checks and their 34-breakage self-test. A
+  # budget tight enough to be a bug detector would be a flake generator on the
+  # first CI run of the day, and a timeout that fires on a cold cache is
+  # `gate.timeout`, which reads as "the gate hung" and is really "the budget
+  # was a guess".
   timeoutSeconds: 900
   # Three proofs, because `bin/prime` runs three separately-countable things
   # and "the gate exited 0" says nothing about any of them. A proof is a line
@@ -227,8 +229,8 @@ gate:
 external:
   # NOT self-contained, and saying so is the point of the field. Two things
   # this repository does not carry: `node_modules/` is gitignored, so a fresh
-  # clone has none of the 553 entries package-lock.json resolves, and there is
-  # no vendored Node. A declaration that called this self-contained would be
+  # clone has none of the 455 packages `npm ci` installs, and there is no
+  # vendored Node. A declaration that called this self-contained would be
   # describing a gate nobody has ever run on a clean machine — the same defect
   # as identity's gate being green against a database nobody had migrated,
   # told the other way round.
@@ -266,10 +268,10 @@ external:
         unmet: npm ci exits 1 with `npm error code EBADENGINE`, and bin/prime stops at its second command
     - kind: network
       # ONCE, on a cold checkout only. `npm ci` resolves package-lock.json's
-      # entries from the registry on a checkout that has no node_modules;
+      # 455 packages from the registry on a checkout that has no node_modules;
       # after that `bin/prime` needs no network at all, and a warm second run
       # in the same working tree is offline apart from npm's own audit fetch.
-      name: the npm registry, ONCE, on a cold checkout only — the entries in package-lock.json
+      name: the npm registry, ONCE, on a cold checkout only — the 455 packages in package-lock.json
       satisfy:
         # `npm ci` rather than `./bin/prime`, deliberately. `core` spells its
         # network requirement as a repository-relative path — `[tests/setup.sh]`
