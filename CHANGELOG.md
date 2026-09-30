@@ -8,6 +8,49 @@ All notable changes to parlor are recorded here. The format follows
 
 ### Added
 
+- `.github/workflows/ci.yml` — three jobs. `ci` calls kit's reusable workflow
+  at `cafaye/kit/.github/workflows/ci.reusable.yml@master` with
+  `language: node`, so the shared install/lint/test contract lands here
+  without a copy. `prime` runs `./bin/prime` — the command a developer runs —
+  and then `git diff --exit-code -- package-lock.json`. `build` deletes
+  `.next`, runs `npm run typecheck`, runs `npm run build` with the two
+  build-time `NEXT_PUBLIC_*` values set, and asserts that
+  `.next/standalone/server.js` and `.next/BUILD_ID` exist, because those are
+  what the Dockerfile copies and nothing else notices when they are missing.
+- `tests/validate-ci.sh` — the half of the gate that checks the gate. Eighteen
+  checks over the runtime pin, the lockfile contract, the gate command, the
+  npm scripts the workflow calls, and the agreement between `package.json`,
+  `mise.toml`, the workflow and `cafaye.yml`. `--self-test` breaks a
+  throwaway copy 15 ways and asserts each one goes red, plus the opposite
+  case: a comment that merely *mentions* `npm install` must not fail the check
+  that forbids it. It reads the workflow as text with anchored greps, so it
+  needs no PyYAML, no yq and no jq.
+- The runtime pin, in `package.json`: `engines.node` 22.22.2 and
+  `packageManager` npm@10.9.7. There was no `engines` and no `packageManager`
+  before, so nothing in the repository pinned the runtime — `mise.toml` did,
+  but mise is a workstation tool and a CI runner never reads it. The same
+  `npm ci` on the machine this was written on ran on Node 22.12.0 one directory
+  away from the pin.
+- `.npmrc` with `engine-strict=true`, so the pin is a gate. Verified both ways
+  on a throwaway package: with it, `npm ci` exits nonzero (`npm error engine
+  Unsupported engine … Required: {"node":"99.0.0"} / Actual: {…,"node":"v12.0.0"}`);
+  without it, the same command prints `npm warn EBADENGINE` and installs.
+- `bin/prime` gained a third command, `bash tests/validate-ci.sh
+  --self-test`. It was `npm ci` then `npm test`. A developer running the gate
+  should get the same three checks CI does; otherwise the CI half is a variant,
+  and a variant is the thing this removes. The two original commands are
+  unchanged and still the reproduction check.
+
+### Changed
+
+- `mise.toml` — no version changed. A comment now says it mirrors
+  `package.json` and that the gate fails when the two disagree.
+- `README.md` and `AGENTS.md` — the pin is described as living in
+  `package.json` with three mirrors rather than as living in `mise.toml`, and
+  both gained a CI section. The old AGENTS.md line said "Node is pinned in
+  `mise.toml` … do not add a second pin", which was true when written and
+  wrong the moment the pin had to be readable by npm and by CI.
+
 - `src/lib/roles.ts` — the role vocabulary and the capability matrix, transcribed
   from identity's tenancy authorization: the order and the three names from
   `AllRoles` and `Role.AtLeast`, the matrix from `registerTenancyRoutes`, and the

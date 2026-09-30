@@ -18,18 +18,49 @@ CHANGELOG "Known gaps" for the five service-side gaps this build works around.
 ## Setup
 
 ```sh
-./bin/prime      # npm ci + npm test
+./bin/prime      # npm ci + npm test + the CI gate
 mise install      # node version from mise.toml
 ```
 
-- Node is pinned in `mise.toml` (22.22.2 — the floor jsdom@30 demands; bump
-  the pin rather than downgrading the test rig). Do not add an `.nvmrc` or a
-  second pin.
-- Install with `npm ci`, never `npm install` — the lockfile is the contract.
+- **The runtime pin of record is `engines.node` in `package.json`** (22.22.2 —
+  the floor jsdom@30 demands; bump the pin rather than downgrading the test
+  rig). `packageManager` records the npm that ships with it, and `.npmrc`'s
+  `engine-strict=true` is what makes `npm ci` fail on a Node that does not
+  match instead of warning. `mise.toml` and `.github/workflows/ci.yml` mirror
+  the number; `tests/validate-ci.sh` fails when the mirrors drift, and
+  `bin/prime` runs it. Do not add an `.nvmrc` or a fifth place to write it.
+- Install with `npm ci`, never `npm install` — the lockfile is the contract,
+  and `npm install` in a CI path resolves a disagreement that `npm ci` should
+  have reported. `tests/validate-ci.sh` fails if either appears in one.
 - Wrap long/networked commands in `timeout N` (`timeout 600 npm ci`).
 - `npm run typecheck` must pass **without** a build: `rm -rf .next` and check.
   Layout props are typed explicitly rather than with Next's generated
-  `LayoutProps`, precisely so a fresh clone can typecheck.
+  `LayoutProps`, precisely so a fresh clone can typecheck. The CI `build` job
+  deletes `.next` before typechecking, so it cannot pass on generated types.
+
+## CI
+
+`.github/workflows/ci.yml` — `ci` (kit's shared `node` job), `prime`
+(`./bin/prime` plus the `git diff --exit-code -- package-lock.json` guard) and
+`build` (typecheck, then `next build`, then an assertion that the standalone
+output the Dockerfile copies exists).
+
+- **The gate is `bin/prime`, and CI runs that script, not a list of `npm run`
+  commands.** If the two can disagree, one of them is lying. Adding a check
+  means adding it to `bin/prime`, not to the workflow.
+- **`tests/validate-ci.sh` is part of the gate, not a CI extra.** It checks the
+  shape of the tree CI assumes — the pin, the lockfile contract, the gate
+  command, that every `npm run` the workflow calls still exists. Its
+  `--self-test` breaks a throwaway copy 15 ways and asserts each one goes red;
+  a check that has only ever been green has verified nothing.
+- **Do not write `grep -q` into that script inside a pipeline.** Under
+  `set -o pipefail`, `grep -q` exits on its first match and the writer takes
+  SIGPIPE, so the pipeline reports 141 and a check that *found* the thing reads
+  as "not found". Capture the match into a variable instead; `found()` and
+  `found_fixed()` exist for that.
+- **A new environment-gated test tier must be forced in CI, and the report must
+  say how it was counted.** A gate that prints `0 passed; 14 ignored` has
+  verified nothing.
 
 ## Tests first
 
