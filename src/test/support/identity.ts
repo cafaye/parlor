@@ -29,8 +29,11 @@ export type StubIdentity = IdentityClient & {
   acceptInvitation: MockedFunction<IdentityClient["acceptInvitation"]>;
   changeMemberRole: MockedFunction<IdentityClient["changeMemberRole"]>;
   removeMember: MockedFunction<IdentityClient["removeMember"]>;
-    requestPasswordReset: MockedFunction<IdentityClient["requestPasswordReset"]>;
-    redeemPasswordReset: MockedFunction<IdentityClient["redeemPasswordReset"]>;
+  requestPasswordReset: MockedFunction<IdentityClient["requestPasswordReset"]>;
+  redeemPasswordReset: MockedFunction<IdentityClient["redeemPasswordReset"]>;
+  requestEmailVerification: MockedFunction<IdentityClient["requestEmailVerification"]>;
+  redeemEmailVerification: MockedFunction<IdentityClient["redeemEmailVerification"]>;
+  verificationStatus: MockedFunction<IdentityClient["verificationStatus"]>;
 };
 
 const unscripted = (method: string) =>
@@ -56,6 +59,13 @@ export function stubIdentity(overrides: Partial<IdentityClient> = {}): StubIdent
     removeMember: vi.fn(overrides.removeMember ?? unscripted("removeMember")),
     requestPasswordReset: vi.fn(overrides.requestPasswordReset ?? unscripted("requestPasswordReset")),
     redeemPasswordReset: vi.fn(overrides.redeemPasswordReset ?? unscripted("redeemPasswordReset")),
+    requestEmailVerification: vi.fn(
+      overrides.requestEmailVerification ?? unscripted("requestEmailVerification"),
+    ),
+    redeemEmailVerification: vi.fn(
+      overrides.redeemEmailVerification ?? unscripted("redeemEmailVerification"),
+    ),
+    verificationStatus: vi.fn(overrides.verificationStatus ?? unscripted("verificationStatus")),
   } as StubIdentity;
 }
 

@@ -42,7 +42,7 @@ import { useRef, useState, type FormEvent } from "react";
 
 import { Button, Callout, Field, FieldSummary, Input } from "@/components/ui";
 import { useAuth } from "@/lib/auth";
-import { validatePasswordResetRequest } from "@/lib/credentials";
+import { validateRecoveryEmailRequest } from "@/lib/credentials";
 import { IdentityError, fieldErrorMessage, type FieldError } from "@/lib/identity";
 
 /**
@@ -89,7 +89,7 @@ export function ForgotPasswordForm() {
     event.preventDefault();
     if (inFlight.current) return;
 
-    const local = validatePasswordResetRequest({ email });
+    const local = validateRecoveryEmailRequest({ email });
     if (local.length > 0) {
       setState({ kind: "local", fields: local });
       return;

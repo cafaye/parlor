@@ -125,8 +125,14 @@ test("a person can create an account and sign in to it", async ({ page }) => {
   // the real service and the real database. A stack that is up but cannot reach
   // identity renders "Something went wrong. Try again." here instead, and that
   // is the whole difference the suite exists to catch.
+  //
+  // The rest of the sentence is about the SECOND call — the verification request
+  // `POST /v1/users` does not make. In this stack there is no courier, so it is
+  // the "cannot send" branch, and the address still leads it: the account exists
+  // in both. See e2e/email-verification.e2e.spec.ts for the 503 branch as its own
+  // subject.
   await expect(page.getByRole("status")).toHaveText(
-    `Account created for ${email}. Sign in to continue.`,
+    `Account created for ${email}. This deployment cannot send email right now, so no verification link was sent.`,
   );
 
   await signIn(page, email);

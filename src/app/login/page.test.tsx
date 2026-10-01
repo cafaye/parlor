@@ -97,6 +97,33 @@ describe("login page", () => {
     expect(screen.queryByText(/password has been changed/i)).toBeNull();
   });
 
+  it("offers the way to ask for a verification link", async () => {
+    // The entry point for somebody who signed up, closed the tab, and never
+    // verified — the audience `POST /v1/email-verifications` cannot serve with a
+    // banner, because `GET /v1/email-verification` answers for the caller's own
+    // address and they are the one who is not signed in.
+    renderWithProviders(await loginPage(), { identity: stubIdentity() });
+
+    expect(screen.getByRole("link", { name: /verify your email/i })).toHaveAttribute(
+      "href",
+      "/verify-email",
+    );
+  });
+
+  it("offers it without saying anything about the address, before any attempt", async () => {
+    // Same rule as the "forgot your password" link above it: a control that
+    // appeared only after a refused attempt would be reporting something about the
+    // address, and this is the screen that must never do that.
+    renderWithProviders(await loginPage(), { identity: stubIdentity() });
+
+    const link = screen.getByRole("link", { name: /verify your email/i });
+    expect(link).toBeVisible();
+    // Asking a question is not the same as being told an answer: the link names
+    // nothing, and nothing on this screen claims to know whether the address
+    // behind it has an account.
+    expect(link.textContent).not.toMatch(/no account|not found|already/i);
+  });
+
   describe("arriving back from a completed reset", () => {
     async function renderArrival(query: Record<string, string>) {
       return renderWithProviders(await loginPage(query), { identity: stubIdentity() });

@@ -48,15 +48,30 @@ export function validateSignIn({ email, password }: Credentials): FieldError[] {
 }
 
 /**
- * Rules for `POST /v1/password-resets`.
+ * Rules for the routes that ask for a message to be sent: `POST
+ * /v1/password-resets` and `POST /v1/email-verifications`.
+ *
+ * **ONE validator for both, because the service has one request type for both.**
+ * `identity/internal/httpapi/recovery.go` declares a single `emailRequest{Email}`
+ * body for the two routes and pins with `TestTheTwoRequestRoutesAnswerIdentically`
+ * that they answer identically — so two validators here would be two places for
+ * that identity to drift, and the drift would be invisible until a malformed
+ * address was refused by one route and accepted by the other. It was called
+ * `validatePasswordResetRequest` when only the reset flow existed.
  *
  * THE SAME ADDRESS RULE AS SIGN IN, and there is no more to it: that request
  * carries an address and nothing else, so this is `checkEmail` on its own rather
  * than a new shape. The important thing it does NOT do is anything about whether
  * the address has an account — the service answers 202 either way, and a local
  * check that guessed would put back the oracle the constant 202 exists to remove.
+ *
+ * **On the verification route this is one rule in two, not one.** That route also
+ * declares a 409 for an address that is already proved, so it is the one place
+ * the service answers differently about whether an address exists. Nothing here
+ * reads that difference — the shape of what was typed is all this can see, and
+ * the address's account state is the service's business.
  */
-export function validatePasswordResetRequest({ email }: { email: string }): FieldError[] {
+export function validateRecoveryEmailRequest({ email }: { email: string }): FieldError[] {
   const failures: FieldError[] = [];
 
   const address = checkEmail(email);

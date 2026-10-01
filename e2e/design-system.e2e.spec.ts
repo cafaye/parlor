@@ -404,8 +404,10 @@ test("the account's destructive actions are confirmed, and the dialog is keyboar
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Create account" }).click();
+  // The address leads the confirmation in every branch of it, so this asserts
+  // the same fact on a stack with a mailer as on one without.
   await expect(page.getByRole("status")).toHaveText(
-    `Account created for ${email}. Sign in to continue.`,
+    `Account created for ${email}. This deployment cannot send email right now, so no verification link was sent.`,
   );
 
   await page.goto("/login");
@@ -518,9 +520,11 @@ test("a busy control keeps its accessible name, in a real browser", async ({ pag
 
   // Release the request and prove it really did complete — the service's own
   // confirmation naming the address, which means POST /v1/users reached
-  // identity and its database.
+  // identity and its database. The tail of the sentence is about the SECOND call
+  // this screen now makes (the verification request); the address leads it in
+  // every branch, so this assertion is about the registration either way.
   release?.();
   await expect(page.getByRole("status")).toHaveText(
-    `Account created for ${email}. Sign in to continue.`,
+    `Account created for ${email}. This deployment cannot send email right now, so no verification link was sent.`,
   );
 });

@@ -30,15 +30,19 @@ would your product still build? It has to be.
 | Surface | Path | Purpose |
 | --- | --- | --- |
 | Landing | `/` | Directory of the sections below. |
-| Register | `/register` | Email + password against `POST /v1/users`. |
+| Register | `/register` | Email + password against `POST /v1/users`, then asks for the verification link `POST /v1/users` does not send. |
 | Sign in | `/login` | Email + password against `POST /v1/session`. |
+| Forgot password | `/forgot-password` | Ask for a reset link. One constant answer for every address. |
+| Reset password | `/reset-password` | Spend a reset link. Does not submit on load. |
+| Verify email | `/verify-email` | Ask for a verification link, and ask again. One constant answer for every address. |
+| Verify email (link) | `/verify-email/confirm` | Spend a verification link. Does not submit on load, and does not sign you out. |
 | Accounts | `/accounts` | The accounts you belong to, and the create form. |
 | One account | `/accounts/[accountId]` | Facts, members, rename, invite, leave, delete — gated by your role. |
 | Accept an invitation | `/invitations/[token]` | Redeem a token. Does not accept on load. |
 | Plan catalogue | `/billing/plans` | What can be bought, at what price, on what cadence. Paged. |
 | Customers | `/billing/customers` | Billing's customer records. Platform-wide, and labelled so. |
 | Session shell | `src/components/shell/` | Header: navigation, sign out when authed, sign in when not. |
-| Identity client | `src/lib/identity.ts` | Typed, transport-injected client for identity's fourteen endpoints. |
+| Identity client | `src/lib/identity.ts` | Typed, transport-injected client for every identity endpoint this app calls. The tables below are the source of truth for which. |
 | Role vocabulary | `src/lib/roles.ts` | The capability matrix, transcribed from identity's authorization. |
 | Tenancy queries | `src/lib/accounts.ts` | Query keys and invalidation for the account surface. |
 | Money | `src/lib/money.ts` | Integer minor units in, a price out. |
@@ -63,6 +67,35 @@ knows them.
 | `login({email, password})` | `POST /v1/session` | `200 {token, expires_at}` |
 | `logout(token)` | `DELETE /v1/session` | `204` |
 | `me(token)` | `GET /v1/me` | `200 {id, email}` |
+
+The recovery and verification surfaces. **Every one of these POSTs is anonymous**
+— identity wraps all eight in `sessionCredentialOnly`, which refuses a scoped API
+key outright — so they send no `Authorization` header at all. The token in the
+link *is* the credential, and a session token alongside it would be a second one
+for no reason.
+
+| Call | Endpoint | Credential | Success |
+| --- | --- | --- | --- |
+| `requestPasswordReset(email)` | `POST /v1/password-resets` | none | `202 {"status":"accepted"}` |
+| `redeemPasswordReset({token, password})` | `POST /v1/password-resets/confirm` | none | `204`, and every session the account holds is revoked |
+| `requestEmailVerification(email)` | `POST /v1/email-verifications` | none | `202 {"status":"accepted"}` |
+| `redeemEmailVerification({token})` | `POST /v1/email-verifications/confirm` | none | `204`. Revokes nothing, mints nothing. |
+| `verificationStatus(token)` | `GET /v1/email-verification` | session | `200 {email, email_verified, email_verified_at?}`. `email_verified_at` is **absent** when never verified. |
+
+> **The 202 is the enumeration defence, and one route does not have it.**
+> `POST /v1/password-resets` and `POST /v1/email-verifications` answer the same
+> constant body for a registered address, an unregistered one, and one inside the
+> one-minute cooldown — measured byte-identical against a running identity. But
+> the verification route also answers `409` for an address that is *already
+> verified*, which does tell a prober that an account exists. That is identity's
+> declared trade (so a client does not tell somebody to watch an inbox nothing will
+> arrive in), so `/verify-email` renders it truthfully and guarantees only that it
+> never widens the disclosure. See CHANGELOG, "Known gaps" — DECISION NEEDED.
+>
+> **The verification link and the reset link come from one template.**
+> `RECOVERY_LINK_TEMPLATE` is a single string rendered for both mail kinds, so a
+> deployment cannot currently route both correctly. Also DECISION NEEDED, and on
+> the service side.
 
 The tenancy surface, with the minimum role each route needs:
 
@@ -386,18 +419,20 @@ Deliberately absent, by packet boundary rather than oversight:
   is the first thing a reviewer should look at.
 - OAuth sign-in and MFA enrollment (TOTP, recovery codes) — the service side
   lands in identity's later packets; the UI follows its contract.
-- **Email verification, email change, and every other identity screen.**
-  Password reset is built — `/forgot-password`, `/reset-password`, and the
-  affordance on the sign-in screen — because `POST /v1/password-resets` and
-  `POST /v1/password-resets/confirm` are anonymous routes with no session state
-  on this side of them. Verification is a different shape: `GET
-  /v1/email-verification` is **session-only**, and parlor has no "unverified"
-  state to render a confirmation landing *into*. `/v1/me` projects exactly `id`
-  and `email`, so there is nothing on a signed-in screen that says whether the
-  address is proved. Building the landing page now would mean inventing that
-  state; the honest next step is a verification banner on the account screen, and
-  that is a packet. The email-change surface needs settings screens that do not
-  exist yet.
+- **The signed-in "your address is not verified" banner, and email change.**
+  Password reset and email verification are both built — `/forgot-password`,
+  `/reset-password`, `/verify-email`, `/verify-email/confirm`, and the
+  affordances on the sign-in and register screens. What is still missing is the
+  other half: a signed-in screen that says whether *your* address is proved.
+  `/v1/me` projects exactly `id` and `email`, so that state is not on the session
+  this app already holds, and it needs `GET /v1/email-verification` — which is
+  **session-only**, and therefore only reachable by somebody who is already signed
+  in. That is why the verification entry point is a link from `/login` rather than
+  a banner: a banner could not be seen by the person who most needs it, having
+  signed up and closed the tab. Reading the state into the account screen is the
+  next packet, and it is where the banner belongs. The email-change surface
+  (`/v1/email-changes`, three routes) needs settings screens that do not exist
+  yet, and identity answers 503 on it until courier's vocabulary grows.
 - **The subscription lifecycle** — upgrade, downgrade, cancel, and the five
   subscription states. billing's master contract has no `/v1/subscriptions*` and
   `Customer` has no plan field, so none of it can be read from anywhere. This is

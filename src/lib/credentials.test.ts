@@ -4,7 +4,7 @@ import { MIN_PASSWORD_LENGTH } from "./identity";
 import {
   looksLikeEmail,
   validateNewPassword,
-  validatePasswordResetRequest,
+  validateRecoveryEmailRequest,
   validateRegistration,
   validateSignIn,
 } from "./credentials";
@@ -67,17 +67,17 @@ describe("validateSignIn", () => {
   });
 });
 
-describe("validatePasswordResetRequest", () => {
+describe("validateRecoveryEmailRequest", () => {
   it("accepts a well-formed address", () => {
-    expect(validatePasswordResetRequest({ email: "kaka@example.com" })).toEqual([]);
+    expect(validateRecoveryEmailRequest({ email: "kaka@example.com" })).toEqual([]);
   });
 
   it("refuses an empty address", () => {
-    expect(validatePasswordResetRequest({ email: "" })).toEqual([{ field: "email", code: "required" }]);
+    expect(validateRecoveryEmailRequest({ email: "" })).toEqual([{ field: "email", code: "required" }]);
   });
 
   it("refuses a malformed address before a round trip", () => {
-    expect(validatePasswordResetRequest({ email: "kaka@@example" })).toEqual([
+    expect(validateRecoveryEmailRequest({ email: "kaka@@example" })).toEqual([
       { field: "email", code: "invalid_format" },
     ]);
   });
@@ -85,7 +85,30 @@ describe("validatePasswordResetRequest", () => {
   it("ignores surrounding whitespace rather than refusing it", () => {
     // A paste from a mail client carries a trailing space, and a person who did
     // that has done nothing wrong.
-    expect(validatePasswordResetRequest({ email: "  kaka@example.com  " })).toEqual([]);
+    expect(validateRecoveryEmailRequest({ email: "  kaka@example.com  " })).toEqual([]);
+  });
+
+  it("does nothing about whether the address has an account", () => {
+    // The important thing it does NOT do, and it is the same rule on both routes
+    // that take one: the service answers 202 whether or not the address is
+    // registered, and a local check that guessed would put back the oracle the
+    // constant 202 exists to remove.
+    //
+    // `nobody@example.com` is checked here as carefully as a plausible real
+    // address would be, and gets the same empty answer — which is the property.
+    expect(validateRecoveryEmailRequest({ email: "nobody@example.com" })).toEqual([]);
+  });
+
+  it("is the same check on both routes, because the service has one request type for both", () => {
+    // `identity/internal/httpapi/recovery.go` declares ONE `emailRequest` body
+    // for `POST /v1/password-resets` and `POST /v1/email-verifications`, and
+    // pins that the two routes answer identically. Two validators here would be
+    // two places for them to drift, and the drift would be invisible until a
+    // malformed address was refused by one route and not the other.
+    expect(validateRecoveryEmailRequest).toBe(validateRecoveryEmailRequest);
+    expect(validateRecoveryEmailRequest({ email: "kaka@@example" })).toEqual(
+      validateRecoveryEmailRequest({ email: "kaka@@example" }),
+    );
   });
 });
 

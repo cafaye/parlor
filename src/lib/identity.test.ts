@@ -621,6 +621,298 @@ describe("password reset: spending a link", () => {
 });
 
 // ---------------------------------------------------------------------------
+// The verification surface.
+//
+// Transcribed from the same handler the reset routes above come from —
+// `identity/internal/httpapi/recovery.go`: `handleRequestVerification` and
+// `handleRedeemVerification` with the shared `emailRequest` and `tokenRequest`
+// bodies, `handleVerificationStatus` with `verificationStatusResponse`, the
+// `acceptedResponse` constant, and the `ErrAlreadyVerified` branch of
+// `writeRecoveryError`. `GET /v1/email-verification` is declared in
+// `identity/openapi/v1.yaml`; the two POSTs are too, and the handler agrees with
+// the document here — which is worth saying because the tenancy surface above is
+// the case where they do NOT agree.
+//
+// THE PROPERTY BESIDE THE PARSER: all three routes are wrapped in
+// `sessionCredentialOnly` (recovery.go, registerRecoveryRoutes), and the two that
+// take no credential are the two that must send NO Authorization header at all.
+// `verificationStatus` is the odd one out — it resolves a session, so it does
+// take the token — and that difference is asserted below rather than assumed.
+// ---------------------------------------------------------------------------
+
+describe("email verification: requesting a link", () => {
+  it("posts only the address to /v1/email-verifications", async () => {
+    const { transport, calls } = stubTransport(() => json(202, { status: "accepted" }));
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await client.requestEmailVerification("kaka@example.com");
+
+    expect(calls[0].method).toBe("POST");
+    expect(calls[0].url).toBe(`${baseUrl}/v1/email-verifications`);
+    // `emailRequest{Email}` — one field. The address looks the account UP; what
+    // gets proved is the address already on the row, so sending anything else
+    // would be a client asking for a registration of somebody else's inbox.
+    expect(JSON.parse(calls[0].body as string)).toEqual({ email: "kaka@example.com" });
+  });
+
+  it("sends no bearer token, because the service refuses one on this route", async () => {
+    // Same rule as the reset request route, and the same reason: the mailer is
+    // reached with no session, and a credential presented here would be refused.
+    const { transport, calls } = stubTransport(() => json(202, { status: "accepted" }));
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await client.requestEmailVerification("kaka@example.com");
+
+    expect(calls[0].headers.Authorization).toBeUndefined();
+  });
+
+  it("reads the constant 202 body as accepted", async () => {
+    const { transport } = stubTransport(() => json(202, { status: "accepted" }));
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await expect(client.requestEmailVerification("kaka@example.com")).resolves.toEqual({
+      status: "accepted",
+    });
+  });
+
+  it("surfaces a 503 when the deployment cannot send email", async () => {
+    // `Service.RequestVerification` calls `deliverable` FIRST, before it looks
+    // the address up — which is what stops 503-against-202 from being an
+    // existence oracle, and what lets a screen say this differently from success.
+    const { transport } = stubTransport(() =>
+      problem(503, {
+        code: "service_unavailable",
+        title: "Service unavailable",
+        detail: "this deployment cannot send email, so it cannot send that link",
+      }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const error = await theFailure(client.requestEmailVerification("kaka@example.com"));
+
+    expect(error.status).toBe(503);
+    expect(error.code).toBe("service_unavailable");
+  });
+
+  it("reads an already-proved address as a 409, which is the one answer that names a state", async () => {
+    // `RequestVerification` checks `user.IsVerified()` after the lookup and
+    // before the cooldown window, so a proved address answers 409 whatever else
+    // is true. This is the service's declared enumeration stance on this route
+    // and NOT the constant 202 the reset route uses — asserted here so the
+    // difference is a fact in the client rather than a surprise in a screen.
+    const { transport } = stubTransport(() =>
+      problem(409, {
+        code: "conflict",
+        title: "Conflict",
+        detail: "this account's email address is already verified",
+      }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const error = await theFailure(client.requestEmailVerification("kaka@example.com"));
+
+    expect(error.status).toBe(409);
+    expect(error.code).toBe("conflict");
+    // And no field errors: the address is well formed, it is just spoken for.
+    expect(error.fieldErrors).toEqual([]);
+  });
+
+  it("surfaces a 422 field error from the request route", async () => {
+    const { transport } = stubTransport(() =>
+      problem(422, {
+        code: "validation_failed",
+        title: "Validation failed",
+        detail: "the request has an invalid field",
+        errors: [{ field: "email", code: "invalid_format" }],
+      }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const error = await theFailure(client.requestEmailVerification("not-an-address"));
+
+    expect(error.status).toBe(422);
+    expect(error.fieldErrors).toEqual([{ field: "email", code: "invalid_format" }]);
+  });
+});
+
+describe("email verification: spending a link", () => {
+  const TOKEN = "0Kq3Zs1oQw7bXn0K9dLpR2vT4yE6hJ8cF1gM5nA2qU0";
+
+  it("posts the token and nothing else, to the confirm route", async () => {
+    const { transport, calls } = stubTransport(() => new Response(null, { status: 204 }));
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await client.redeemEmailVerification({ token: TOKEN });
+
+    expect(calls[0].method).toBe("POST");
+    expect(calls[0].url).toBe(`${baseUrl}/v1/email-verifications/confirm`);
+    // `tokenRequest{Token}` and NOT the reset body. A verification redeeming
+    // route that also accepted a password would invite a client to send one,
+    // where it would be ignored — and "ignored" is worse than "refused".
+    expect(JSON.parse(calls[0].body as string)).toEqual({ token: TOKEN });
+  });
+
+  it("sends no bearer token: the token in the body IS the credential", async () => {
+    const { transport, calls } = stubTransport(() => new Response(null, { status: 204 }));
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await client.redeemEmailVerification({ token: TOKEN });
+
+    expect(calls[0].headers.Authorization).toBeUndefined();
+  });
+
+  it("resolves on an empty 204, which is the whole success answer", async () => {
+    // A verification mints nothing and revokes nothing, so there is no session
+    // in the answer and nobody to sign out. Contrast the reset route's 204.
+    const { transport } = stubTransport(() => new Response(null, { status: 204 }));
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await expect(client.redeemEmailVerification({ token: TOKEN })).resolves.toBeUndefined();
+  });
+
+  it("reads one 404 for a link that never existed, expired, was spent, or is another flow's", async () => {
+    // `ErrTokenNotFound` again, with the same four cases, and identity's own
+    // tests pin that a verification token is not accepted by the reset route and
+    // a reset token is not accepted by this one.
+    const { transport } = stubTransport(() =>
+      problem(404, {
+        code: "not_found",
+        title: "Not found",
+        detail: "no such link, or it has already been used",
+      }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const error = await theFailure(client.redeemEmailVerification({ token: TOKEN }));
+
+    expect(error.status).toBe(404);
+    expect(error.code).toBe("not_found");
+  });
+
+  it("reads a token of the wrong length as the same 404 any other dead token gets", async () => {
+    // MEASURED AGAINST A RUNNING IDENTITY, and it contradicts the document.
+    //
+    // `identity/openapi/v1.yaml` declares `RecoveryTokenRequest.token` as
+    // `minLength: 43, maxLength: 43` and lists a 422 on the route, so the first
+    // version of this test asserted a 422 for a short token. Posting
+    // `{"token":"too-short"}` to a real identity answers **404** with the ordinary
+    // `not_found` problem, because `RedeemVerification` goes straight to
+    // `tokens.Live(sessions.Digest(in.Token))` and a token of any shape that is
+    // not live is `ErrTokenNotFound`. `tokenRequest` is one `string` field with no
+    // validation on it.
+    //
+    // So the document declares a validation failure the handler does not
+    // implement, and this client follows the handler — the same rule the tenancy
+    // surface in this file is transcribed by. Recorded in CHANGELOG "Known gaps".
+    //
+    // The property worth holding is the one it pins: a truncated link is
+    // indistinguishable from any other dead one, which is exactly what a screen
+    // needs in order to say one sentence for all of them.
+    const { transport } = stubTransport(() =>
+      problem(404, {
+        code: "not_found",
+        title: "Not found",
+        detail: "no such link, or it has already been used",
+      }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const error = await theFailure(client.redeemEmailVerification({ token: "too-short" }));
+
+    expect(error.status).toBe(404);
+    expect(error.code).toBe("not_found");
+  });
+
+  it("sends a token of any length without editing it, because the service is the judge", async () => {
+    // The companion to the test above: the client does not validate the length
+    // locally either. A local check would be a second opinion on a rule the
+    // service does not enforce, and it would refuse a link before the 404 that
+    // says so.
+    const { transport, calls } = stubTransport(() => new Response(null, { status: 204 }));
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await client.redeemEmailVerification({ token: "too-short" });
+
+    expect(JSON.parse(calls[0].body as string)).toEqual({ token: "too-short" });
+  });
+});
+
+describe("email verification: reading the caller's own state", () => {
+  it("reads /v1/email-verification with the token as a bearer credential", async () => {
+    // The ONE verification route that is not anonymous: `handleVerificationStatus`
+    // calls `currentUser`, and this is a question about the caller's own account.
+    const { transport, calls } = stubTransport(() =>
+      json(200, { email: "kaka@example.com", email_verified: false }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await client.verificationStatus("tok_abc");
+
+    expect(calls[0].method).toBe("GET");
+    expect(calls[0].url).toBe(`${baseUrl}/v1/email-verification`);
+    expect(calls[0].headers.Authorization).toBe("Bearer tok_abc");
+  });
+
+  it("reads a proved address with its instant", async () => {
+    const { transport } = stubTransport(() =>
+      json(200, {
+        email: "kaka@example.com",
+        email_verified: true,
+        email_verified_at: "2026-09-30T12:10:00Z",
+      }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await expect(client.verificationStatus("tok_abc")).resolves.toEqual({
+      email: "kaka@example.com",
+      email_verified: true,
+      email_verified_at: "2026-09-30T12:10:00Z",
+    });
+  });
+
+  it("keeps the absent timestamp absent, because never-proved is not proved-at-epoch", async () => {
+    // `verificationStatusResponse.EmailVerifiedAt` is `*time.Time` with
+    // `omitempty`. Defaulting it to `null` here would collapse "never verified"
+    // and "verified at 1970" into one answer, and the service says they are
+    // different answers. So the client adds nothing: the key is absent off the
+    // wire and absent here, rather than present-and-empty.
+    const { transport } = stubTransport(() =>
+      json(200, { email: "kaka@example.com", email_verified: false }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const status = await client.verificationStatus("tok_abc");
+
+    expect(status.email_verified_at).toBeUndefined();
+    expect("email_verified_at" in status).toBe(false);
+  });
+
+  it("answers 200 for an unverified account rather than 404, so there is no unverified gap", async () => {
+    // The contract: "A `200` for every signed-in account, never a 404 for an
+    // unverified one: the question has an answer for everybody."
+    const { transport } = stubTransport(() =>
+      json(200, { email: "kaka@example.com", email_verified: false }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await expect(client.verificationStatus("tok_abc")).resolves.toMatchObject({
+      email_verified: false,
+    });
+  });
+
+  it("raises a 401 when there is no session", async () => {
+    const { transport } = stubTransport(() =>
+      problem(401, { code: "unauthorized", title: "Unauthorized" }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const error = await theFailure(client.verificationStatus("tok_dead"));
+
+    expect(error.status).toBe(401);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // The tenancy surface: accounts, members and invitations.
 //
 // Every request and response shape below is transcribed from the service's own
