@@ -47,8 +47,9 @@ would your product still build? It has to be.
 | Token store | `src/lib/token-store.ts` | `localStorage` persistence, injectable. |
 | Liveness | `/healthz` | `{"status":"ok"}` — process is up. No dependency checks, on purpose. |
 | Readiness | `/readyz` | `{"status":"ok","deps":"none"}` — `deps` is a reserved placeholder. |
-| Theme tokens | `src/styles/tokens.css` | Tailwind v4 `@theme` block, placeholder cafaye palette. |
-| Primitives | `src/components/ui/` | Hand-rolled Button, Input, Field, Select, Panel, state components. shadcn/ui later. |
+| Theme tokens | `src/styles/tokens.css` | The cafaye design system: two ramps, a semantic layer, and a measured focus ring. Contrast-checked in `src/styles/tokens.test.ts`. |
+| Primitives | `src/components/ui/` | Button, Input, Select, Field, Callout, ConfirmDialog, Spinner, Surface, TextLink/CardLink, Panel, and the state components. One import path: `@/components/ui`. |
+| Design system guide | [`docs/design-system.md`](docs/design-system.md) | Which component to reach for, what the variants mean, and the four decisions that were measured rather than chosen. |
 | Tests | `src/**/*.test.{ts,tsx}` | vitest + `@testing-library/react`. |
 
 ## Talking to identity
@@ -396,16 +397,19 @@ Deliberately absent, by packet boundary rather than oversight:
   shows the role distribution and says why; the per-member controls render the
   moment identity fixes the projection.
 - Dashboard, settings, and admin skeleton (`madmin`-style).
-- **shadcn/ui** — installs into `src/components/ui/` so there is one import
-  path for the whole product. The barrel is there, and already holding
-  hand-rolled Button, Input and Field for shadcn to replace in place.
+- **Migrating every screen onto the new primitives.** The design system landed
+  with the primitives and the tokens; ten hand-written links and ten
+  hand-written cards are still in the screens, listed with their replacements
+  at the end of [`docs/design-system.md`](docs/design-system.md). Deliberate:
+  doing both at once makes neither reviewable.
 - Playwright E2E suite (signup, login, MFA, invites, checkout) against the
   compose stack — PLAN.md §3 puts its birth in Phase 2.
 - CORS configuration on identity for a cross-origin browser. The client sends
   no credentials cross-origin, so identity has to allow the origin before any of
   this runs against a real service.
-- Real brand colors. `tokens.css` carries a neutral placeholder ramp; when the
-  palette decision lands it is a one-file change by design.
+- **A theme toggle.** Dark mode is `prefers-color-scheme` only. A toggle needs a
+  persisted choice and a flash-free first paint; the tokens are structured for
+  one, and `tokens.css` is where it lands.
 
 ## Contributing
 

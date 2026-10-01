@@ -8,6 +8,125 @@ All notable changes to parlor are recorded here. The format follows
 
 ### Added
 
+- **A real design system, replacing the placeholder palette.** `tokens.css` was
+  explicitly a "PLACEHOLDER PALETTE … NOT the cafaye brand" — a neutral graphite
+  ramp chosen only so the shell had something coherent. It is now a designed
+  system: a warm paper-and-ink neutral (hue 38) because the product is a ledger,
+  and one chromatic voice (`seal`, a deep petrol-teal) reserved for the things
+  you can act on. Light and dark are both first class, and the semantic layer is
+  structured so no component hardcodes a colour literal.
+
+  **The numbers are asserted, not claimed.** `src/styles/tokens.test.ts` is a
+  new 50-test suite that parses `tokens.css` and computes WCAG contrast from
+  the declared pairings, in both themes, on every run. It is why four
+  decisions in the system are arithmetic rather than taste:
+
+  - **There are two text weights, not three.** The band between 4.5:1 and 7:1
+    on this ramp is ~1.4 lightness steps, so a "subtle" third step either misses
+    the text floor or is indistinguishable from `muted`. There is consequently
+    **no `--color-placeholder` token** — a placeholder is text and owes 4.5:1,
+    so a compliant one is exactly `muted`, and help text belongs in `Field`'s
+    `hint`.
+  - **The focus ring is a halo and its 2px offset is load-bearing.** The ring
+    clears 3:1 on all three grounds in both themes, but in dark mode it is the
+    *same colour* as the primary fill (1.00:1) and no hex value fixes that,
+    because the ground is near-black and the fill is a light teal. What makes
+    it visible is the gap `outline-offset` opens, painted by the ground. So the
+    ring is tuned against grounds, never fills, and the test fails if any
+    `.focus-ring` rule sets the offset to zero.
+  - **`--color-brick-300` and a `neutral-500` dark border exist** because a
+    pairing measured 4.11:1 and 2.95:1 respectively. A ramp earns a step when a
+    pair needs one.
+  - **Both ramps are tested monotone in luminance**, because a ramp with two
+    steps at equal lightness is one where `-300` and `-400` are
+    indistinguishable and nobody can tell which was meant.
+
+- **`ConfirmDialog`, and the destructive-action path that needed it.** Deleting
+  an account rendered its confirming button as `variant="primary"` — the same
+  visual weight as "Save name" three panels up, so the most dangerous control
+  on the page was the least distinguishable one. A modal confirmation replaces
+  it, with focus landing on Cancel, Escape and Cancel as the only exits (the
+  scrim deliberately does not dismiss), focus restored to the trigger, and
+  Escape suppressed while the delete is in flight. Built on `div[role=dialog]`
+  rather than native `<dialog>` because jsdom does not implement
+  `showModal()`, so the native version's properties would be untestable in the
+  tier this repo gates on; that trade is stated in the source.
+
+- **`Callout`, `Spinner`, `Surface`, `VisuallyHidden`, `TextLink`, `CardLink`.**
+  The ten hand-written `underline underline-offset-2` links had **no focus
+  ring at all** — invisible in review, unusable by keyboard — and the ten
+  hand-written cards had drifted across two paddings. `Spinner` is
+  `aria-hidden` on purpose: whatever is busy already announces itself, and a
+  third announcement is noise.
+
+- **`docs/design-system.md`**, a guide for building a screen: which component
+  to reach for, what each variant means, the four measured decisions, and an
+  explicit list of what is deliberately absent (theme toggle, `Table`, `Tabs`,
+  `Toast`, a general `Modal`, full-page skeletons) with the reason for each.
+
+- **`e2e/design-system.e2e.spec.ts`.** Every other assertion about the
+  primitives is jsdom, which does not load the stylesheet, does not evaluate
+  `@media (prefers-color-scheme)`, and computes no layout — so the unit tier can
+  prove a control has a focus-ring *class* and cannot prove the ring is
+  *painted*. This spec asserts the rendered `outline-width` and `outline-offset`
+  are non-zero on **every** control a real Tab walk lands on, measures the ring's
+  contrast against the resolved surface, checks every painted text colour on the
+  login page against 4.5:1 (3:1 at ≥24px, taking the background from the
+  nearest painted ancestor), forces `colorScheme: 'dark'` to prove the dark
+  block repaints, and drives the account deletion with no `.click()` anywhere in
+  the flow. Verified by breakage: replacing `.focus-ring` with `outline: none`
+  fails it in the browser and nothing in `npm test` notices.
+
+### Fixed
+
+- **The ten hand-written links in the screens had no focus ring at all.** Every
+  one was `className="font-medium underline underline-offset-2 hover:no-underline"`
+  with no `focus-visible` rule, so a keyboard user tabbing through the account
+  screen had focus on a link and nothing to see. `TextLink` and `CardLink` exist
+  partly so this cannot recur, and the ten sites are listed with their
+  replacements at the end of `docs/design-system.md`.
+
+- **Ten busy buttons had no visible busy state.** Every one set `aria-busy` and
+  `disabled` but rendered no spinner, so the only visual change was reduced
+  opacity — which is indistinguishable from "this control is unavailable to
+  you". A person could not tell "working" from "you cannot do this". All ten
+  now pass `busy`; this is the primitive being adopted, not a refactor.
+
+- **Leaving an account is now confirmed, and that was the bigger omission.**
+  Deleting was destructive and unconfirmed; leaving was a single click that
+  removes your membership, on a screen whose own copy says "You will need a new
+  invitation to come back". Deleting is dramatic, leaving is quiet, and quiet
+  irreversible things are the ones clicked by accident. Both are confirmed now.
+
+- **The two `aria-busy` buttons on the account screen had the same accessible
+  name.** Once leaving was confirmed, the opener and the confirming control
+  were both called "Leave this account" — two controls, one name, no way for
+  somebody navigating by name to say which was which. The opener is now "Leave"
+  and the confirm is "Leave this account", and a unit test asserts they differ.
+
+### Changed
+
+- **`Button` gained `destructive` and `size`, and a `busy` prop.** The accessible
+  name is unchanged when busy, as before; `type` now defaults to `button` so a
+  "Cancel" cannot post a form. There is deliberately no `href` — a button that
+  navigates is a link, and the absence is what stops the wrong thing being
+  easy.
+- **`Field`'s hint and error now share one polite live region**, in reading
+  order (what this is, then why it is complaining), so a message that appears
+  on submit is announced without moving focus.
+- **`LoadingState` takes `rows`** for a list-shaped wait, and `ErrorState` takes
+  `retrying`; the retry is now a real `Button`, so it keeps its name when busy.
+- **`gate.yml`'s suite floor is 484**, re-measured on this tree
+  (`Tests  484 passed (484)`, 21 files) — up from 377, of which 107 are new: 50
+  in `src/styles/tokens.test.ts`, 54 across the three new component suites, and
+  3 in the account screen's suite for the `ConfirmDialog` work. The 35
+  `validate-ci.sh` checks and 34 self-test breakages are unchanged.
+
+- **`src/components/ui/index.ts` no longer says "shadcn/ui later".** It
+  described the barrel as a staging post for a library install that is not
+  happening; the primitives here are cafaye's own and the file now says so. The
+  same correction is in `AGENTS.md` and `README.md`.
+
 - **`LICENSE`, and `"license": "MIT"` in `package.json`.** parlor shipped no
   licence file at all, which is not "unlicensed, therefore free" — it is **all
   rights reserved**, the default copyright position when a public repository

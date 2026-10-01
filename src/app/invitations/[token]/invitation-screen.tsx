@@ -161,7 +161,7 @@ export function InvitationScreen({ token }: { token: string }) {
         </p>
       </div>
       <div>
-        <Button aria-busy={pending} disabled={pending} onClick={() => void onAccept()}>
+        <Button aria-busy={pending} busy={pending} disabled={pending} onClick={() => void onAccept()}>
           Accept invitation
         </Button>
       </div>
@@ -261,7 +261,7 @@ function AlreadyMember() {
 function Retry({ onRetry, pending }: { onRetry(): void; pending: boolean }) {
   return (
     <div>
-      <Button aria-busy={pending} disabled={pending} onClick={onRetry} variant="secondary">
+      <Button aria-busy={pending} busy={pending} disabled={pending} onClick={onRetry} variant="secondary">
         Try again
       </Button>
     </div>

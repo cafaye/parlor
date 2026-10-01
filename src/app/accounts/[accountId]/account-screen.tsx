@@ -35,6 +35,7 @@ import { useRef, useState, type FormEvent } from "react";
 
 import {
   Button,
+  ConfirmDialog,
   DescriptionList,
   EmptyState,
   ErrorState,
@@ -449,7 +450,7 @@ function RenameForm({ account }: { account: AccountDetail }) {
           <Input name="name" onChange={(event) => setName(event.target.value)} value={name} />
         </Field>
         <div className="flex gap-2">
-          <Button aria-busy={rename.isPending} disabled={rename.isPending} type="submit">
+          <Button aria-busy={rename.isPending} busy={rename.isPending} disabled={rename.isPending} type="submit">
             Save name
           </Button>
           <Button disabled={rename.isPending} onClick={() => setEditing(false)} variant="ghost">
@@ -567,7 +568,7 @@ function InviteForm({ role, accountId }: { role: Role; accountId: string }) {
         </Field>
 
         <div>
-          <Button aria-busy={invite.isPending} disabled={invite.isPending} type="submit">
+          <Button aria-busy={invite.isPending} busy={invite.isPending} disabled={invite.isPending} type="submit">
             Send invitation
           </Button>
         </div>
@@ -598,6 +599,11 @@ function DangerZone({ role, accountId }: { role: Role; accountId: string }) {
   const remove = useRemoveMember(accountId);
   const removeAccount = useDeleteAccount();
   const [confirming, setConfirming] = useState(false);
+  // Two separate flags rather than one `confirming: "leave" | "delete" | null`.
+  // A string would read tidier and would make it possible to open the wrong
+  // dialog on a fast double-click, and the cost of being wrong here is somebody
+  // deleting a workspace.
+  const [confirmingLeave, setConfirmingLeave] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inFlight = useRef(false);
 
@@ -648,13 +654,18 @@ function DangerZone({ role, accountId }: { role: Role; accountId: string }) {
             <p className="text-sm text-muted">
               Leaving removes your membership. You will need a new invitation to come back.
             </p>
+            {/* "Leave" opens the dialog and "Leave this account" commits it, so
+                the two are different names on purpose. Naming both "Leave this
+                account" is what a person navigating by name hits when a dialog
+                asks them to confirm — two controls, one name, no way to say
+                which is which. */}
             <Button
-              aria-busy={remove.isPending}
-              disabled={remove.isPending}
-              onClick={() => void leave()}
+              onClick={() => {
+                setConfirmingLeave(true);
+              }}
               variant="secondary"
             >
-              Leave this account
+              Leave
             </Button>
           </div>
         ) : null}
@@ -664,28 +675,62 @@ function DangerZone({ role, accountId }: { role: Role; accountId: string }) {
             <p className="text-sm text-muted">
               Deleting removes the account and everything scoped by it. There is no undo.
             </p>
-            {confirming ? (
-              <span className="flex items-center gap-2">
-                <Button
-                  aria-busy={removeAccount.isPending}
-                  disabled={removeAccount.isPending}
-                  onClick={() => void destroy()}
-                  variant="primary"
-                >
-                  Delete this account
-                </Button>
-                <Button disabled={removeAccount.isPending} onClick={() => setConfirming(false)} variant="ghost">
-                  Cancel
-                </Button>
-              </span>
-            ) : (
-              <Button onClick={() => setConfirming(true)} variant="secondary">
-                Delete account
-              </Button>
-            )}
+            <Button
+              onClick={() => {
+                setConfirming(true);
+              }}
+              variant="destructive"
+            >
+              Delete account
+            </Button>
           </div>
         ) : null}
       </div>
+
+      {/*
+        A modal confirmation rather than a second pair of buttons inline. Two
+        things forced the change. The inline version rendered the confirming
+        button as `variant="primary"` — the same weight as "Save name" three
+        panels up, so the most destructive control on the page was the least
+        distinguishable one. And an inline confirm has nowhere to say what is
+        about to happen, so "Delete this account" and "Cancel" sat next to each
+        other with the consequence only in the paragraph above them.
+      */}
+      {/*
+        Leaving is confirmed too, and it was the bigger omission. Deleting an
+        account is dramatic; leaving one is quiet, and quiet irreversible things
+        are the ones that get clicked by accident. The copy directly above the
+        button already said "You will need a new invitation to come back" — so
+        the screen was telling somebody the action was irreversible while
+        offering it in one click.
+      */}
+      <ConfirmDialog
+        busy={remove.isPending}
+        confirmLabel="Leave this account"
+        description="Your membership is removed. You will need a new invitation to come back."
+        onCancel={() => {
+          setConfirmingLeave(false);
+        }}
+        onConfirm={() => {
+          void leave();
+        }}
+        open={confirmingLeave}
+        title="Leave this account?"
+      />
+
+      <ConfirmDialog
+        busy={removeAccount.isPending}
+        confirmLabel="Delete this account"
+        description="The account and everything scoped by it are removed. There is no undo."
+        onCancel={() => {
+          setConfirming(false);
+        }}
+        onConfirm={() => {
+          void destroy();
+        }}
+        open={confirming}
+        title="Delete this account?"
+      />
     </Panel>
   );
 }

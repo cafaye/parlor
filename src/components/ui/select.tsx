@@ -21,18 +21,27 @@ export function Select({ className, ...rest }: SelectProps) {
   return (
     <select
       className={cx(
-        "w-full appearance-none rounded-md border border-border bg-surface px-3 py-2 text-sm",
-        "text-foreground focus-visible:outline-2 focus-visible:outline-offset-2",
-        "focus-visible:outline-cafaye-600 disabled:cursor-not-allowed disabled:opacity-50",
-        "bg-[length:1rem] bg-[right_0.75rem_center] bg-no-repeat",
-        "pr-9",
+        // Everything `Input` has, so the two controls are the same object at a
+        // glance. A select that is a different size or colour from the input
+        // above it reads as a different kind of field, and the only thing that
+        // makes it different is which values it takes.
+        "focus-ring w-full appearance-none rounded-md border border-border-strong",
+        "bg-surface-raised pr-9 pl-3 text-sm text-foreground",
+        "transition-colors duration-fast motion-reduce:transition-none",
+        "hover:border-border-strong/70",
+        "disabled:cursor-not-allowed disabled:bg-surface-sunken disabled:text-muted",
+        "aria-invalid:border-critical",
         className,
       )}
       style={{
-        // A data URI rather than a colour: the arrow has to follow the theme,
-        // and a `currentColor` mask is the one form that does without a token
-        // per theme. Tailwind cannot express `mask` on a background image, so
-        // this is the single inline value in the component library.
+        // A data URI rather than a colour, and a MASK rather than a background
+        // image: `currentColor` in the SVG follows the resolved `color` of the
+        // element, so one rule serves both themes with no token per theme and
+        // no second arrow to keep in step. A background-image SVG cannot do
+        // that, which is why this is a mask and why it is inline — Tailwind
+        // cannot express `mask-image` on a background, and the alternative
+        // (a wrapper element with a chevron child) costs a focusable-looking
+        // div to save one line of CSS.
         maskImage:
           "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m4 6 4 4 4-4'/></svg>\")",
         maskPosition: "right 0.75rem center",

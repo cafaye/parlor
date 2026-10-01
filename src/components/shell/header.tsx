@@ -88,7 +88,7 @@ function SessionControls({
     return (
       <div className="flex items-center gap-3">
         <span className="hidden text-sm text-muted sm:inline">{email}</span>
-        <Button aria-busy={pending} disabled={pending} onClick={onSignOut} variant="secondary">
+        <Button aria-busy={pending} busy={pending} disabled={pending} onClick={onSignOut} variant="secondary">
           Sign out
         </Button>
       </div>
