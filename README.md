@@ -412,4 +412,9 @@ Deliberately absent, by packet boundary rather than oversight:
 Read [AGENTS.md](AGENTS.md) first — it holds the test-first rule, the token
 rules, and the health-surface contracts. Long-running commands get `timeout N`.
 
-MIT.
+## License
+
+MIT. See [LICENSE](LICENSE). `package.json` declares the same thing.
+
+parlor is a platform consumed through the service registry, so MIT is what
+keeps a consumer's own licensing situation unchanged when they add it.

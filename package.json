@@ -1,6 +1,7 @@
 {
   "name": "parlor",
   "version": "0.1.0",
+  "license": "MIT",
   "private": true,
   "packageManager": "npm@10.9.7",
   "engines": {

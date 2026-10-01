@@ -6,6 +6,20 @@ All notable changes to parlor are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **`LICENSE`, and `"license": "MIT"` in `package.json`.** parlor shipped no
+  licence file at all, which is not "unlicensed, therefore free" — it is **all
+  rights reserved**, the default copyright position when a public repository
+  grants nothing. The README ended with a bare `MIT.` under a "Contributing"
+  heading, which is not the conventional place a reader looks and is not a
+  section a compliance tool reads.
+
+  parlor is a platform consumed through the service registry, so MIT is what
+  keeps a consumer's own licensing situation unchanged when they add it. The
+  copyright line matches the three repositories that already shipped a licence
+  exactly: `Copyright (c) 2026 cafaye`.
+
 ### Fixed (kit-18 D12 sweep)
 
 - **The gate step's comment no longer narrates a workaround for a reader that is
