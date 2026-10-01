@@ -117,7 +117,7 @@ export function LoginForm() {
         />
       </Field>
 
-      <Button aria-busy={pending} disabled={pending} type="submit">
+      <Button aria-busy={pending} busy={pending} disabled={pending} type="submit">
         Sign in
       </Button>
     </form>

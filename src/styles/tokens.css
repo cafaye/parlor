@@ -1,60 +1,259 @@
 /**
  * cafaye design tokens.
  *
- * PLACEHOLDER PALETTE. The scale below is a neutral graphite ramp chosen only
- * so the shell has a coherent, testable theme — it is NOT the cafaye brand.
- * Brand colors are a Phase 2 decision (see AGENTS.md); when they land, edit
- * these variables and nothing else.
+ * ---------------------------------------------------------------------------
+ * THE DESIGN, IN ONE PARAGRAPH
+ * ---------------------------------------------------------------------------
+ * cafaye's product is a ledger: accounts, memberships, invitations, plans,
+ * money. So the ground is **paper** and the text is **ink** — a warm, slightly
+ * yellow neutral (hue 38) rather than the cold blue-grey that every
+ * infrastructure product ships by default. `neutral-50` is the sheet,
+ * `neutral-900` is the pen.
  *
- * Rules for this file:
+ * On that paper there is exactly ONE chromatic voice: **seal**, a deep
+ * petrol-teal. It marks the one thing on screen you can act on — the primary
+ * action, a focus ring, a link. It is not used for headings, decoration or
+ * "brand-ness", because a colour that appears everywhere carries no
+ * information, and a colour that appears once carries a great deal.
+ *
+ * The three status colours are deliberately **warm and earthy** (moss,
+ * ochre, brick) so they read as editorial marks on a page rather than as
+ * software alerts. They never collide with the seal: a status is a fact about
+ * something, seal is an invitation to do something.
+ *
+ * ---------------------------------------------------------------------------
+ * WHY THE FOCUS RING IS ITS OWN TOKEN, AND WHY ITS OFFSET IS LOAD-BEARING
+ * ---------------------------------------------------------------------------
+ * A focus indicator is a NON-TEXT element (WCAG 2.2 SC 1.4.11), so its floor
+ * is 3:1, not the 4.5:1 a text colour must clear — and it is drawn on whatever
+ * ground the focused control stands on, which here is one of three (`surface`,
+ * `surface-raised`, `surface-sunken`). So it gets its own token, held to its
+ * own floor, and `src/styles/tokens.test.ts` checks all three grounds in both
+ * themes rather than trusting this comment.
+ *
+ * The non-obvious half is the OFFSET, and it is worth being precise about
+ * because the obvious statement is wrong. The obvious statement is "the ring
+ * needs contrast against the control it surrounds", and in this palette it
+ * does not: measured, the ring against the light primary's fill is 4.30:1.
+ *
+ * In dark mode it is worse than "does not" — it is exactly 1.00:1, because a
+ * dark primary button is filled with `seal-400` and the ring is also
+ * `seal-400`. And that is not a mistake to be fixed by nudging a hex value. It
+ * is arithmetic: the ground here is near-black and the primary fill is a
+ * light teal, and no single colour can be 3:1 from both ends of that range at
+ * once. Every value that clears the near-black ground is too close to the
+ * light teal, and every value that separates from the light teal is too close
+ * to the ground.
+ *
+ * So the ring is a HALO, not an outline. What makes it visible is the 2px gap
+ * that `outline-offset` opens, and that gap is painted by the GROUND the
+ * control sits on — never by the control. The ring is therefore tuned against
+ * the grounds and is *expected* to match the fill it wraps; that is the design
+ * working, not the design failing. Remove the offset, or let a component
+ * override the ring, and every filled control in the system loses its focus
+ * indicator. Which is why the ring is one utility (`focus-ring`, below) that
+ * components apply rather than four lines each that they can each get wrong,
+ * and why the test pins the 1.00:1 as a number instead of leaving it to
+ * inspection.
+ *
+ * ---------------------------------------------------------------------------
+ * RULES FOR THIS FILE
+ * ---------------------------------------------------------------------------
  *   - This is the single source of theme values. Components use Tailwind
- *     utilities (bg-cafaye-500, text-muted); they never hardcode hex values.
+ *     utilities (`bg-surface`, `text-muted`); they never hardcode hex values.
+ *     A test enforces that.
  *   - Everything lives inside `@theme` so Tailwind v4 generates the utilities.
- *   - Semantic names (--color-surface, --color-muted) describe intent, not
- *     pigment, so a dark-mode swap stays a one-line change per token.
- *   - shadcn/ui arrives in Phase 2 and will add its own token block; keep both
- *     in this file rather than scattering CSS.
+ *   - Semantic names (`--color-surface`, `--color-muted`) describe intent, not
+ *     pigment, so a dark-mode swap is a one-line change per token. The raw
+ *     ramps are for tokens and accents; components should reach for the
+ *     semantic layer.
+ *   - `prefers-color-scheme` is the only dark-mode switch. There is no class
+ *     toggle and no `data-theme` attribute: a theme a person can flip needs a
+ *     persisted choice and a flash-free first paint, and neither exists here.
+ *     Adding one is a later packet, and this file is where it lands.
  */
 
 @theme {
-  /* -- cafaye palette (placeholder) ------------------------------------- */
-  --color-cafaye-50: #f7f7f8;
-  --color-cafaye-100: #ededee;
-  --color-cafaye-200: #d8d8db;
-  --color-cafaye-300: #b6b6bb;
-  --color-cafaye-400: #8e8e95;
-  --color-cafaye-500: #6b6b73;
-  --color-cafaye-600: #55555c;
-  --color-cafaye-700: #444449;
-  --color-cafaye-800: #2e2e32;
-  --color-cafaye-900: #1b1b1e;
-  --color-cafaye-950: #101012;
+  /* -- neutral: paper and ink -------------------------------------------- */
+  /* Hue 38, saturation 9%. Warm, low-chroma, monotone in luminance across all
+     eleven steps. 50 is the sheet, 900 is the pen. */
+  --color-neutral-50: #fafaf9;
+  --color-neutral-100: #f6f5f4;
+  --color-neutral-200: #ecebe9;
+  --color-neutral-300: #dad7d3;
+  --color-neutral-400: #b5afa6;
+  --color-neutral-500: #90887a;
+  --color-neutral-600: #6c665a;
+  --color-neutral-700: #4e4941;
+  --color-neutral-800: #322f2a;
+  --color-neutral-900: #1f1d1a;
+  --color-neutral-950: #131210;
 
-  /* -- semantic layer ---------------------------------------------------- */
-  --color-surface: var(--color-cafaye-50);
+  /* -- seal: the one chromatic voice -------------------------------------- */
+  /* Hue 188. Dark enough that white text clears 5:1 on 700; light enough that
+     200 reads as a tint on paper. Used for the primary action, links, focus
+     and selection — and for nothing else. */
+  --color-seal-50: #f3fbfc;
+  --color-seal-100: #e2f5f8;
+  --color-seal-200: #c5ecf1;
+  --color-seal-300: #9cdee8;
+  --color-seal-400: #62cada;
+  --color-seal-500: #2fb2c6;
+  --color-seal-600: #258d9d;
+  --color-seal-700: #1d6f7c;
+  --color-seal-800: #16555f;
+  --color-seal-900: #103f46;
+  --color-seal-950: #0b292d;
+
+  /* -- status: warm, earthy, never confused with seal ---------------------- */
+  /* Moss, ochre, brick. Each has a `surface` partner for the tinted panel it
+     sits on, and each pair is contrast-checked in both themes.
+     `brick-300` exists for one measured reason: on its own tinted dark
+     surface, `brick-400` scores 4.11:1 and the 4.5:1 text floor is missed by
+     a third of a point. A ramp earns a step when a pairing needs it. */
+  --color-moss-400: #6d9a72;
+  --color-moss-600: #3d6b45;
+  --color-moss-700: #2f5738;
+  --color-moss-100: #e8f0e6;
+  --color-ochre-400: #b98b3e;
+  --color-ochre-600: #8a6320;
+  --color-ochre-700: #6f4e19;
+  --color-ochre-100: #f6efdd;
+  --color-brick-300: #c98b81;
+  --color-brick-400: #b5675c;
+  --color-brick-600: #9a3a2c;
+  --color-brick-700: #7d2c20;
+  --color-brick-100: #f7e9e6;
+
+  /* -- semantic layer: light ---------------------------------------------- */
+  /* Every value a component can reach for. A component that names one of
+     these keeps working in dark mode without knowing dark mode exists. */
+  --color-surface: var(--color-neutral-50);
   --color-surface-raised: #ffffff;
-  --color-foreground: var(--color-cafaye-950);
-  --color-muted: var(--color-cafaye-500);
-  --color-border: var(--color-cafaye-200);
-  --color-accent: var(--color-cafaye-900);
+  --color-surface-sunken: var(--color-neutral-100);
+  --color-overlay: #ffffff;
 
-  /* -- status (reserved: identity + billing wire these up in Phase 2) ---- */
-  --color-positive: #2f7d4f;
-  --color-caution: #8a6a1f;
-  --color-critical: #a32f2f;
+  --color-foreground: var(--color-neutral-900);
+  --color-muted: var(--color-neutral-600);
 
-  /* -- typography -------------------------------------------------------- */
+  /* There is deliberately no `placeholder` token, and its absence is measured
+     rather than tidy. A placeholder is text (WCAG 2.2 SC 1.4.3), so it has to
+     clear 4.5:1; the lightest step of this ramp that does so, on paper, is
+     500 — and 500 against 600 is a difference nobody can see. So a compliant
+     placeholder and a compliant secondary label are the SAME colour, and a
+     third token for that would be a distinction the contrast math has already
+     ruled out. `Input` uses `placeholder:text-muted`, and the real help text
+     belongs in `Field`'s `hint`, which is a `<p>` a screen reader can reach. */
+
+  --color-border: var(--color-neutral-200);
+  --color-border-strong: var(--color-neutral-500);
+
+  /* The primary action. Ink, not seal: a filled primary button carries white
+     text, and the seal steps that pass 3:1 as a ring do not pass 4.5:1 as a
+     fill. Ink passes at 16.1:1 and stays a neutral, which is what keeps the
+     one chromatic voice scarce. */
+  --color-accent: var(--color-neutral-900);
+  --color-accent-hover: var(--color-neutral-700);
+  --color-on-accent: #ffffff;
+
+  /* Interactive, not a fill. Darker than accent so it separates from a paper
+     ground; 7.25:1 on `surface`. Asserted in tokens.test.ts. */
+  --color-link: var(--color-seal-700);
+  --color-link-hover: var(--color-seal-800);
+
+  /* The focus indicator. Its own token, for the reason in the header comment:
+     a ring drawn in `accent` is invisible on an accent-filled control. */
+  --color-focus-ring: var(--color-seal-600);
+
+  --color-positive: var(--color-moss-700);
+  --color-positive-surface: var(--color-moss-100);
+  --color-caution: var(--color-ochre-700);
+  --color-caution-surface: var(--color-ochre-100);
+  --color-critical: var(--color-brick-700);
+  --color-critical-surface: var(--color-brick-100);
+
+  /* -- typography --------------------------------------------------------- */
+  /* Geist Sans with a system fallback chain. The scale below is 1.2 (a
+     "major second"-ish ladder) and it is defined here rather than left to
+     Tailwind's defaults so the ramp is a decision rather than an inherited
+     accident. 12/14/16/18/24/30/36. */
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 
-  /* -- radius / spacing scale ------------------------------------------- */
+  --text-meta: 0.75rem;
+  --text-meta--line-height: 1.3333;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.4286;
+  --text-base: 1rem;
+  --text-base--line-height: 1.5;
+  --text-lg: 1.125rem;
+  --text-lg--line-height: 1.3333;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.4;
+  --text-2xl: 1.5rem;
+  --text-2xl--line-height: 1.3333;
+  --text-3xl: 1.875rem;
+  --text-3xl--line-height: 1.2;
+  --text-4xl: 2.25rem;
+  --text-4xl--line-height: 1.1111;
+
+  /* -- radius ------------------------------------------------------------- */
+  /* Two radii and a pill. The paper metaphor wants less rounding than a
+     typical product UI: a ledger sheet has corners, it does not have bubbles.
+     `md` is the default for every control and panel, so a button, an input
+     and the card they sit in all agree. */
   --radius-sm: 0.25rem;
-  --radius-md: 0.5rem;
-  --radius-lg: 0.75rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+  --radius-full: 9999px;
+
+  /* -- spacing rhythm ----------------------------------------------------- */
+  /* Tailwind's 4px base is kept: it is the one default worth inheriting, and a
+     component never needs a value that is not a multiple of it. `--pane` is
+     the padding inside a panel and `--gap-form` the gap between form fields,
+     named because those two recur in almost every screen and were the two
+     most re-decided in this codebase. */
+  --spacing: 0.25rem;
+  --pane: 1rem;
+  --gap-form: 1rem;
+  --gap-section: 2rem;
+
+  /* -- elevation ---------------------------------------------------------- */
+  /* One shadow, and it is reserved for things that genuinely float: the
+     dialog and the overlay scrim. Panels do not get one — they sit on paper
+     with a hairline, which is what the metaphor asks for and what keeps a
+     dense screen from turning into a pile of cards. */
+  --shadow-overlay: 0 1px 2px 0 rgb(19 18 16 / 0.06), 0 8px 24px -6px rgb(19 18 16 / 0.18);
+  --shadow-dialog: 0 2px 4px 0 rgb(19 18 16 / 0.08), 0 24px 48px -12px rgb(19 18 16 / 0.28);
+
+  /* -- motion ------------------------------------------------------------- */
+  /* Two durations and nothing else. 120ms is under the ~150ms threshold where
+     a transition starts to feel like latency; 200ms is the ceiling for
+     anything that moves. Both are cut to zero under reduced-motion — see the
+     `motion-reduce` utilities the components use. */
+  --duration-fast: 120ms;
+  --duration-slow: 200ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0.2, 1);
 }
 
-/* Dark mode: remap the semantic layer only. The ramp above is shared, so the
-   brand decision in Phase 2 lands in one place. */
+/* ---------------------------------------------------------------------------
+ * DARK MODE
+ * ---------------------------------------------------------------------------
+ * Only the semantic layer is remapped; the two ramps above are shared. That is
+ * the whole point of the split: a brand step change lands in one place, and a
+ * component never has to know which theme it is in.
+ *
+ * Every token declared in the light block above has a counterpart here, and
+ * `tokens.test.ts` fails if one is added to one and not the other — a silent
+ * hole is exactly how a dark mode goes half-finished.
+ *
+ * Dark is not "light, inverted". The accent INVERTS: a primary button in dark
+ * mode is filled with light seal, because a near-black button on a near-black
+ * page is invisible. So `on-accent` becomes ink. That is a real design
+ * decision, and it is the reason `on-accent` is a token and not a literal
+ * `#ffffff` scattered through the button variants.
+ */
 @layer base {
   :root {
     color-scheme: light dark;
@@ -62,12 +261,65 @@
 
   @media (prefers-color-scheme: dark) {
     :root {
-      --color-surface: var(--color-cafaye-950);
-      --color-surface-raised: var(--color-cafaye-900);
-      --color-foreground: var(--color-cafaye-50);
-      --color-muted: var(--color-cafaye-400);
-      --color-border: var(--color-cafaye-800);
-      --color-accent: var(--color-cafaye-100);
+      --color-surface: var(--color-neutral-950);
+      --color-surface-raised: var(--color-neutral-900);
+      --color-surface-sunken: #0a0908;
+      --color-overlay: var(--color-neutral-800);
+
+      --color-foreground: var(--color-neutral-50);
+      --color-muted: var(--color-neutral-400);
+
+      --color-border: #2b2825;
+      /* 500, not 600. On `surface-raised` — a card, which is LIGHTER than the
+         page in this theme — 600 measures 2.95:1 and misses the 3:1 non-text
+         floor by 0.05. 500 clears it at 4.79:1. */
+      --color-border-strong: var(--color-neutral-500);
+
+      /* The inversion. Light seal fills the button; ink rides on it. */
+      --color-accent: var(--color-seal-400);
+      --color-accent-hover: var(--color-seal-300);
+      --color-on-accent: var(--color-neutral-950);
+
+      --color-link: var(--color-seal-300);
+      --color-link-hover: var(--color-seal-200);
+
+      --color-focus-ring: var(--color-seal-400);
+
+      --color-positive: var(--color-moss-400);
+      --color-positive-surface: #16241a;
+      --color-caution: var(--color-ochre-400);
+      --color-caution-surface: #26200f;
+      /* 300, not 400: see the note on `--color-brick-300`. 4.11:1 on this
+         surface is a real miss, not a rounding artefact. */
+      --color-critical: var(--color-brick-300);
+      --color-critical-surface: #2a1714;
+    }
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * FOCUS, ONCE
+ * ---------------------------------------------------------------------------
+ * The ring is defined here rather than repeated in five components, because a
+ * focus indicator that is defined five times is a focus indicator that will be
+ * defined four times within a year. `outline` and not `box-shadow`: outlines
+ * are what Windows High Contrast Mode honours, and they follow the element's
+ * border-radius for free.
+ *
+ * The offset is 2px rather than 0 so the ring never sits flush against the
+ * control's own border — on a filled control that would put two similar
+ * colours edge to edge and the ring would stop reading as a separate thing.
+ */
+@layer utilities {
+  .focus-ring {
+    outline: 2px solid var(--color-focus-ring);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .focus-ring {
+      outline: 3px solid var(--color-focus-ring);
+      outline-offset: 2px;
     }
   }
 }

@@ -184,7 +184,7 @@ function CreateAccountForm() {
         </Field>
 
         <div>
-          <Button aria-busy={create.isPending} disabled={create.isPending} type="submit">
+          <Button aria-busy={create.isPending} busy={create.isPending} disabled={create.isPending} type="submit">
             Create account
           </Button>
         </div>

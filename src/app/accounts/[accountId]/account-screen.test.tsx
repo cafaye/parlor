@@ -669,15 +669,38 @@ describe("leaving an account", () => {
     expect(screen.queryByRole("button", { name: /leave/i })).toBeNull();
   });
 
-  it("removes the caller's own membership, addressed by their own id", async () => {
+  it("removes the caller's own membership, addressed by their own id, once confirmed", async () => {
     signIn();
     const identity = asCaller({ role: "member" }, { removeMember: vi.fn(async () => undefined) });
     renderWithProviders(<AccountScreen accountId={ACCOUNT_ID} />, { identity });
 
     fireEvent.click(await screen.findByRole("button", { name: /leave/i }));
+
+    // The confirmation. Leaving is irreversible in exactly the way deleting is:
+    // the copy on this very screen says you will need a NEW INVITATION to come
+    // back, so a one-click button that removes your membership with no
+    // confirmation is a button that ends somebody's access to a workspace.
+    expect(screen.getByRole("dialog", { name: "Leave this account?" })).toBeInTheDocument();
+    expect(identity.removeMember).not.toHaveBeenCalled();
+
     fireEvent.click(screen.getByRole("button", { name: "Leave this account" }));
 
     await waitFor(() => expect(identity.removeMember).toHaveBeenCalledWith(TOKEN, ACCOUNT_ID, CALLER_ID));
+  });
+
+  it("does nothing when leaving is declined, which is the whole point of asking", async () => {
+    signIn();
+    const identity = asCaller({ role: "member" }, { removeMember: vi.fn(async () => undefined) });
+    renderWithProviders(<AccountScreen accountId={ACCOUNT_ID} />, { identity });
+
+    fireEvent.click(await screen.findByRole("button", { name: /leave/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    // Focus lands on Cancel, so a person who opened the dialog and hit Escape or
+    // Tab-away has not asked for anything. This is the assertion that makes the
+    // confirmation a confirmation rather than a speed bump.
+    expect(identity.removeMember).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("goes back to the accounts list afterwards", async () => {
@@ -762,5 +785,59 @@ describe("deleting an account", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/only an owner can delete/i);
     expect(push).not.toHaveBeenCalled();
+  });
+
+  it("puts the confirmation in a named dialog, so it is a place and not a pair of buttons", async () => {
+    signIn();
+    const identity = asCaller({ role: "owner" }, { deleteAccount: vi.fn(async () => undefined) });
+    renderWithProviders(<AccountScreen accountId={ACCOUNT_ID} />, { identity });
+
+    // Before: no dialog at all, so the page has nothing named "delete".
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    fireEvent.click(await screen.findByRole("button", { name: /delete/i }));
+
+    // Named by the question, and it carries the consequence as its
+    // description. The consequence is a screen-reader property, not a visual
+    // one — a dialog whose "no undo" only exists as a paragraph is a dialog
+    // that says nothing to somebody not looking at it.
+    const dialog = screen.getByRole("dialog", { name: "Delete this account?" });
+    expect(dialog).toHaveAccessibleDescription(
+      "The account and everything scoped by it are removed. There is no undo.",
+    );
+  });
+
+  it("offers the destructive action as a destructive button, not the primary one", async () => {
+    signIn();
+    const identity = asCaller({ role: "owner" }, { deleteAccount: vi.fn(async () => undefined) });
+    renderWithProviders(<AccountScreen accountId={ACCOUNT_ID} />, { identity });
+
+    fireEvent.click(await screen.findByRole("button", { name: /delete/i }));
+
+    // The regression this guards: the confirming button used to be
+    // `variant="primary"`, so the most dangerous control on the account screen
+    // carried the same visual weight as "Save name" three panels above it.
+    // Asserted by asking the system whether the two are the same, rather than
+    // by naming a class — the property is that they are distinguishable, and a
+    // future palette is free to change what `destructive` looks like.
+    const destructive = screen.getByRole("button", { name: "Delete this account" });
+    const primary = await screen.findByRole("button", { name: "Rename" });
+    expect(destructive.className).not.toBe(primary.className);
+  });
+
+  it("sends nothing while the dialog is open, however many times it is focused", async () => {
+    signIn();
+    const identity = asCaller({ role: "owner" }, { deleteAccount: vi.fn(async () => undefined) });
+    renderWithProviders(<AccountScreen accountId={ACCOUNT_ID} />, { identity });
+
+    fireEvent.click(await screen.findByRole("button", { name: /delete/i }));
+
+    // Focus lands on Cancel. The dangerous button is reachable and clearly
+    // labelled, but a person who opened the dialog and pressed Escape has not
+    // asked for anything.
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Cancel" })),
+    );
+    expect(identity.deleteAccount).not.toHaveBeenCalled();
   });
 });

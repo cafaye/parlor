@@ -193,17 +193,22 @@ gate:
     #                             change in the summary's tail is not a red
     #                             gate; only the `|` is load-bearing.
     #
-    # 377 is what the suite has today, so the floor is a decrease-detector and
-    # not a budget: a suite that quietly lost forty tests cannot report itself
-    # as passing. It is the only place in parlor that writes down how many tests
-    # there are, which is deliberate — there is no ratchet test here forcing it
-    # to stay in step (see the report: core has
-    # `test_the_gate_floor_is_not_below_the_suite_core_claims_to_have`, and
-    # parlor has no equivalent, so raising this number when the suite grows is
-    # a thing a human has to remember until MD12's machinery lands).
+    # 484 is what the suite has today, re-measured on this tree on 2026-10-01
+    # (`npm test` -> `Tests  484 passed (484)`, 21 files). It was 377 before the
+    # design-system packet, which added 107: 50 in
+    # `src/styles/tokens.test.ts` (the measured contrast and ramp-structure
+    # checks), 54 across `src/components/ui/{controls,feedback,link}.test.tsx`,
+    # and 3 in the account screen's suite for the `ConfirmDialog` work.
+    # A floor is a decrease-detector and not a budget: a suite that quietly lost
+    # forty tests cannot report itself as passing. It is the only place in
+    # parlor that writes down how many tests there are, which is deliberate —
+    # there is no ratchet test here forcing it to stay in step (see the report:
+    # core has `test_the_gate_floor_is_not_below_the_suite_core_claims_to_have`,
+    # and parlor has no equivalent, so raising this number when the suite grows
+    # is a thing a human has to remember until MD12's machinery lands).
     - id: suite
       match: '^[ ]*Tests[ ]+([0-9]+)[ ]+passed(?![ ]*\|)'
-      minimum: 377
+      minimum: 484
     # The tally `tests/validate-ci.sh` prints, which is the second half of this
     # gate: the checks that the tree still has the shape CI assumes — one
     # runtime pin, `npm ci` and not `npm install`, the gate command, the
@@ -253,7 +258,7 @@ gate:
       match: '^self_test: ([0-9]+) breakages'
       minimum: 34
   # NOT PROVED, and named here rather than left to be discovered: a proof is a
-  # line of output. `377 passed` proves 377 tests ran; it does not prove the
+  # line of output. `484 passed` proves 484 tests ran; it does not prove the
   # tests touched identity, because they do not — the identity and billing
   # clients are stubbed in the render rig and `src/lib/identity.test.ts`
   # replaces global fetch with a function that throws. Proving that the tests

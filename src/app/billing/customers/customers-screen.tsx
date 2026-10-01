@@ -125,6 +125,7 @@ function CustomerList({
         <div>
           <Button
             aria-busy={customers.isFetchingNextPage}
+            busy={customers.isFetchingNextPage}
             disabled={customers.isFetchingNextPage}
             onClick={() => {
               void customers.fetchNextPage();
@@ -281,7 +282,7 @@ function CreateCustomerForm() {
         </Field>
 
         <div>
-          <Button aria-busy={create.isPending} disabled={create.isPending} type="submit">
+          <Button aria-busy={create.isPending} busy={create.isPending} disabled={create.isPending} type="submit">
             Create customer
           </Button>
         </div>

@@ -80,6 +80,7 @@ export function PlansScreen() {
         <div>
           <Button
             aria-busy={plans.isFetchingNextPage}
+            busy={plans.isFetchingNextPage}
             disabled={plans.isFetchingNextPage}
             onClick={() => {
               void plans.fetchNextPage();

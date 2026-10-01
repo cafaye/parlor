@@ -11,9 +11,10 @@ rig — and the screens built against identity's and billing's real contracts.
 Auth (`/register`, `/login`, a session-aware header), accounts and invitations
 (`/accounts`, `/accounts/[accountId]`, `/invitations/[token]`), and the two
 billing surfaces the contract actually declares (`/billing/plans`,
-`/billing/customers`). If you are looking for a dashboard, settings, admin,
-shadcn/ui or a subscription screen, you are looking at a later packet — see
-CHANGELOG "Known gaps" for the five service-side gaps this build works around.
+`/billing/customers`), built on the design system in `docs/design-system.md`.
+If you are looking for a dashboard, settings, admin or a subscription screen,
+you are looking at a later packet — see CHANGELOG "Known gaps" for the five
+service-side gaps this build works around.
 
 ## Setup
 
@@ -339,11 +340,24 @@ Non-negotiable, because it is the property the screen exists to protect:
 
 - `src/styles/tokens.css` is the **only** place theme values live.
 - Components use Tailwind utilities (`bg-surface`, `text-muted`,
-  `text-cafaye-500`). Never a raw hex, never a `style={{ color }}` inline.
-- The cafaye palette is a **placeholder** ramp. Do not treat it as brand, and
-  do not sprinkle brand decisions across components — change tokens.
+  `text-link`). Never a raw hex, never a `style={{ color }}` inline. A test
+  walks `src/components` and fails on any colour literal.
+- The palette is **designed, not a placeholder**: a warm paper-and-ink neutral
+  and one chromatic voice (`seal`) reserved for interactive things. The reasoning
+  and the measured contrast numbers are in `src/styles/tokens.css`'s header and
+  in `docs/design-system.md`.
 - Semantic layer (`--color-surface`, `--color-muted`, `--color-border`) is what
-  components should reach for; the raw ramp is for tokens and accents.
+  components should reach for; the raw ramps are for tokens and accents.
+- **`src/styles/tokens.test.ts` measures the palette on every run.** It parses
+  `tokens.css`, resolves the `var()` chains, and asserts WCAG contrast for every
+  pairing in both themes, plus ramp monotonicity and light/dark parity. Adding
+  a semantic token means adding it to **both** blocks or the parity test fails.
+- **The focus ring is one utility (`focus-ring`) and its 2px offset is
+  load-bearing.** A ring drawn flush against a filled control is 1.00:1 against
+  it in dark mode; what makes it visible is the gap, painted by the ground. Do
+  not give a control its own ring, and do not set the offset to zero.
+- Do not add a theme toggle without deciding where the preference is persisted;
+  `prefers-color-scheme` is the only switch today and that is deliberate.
 
 ## Health surfaces
 
@@ -383,15 +397,23 @@ src/test/           vitest setup + support/ (stubs, render helper)
   components that render a client *form*; the split is the point.
 - Route handlers export named HTTP verb functions (`export function GET()`), no
   default export, no class instances.
-- `src/components/ui/index.ts` is the single import path for primitives. Button,
-  Input and Field are hand-rolled now and shadcn replaces them in place; call
-  sites do not move.
+- `src/components/ui/index.ts` is the single import path for primitives. The
+  primitives are cafaye's own design, not a wrapper over a library; call sites
+  do not move when one is added or restyled.
+- `docs/design-system.md` is the guide for building a screen: which component
+  to reach for, what the variants mean, and what is deliberately absent.
 - `Field` owns the label / description / invalid wiring. Do not hand-wire
   `aria-describedby` at a call site — that is how a screen reader ends up
   announcing "invalid" and dropping the reason.
 - A button's accessible name does not change when it becomes busy. It goes
   `disabled` + `aria-busy`; a control that renames itself mid-interaction loses
-  its own label for anyone navigating by name.
+  its own label for anyone navigating by name. `Spinner` is `aria-hidden`
+  because the `aria-busy` is the announcement.
+- **`variant="destructive"` and `ConfirmDialog` are the only way to run
+  something irreversible.** The confirming button used to be `primary`, which
+  made the most dangerous control on the account screen look exactly like
+  "Save name". There is no `href` on `Button`: a button that navigates is a
+  link, and the absence is what stops the wrong thing being easy.
 
 ## Dependencies
 

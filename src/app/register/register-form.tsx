@@ -138,7 +138,7 @@ export function RegisterForm() {
         />
       </Field>
 
-      <Button aria-busy={pending} disabled={pending} type="submit">
+      <Button aria-busy={pending} busy={pending} disabled={pending} type="submit">
         Create account
       </Button>
     </form>
