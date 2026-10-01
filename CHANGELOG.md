@@ -8,6 +8,46 @@ All notable changes to parlor are recorded here. The format follows
 
 ### Added
 
+- **`gate.yml` — this repository's gate, declared instead of discovered.**
+  `core` ships the standard (a `gate.schema.json`, a `harness/gate_check.py`
+  and the reasoning in `docs/gate.md`), and this is the adopting packet for
+  `parlor`: one file at the root saying what gates the repository
+  (`./bin/prime`, behind `bin/prime`, resolved by `[tasks.prime]` in
+  `mise.toml`, and by the `prime` job in `ci.yml`), what it needs from the
+  machine that is not in the repository, and what its own output must contain
+  before "passed" means anything. The honest answer for the second question is
+  `selfContained: false`: `node_modules/` is gitignored, so a fresh clone needs
+  the npm registry once, and no Node is vendored. Both requirements name a
+  command you can paste and what "unmet" looks like, and the toolchain one is
+  demonstrated rather than asserted — with `.npmrc`'s `engine-strict=true`, a
+  Node that is not 22.22.2 makes `npm ci` exit 1 with `npm error code
+  EBADENGINE`, so the pin is a red `bin/prime` and not a suite that quietly
+  passed on a different runtime.
+- **Three `proof` floors, because `bin/prime` runs three separately-countable
+  things and "exited 0" says nothing about any of them:** 377 vitest tests,
+  the 35 checks in `tests/validate-ci.sh`, and the 34 breakages in its
+  self-test. A run that skipped one and exited zero is `gate.proof-missing`,
+  which is a failure — the `cafaye-rb` defect, where a tier never executed once
+  and the run printed `ok`. The floors are decrease-detectors, not budgets:
+  they are today's counts, so a suite that quietly lost forty tests cannot
+  report itself as passing. Note what this repository does **not** have, which
+  `core` does: a ratchet test that forces the floor up when the suite grows.
+  Here it is a thing a human has to remember.
+- **`tests/gate-declaration-self-test.sh` — proof that the proof can fail.** A
+  control on an unmodified clone, then every breakage asserted to go red **and
+  to name the finding it expects** — including the one that is not string
+  matching at all: a well-formed `bin/prime` that is `exit 0`, where every
+  string in `gate.yml` is true and the repository is ungated. It is
+  deliberately not in `bin/prime`: the checker is `core`'s and is not vendored
+  here, and the proof cases each run the whole gate in a fresh clone. It exits
+  **2**, never 0, when `core` is not beside the repository.
+- **Colour cases built from captured bytes.** Four fixtures reproduce the exact
+  byte sequences a real run of this gate wrote with `FORCE_COLOR=1` — the
+  coloured `Tests` line, one where the suite lost tests, one where it skipped
+  one, and one that printed the file count instead of the test count. They are
+  transcriptions rather than hand-rendered imitations, because a fixture that
+  re-drew the output would be testing the fixture.
+
 - **The whole-stack end-to-end tier.** `./bin/e2e` brings up a Docker Compose
   stack — `parlor` built from here, `identity` and `guard` built from
   `../identity` and `../guard`, one Postgres, one Redis, and the same-origin edge
@@ -114,6 +154,107 @@ All notable changes to parlor are recorded here. The format follows
   should get the same three checks CI does; otherwise the CI half is a variant,
   and a variant is the thing this removes. The two original commands are
   unchanged and still the reproduction check.
+
+### Fixed
+
+- **The escape tolerance that was a workaround for a core defect is deleted,
+  and the deletion is a tightening.** `core-13` (`c63af27`) landed MD17:
+  `harness/gate_check.py` strips ANSI escape sequences from the gate's captured
+  output in exactly one place — `prove()`, where the output is read — before it
+  applies any `proof[].match`. The `suite` proof no longer needs the
+  `(?:[ ]|\x1b\[[0-9;]*m)*` runs it carried for that gap, and they are gone:
+
+      - match: '^(?:[ ]|\x1b\[[0-9;]*m)*Tests(?:[ ]|\x1b\[[0-9;]*m)*([0-9]+)[ ]+passed(?!(?:[ ]|\x1b\[[0-9;]*m)*\|)'
+      + match: '^[ ]*Tests[ ]+([0-9]+)[ ]+passed(?![ ]*\|)'
+
+  The runs could match *nothing*, and that is the half that made them a liability
+  rather than only an inconvenience: on the stripped bytes
+  `      Tests377 passed (377)` the old pattern matched and read 377 off it, and
+  the new one refuses the line. `vitest` always prints a space between the label
+  and the count, so a line without one is not a summary a floor should be read
+  from. Both verdicts are asserted on the same fixture in
+  `tests/gate-declaration-self-test.sh`, so the tightening is measured rather
+  than argued.
+
+  The negative lookahead `(?!…\|)` is kept untouched — it has nothing to do with
+  colour, and it is what makes a suite that *skipped* a test
+  `gate.proof-missing` instead of a smaller green. Every other group stays
+  `(?:…)`: the floor is read from exactly one capture group, and there is now a
+  case for what happens when there are two.
+
+  Three new cases and one new assertion guard the deletion rather than trusting
+  a comment: `no-separator` (a summary whose label and count are not separated
+  by a space is refused), `no-separator-under-the-old-pattern` (the same line is
+  accepted under the deleted tolerance, which is what makes the first case mean
+  something), `floor-with-two-capture-groups` (a second group beside the first
+  is `gate.proof-invalid`, not a smaller pattern), and a static check that fails
+  if **any** `match:` in `gate.yml` names a terminal escape, in any spelling and
+  raw ESC included. Putting the tolerance back is now a red, not a question for
+  the next reviewer.
+- **`ci.yml`'s `run: |` block, which was the same kind of workaround, is gone
+  too.** `core-12` (`63fd319`) fixed `workflow_run_lines()` so a one-line
+  `run: <command>` is read rather than invisible to `gate.ci-disagrees`, so the
+  `prime` job spells the gate invocation the ordinary way again. Two cases pin
+  it: `ci-disagrees` rewrites the one-line command in place, and the new
+  `ci-step-deleted` removes the step entirely — so "the checker can see this
+  step" is asserted from both sides instead of assumed from a green control.
+- **The self-test's second control now guards `core`'s stripper rather than this
+  repository's pattern, and says which it is guarding.** With stripping in
+  place, control 1 cannot be made red by colour at all, so the `FORCE_COLOR=1`
+  control is the only case that would go red if `core` ever stopped stripping.
+  The `prefix-pattern-colour` case used to SKIP once core learned to strip; it
+  now asserts which side of MD17 the repository is on and prints which answer it
+  got, because "the pre-fix pattern is green *because* core strips" is a fact
+  worth stating rather than a case with nothing left to say.
+
+- **A gate proof that could not see coloured output, so a green run was
+  reported as `gate.proof-missing`.** The `suite` proof reads the vitest
+  summary, and the pattern it used — `^[ ]*Tests[ ]+([0-9]+) passed` — is
+  correct for the output a human sees and wrong for the bytes the checker
+  reads. `vitest` decorates that line, and with `FORCE_COLOR=1` in the
+  environment the gate is captured in, the bytes on disk are
+  `\x1b[2m      Tests \x1b[22m \x1b[1m\x1b[32m377 passed\x1b[39m…` — a line that
+  begins with an escape, not with a space, so `^[ ]*` cannot match it. The
+  checker reported `gate.proof-missing` about a gate that had proved, in the
+  same log, that it ran 377 tests, and three other cases failed the same way:
+  fixtures that should have been caught by `gate.floor` were caught by
+  `gate.proof-missing` instead, because a floor is never read when the proof
+  never matched. The pattern now carries no escape handling at all:
+  `core` strips the escapes before it matches, and the space between the
+  label and the count has to be a real space.
+- **A suite that *skipped* a test satisfied the suite proof.** `vitest` writes
+  `Tests  2 passed | 1 skipped (3)`, and the old pattern matched that line and
+  read 2 off it. The proof now refuses any line where a `|` follows `passed`,
+  so a skip is `gate.proof-missing` rather than a smaller green — the rule
+  AGENTS.md already states for the end-to-end tier, applied to the suite. This
+  half is a tightening and is not about colour: **keep it** when the escape
+  tolerance is deleted.
+- **A control that could only pass on a machine whose tools do not colourise.**
+  `tests/gate-declaration-self-test.sh` ran its control once, against whatever
+  bytes the local toolchain happened to produce, so the pattern above was
+  green here and red on the manager's. The control now runs **twice**: once as
+  before, and once with `FORCE_COLOR=1` in the environment the checker captures
+  the gate in. A self-test's own control going red is no longer a finding to
+  disclose at the end of a report — it blocks the packet (D13).
+- **A breakage that stopped applying still reported "goes red".** The script
+  broke its sandboxes with a Python edit that fails loudly when the text it is
+  replacing is not there, but on failure it carried on, so a case whose setup
+  had gone stale would go red for an unrelated reason and be reported as
+  catching the finding it was written for. An un-applied breakage is now a
+  `FAIL` in its own right, and every expectation refuses to run without it.
+- **A step that ran the gate was invisible to `core`'s gate checker.** (Carried
+  over from the previous packet, which was not landed; re-recorded here because
+  the change ships in this one.) `harness/gate_check.py`'s
+  `workflow_run_lines()` collects a workflow's `run: |` block bodies and
+  nothing else: its `RUN_KEY` is `^(\s*)run:\s*([|>][-+]?)?\s*$`, which a
+  one-line `run: <command>` does not match. `ci.yml`'s `prime` job ran
+  `./bin/prime` on one line, so `gate.ci-disagrees` reported that CI does not
+  run the gate when CI does run it — on a declaration that was entirely true.
+  The same reader also misses `run: git diff --exit-code` in **`core`'s own**
+  `ci.yml`, so the gap is in the checker and not in this workflow. The step is
+  now a block scalar, which changes what the step does not at all, and the
+  reason is written above it so nobody tidies it back. The fix belongs in
+  core's `workflow_run_lines`.
 
 ### Changed
 
