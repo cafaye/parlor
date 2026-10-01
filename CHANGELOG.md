@@ -6,6 +6,22 @@ All notable changes to parlor are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed (kit-18 D12 sweep)
+
+- **The gate step's comment no longer narrates a workaround for a reader that is
+  fixed.** It explained that this step used to be a `run: |` block, and why:
+  core's reader collected block bodies only, so the one-line form was invisible
+  to `gate.ci-disagrees`. Core `63fd319` captured the inline form too, so the
+  paragraph was a workaround's obituary kept in the place a reader looks for
+  reasons — and it read, to anyone skimming, as a reason the current spelling
+  was load-bearing.
+
+  What survives is the part that is still doing work: this is the ordinary
+  one-line spelling, nothing about the job is YAML, and
+  `tests/gate-declaration-self-test.sh` proves the checker sees this step's
+  invocation and goes red the moment it stops calling the declared argv.
+  `tests/gate_declaration_check.py` (kit-18) is what flagged it.
+
 ### Added
 
 - **`gate.yml` — this repository's gate, declared instead of discovered.**

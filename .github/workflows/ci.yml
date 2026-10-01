@@ -78,20 +78,11 @@ jobs:
           # `engines.node`; parlor has only the last.
           node-version-file: package.json
       - name: the gate a developer runs
-        # One line, the ordinary spelling. This used to be a `run: |` block, and
-        # the block was a WORKAROUND: `harness/gate_check.py`'s
-        # `workflow_run_lines()` only collected `run: |` block bodies, so a
-        # one-line `run: <command>` was invisible to `gate.ci-disagrees` and the
-        # step that runs the gate did not count as one. The reader is fixed —
-        # `core-12` (`63fd319`) captured the inline form too — so the awkward
-        # spelling is gone with the reason for it.
-        #
-        # The step does exactly the same thing either way, which is what made it
-        # safe to change and also what made it pointless to keep: nothing about
-        # this job was ever about YAML. `tests/gate-declaration-self-test.sh`
-        # asserts the one-line form is still visible to the checker, and asserts
-        # it goes red the moment this step stops calling the declared argv, so
-        # the redundancy is guarded rather than merely claimed.
+        # One line, the ordinary spelling. Nothing about this job is about YAML.
+        # `tests/gate-declaration-self-test.sh` asserts the checker sees this
+        # step's invocation and goes red the moment it stops calling the
+        # declared argv, so the redundancy is guarded rather than merely
+        # claimed.
         run: ./bin/prime
       # `npm ci` cannot move this file — it exits nonzero instead, which is the
       # point: a lockfile that disagrees with package.json should stop the
