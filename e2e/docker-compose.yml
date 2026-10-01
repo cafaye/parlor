@@ -131,10 +131,10 @@ services:
   # database-per-service and a service that reaches into another's database is a
   # bug in review, not a config problem to solve in this file.
   #
-  # postgres:17-alpine, not kit's 16.6: this is the tag identity's own
-  # docker-compose.yml already pins, and this harness does not get to be the
-  # place where a service is tested against a Postgres version its own repo
-  # disagrees with.
+  # postgres:17-alpine, the one image the whole fleet uses: this is the same
+  # tag identity's own docker-compose.yml carries and the same one core
+  # declares, so this harness is not the place where a service is tested
+  # against a Postgres version its own repository disagrees with.
   identity-postgres:
     image: postgres:17-alpine
     environment:
