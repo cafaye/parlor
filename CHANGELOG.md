@@ -157,6 +157,25 @@ All notable changes to parlor are recorded here. The format follows
 
 ### Fixed
 
+- **The floors in `gate.yml` and the floors this repository's self-test breaks
+  things against are now asserted to be the same numbers.** `gate.yml` said so
+  itself, at the `suite` proof: there is no ratchet test here, so "raising this
+  number when the suite grows is a thing a human has to remember until MD12's
+  machinery lands." That remembering is now a control — `control 3` reads both
+  files and compares, statically, and costs nothing.
+
+  Added because this is the **third repository in this batch** where a floor and
+  a second copy of that floor drifted apart. In `billing` the copy sat inside a
+  case that reported a green while proving nothing. In `caf` the merge itself
+  made the floor wrong, and correcting it turned the self-test's stand-in red
+  because the stand-in carried its own `432`. Here the copy is in five `printf`
+  fixtures and one `sed` edit, and every failure mode is loud rather than
+  silent — a stale literal makes that `edit` a no-op, which leaves the gate
+  green, which the `expect_red` beneath it reports as a failure. Loud is better
+  than billing's, but it is still a number held in two files by a comment, and a
+  comment is not a check. Verified in both directions: green at 377, and red
+  naming the proof when the floor is moved to 378 and the script is not.
+
 - **The escape tolerance that was a workaround for a core defect is deleted,
   and the deletion is a tightening.** `core-13` (`c63af27`) landed MD17:
   `harness/gate_check.py` strips ANSI escape sequences from the gate's captured

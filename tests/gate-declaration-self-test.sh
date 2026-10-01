@@ -470,6 +470,62 @@ else
 fi
 
 # --------------------------------------------------------------------------
+# control 3: THE FLOORS IN gate.yml ARE THE FLOORS THIS SCRIPT BREAKS THINGS
+#            AGAINST
+# --------------------------------------------------------------------------
+# Free, and it is here because this repository has no ratchet.
+#
+# `gate.yml` says so itself, at the `suite` proof: "there is no ratchet test here
+# forcing it to stay in step... so raising this number when the suite grows is a
+# thing a human has to remember until MD12's machinery lands." This is that
+# remembering, automated — and it is the third repository in this batch where a
+# floor and a second copy of that floor drifted apart. In `billing` the copy was
+# inside a case that reported a green while proving nothing; in `caf` the merge
+# itself made the floor wrong and the copy in the self-test went red when it was
+# corrected. Same defect, three repos, and in this one it is still only held
+# together by this comment.
+#
+# The check is deliberately STATIC — it reads two files and compares numbers, so
+# it costs nothing and cannot be made green or red by the state of the suite. A
+# test that ran the suite to learn the floor would be circular: the suite is
+# what the floor is a claim about.
+#
+# Every number below is the floor that appears in BOTH gate.yml and this script.
+# If a floor is raised in gate.yml and not here, this goes red and names the
+# proof. If it is raised here and not there, the real gate catches it — that is
+# what the `suite` proof is for — and this goes red too, so neither direction is
+# silent.
+printf '==> control 3: the floors in gate.yml are the floors this script edits\n'
+floor_mismatch=""
+for proof in suite ci-shape-checks check-self-test; do
+  declared_floor="$(sed -n "/^    - id: $proof\$/,/^    - id: /{s/^      minimum: \([0-9][0-9]*\)\$/\1/p;}" \
+    "$ROOT/gate.yml" | head -1)"
+  if [ -z "$declared_floor" ]; then
+    floor_mismatch="$floor_mismatch
+  proof '$proof': gate.yml has no readable minimum; if its shape changed, fix this case rather than hardcoding a number"
+    continue
+  fi
+  if ! grep -q "minimum: $declared_floor" "$ROOT/gate.yml"; then
+    floor_mismatch="$floor_mismatch
+  proof '$proof': read '$declared_floor' but gate.yml does not contain it"
+    continue
+  fi
+  # The literal has to appear in this script too, or the breakages below are
+  # editing a number that no longer exists and passing for the wrong reason.
+  if ! grep -q "$declared_floor" "$0"; then
+    floor_mismatch="$floor_mismatch
+  proof '$proof': gate.yml's floor is $declared_floor but this script never mentions that number, so its breakages edit a floor that is not there"
+  fi
+done
+if [ -n "$floor_mismatch" ]; then
+  no "the floors: gate.yml and this script name the same numbers" \
+    "they disagree:$floor_mismatch
+Raise the floor in gate.yml and in the stand-in gates in this script in the same commit."
+else
+  ok "the floors: gate.yml and this script name the same numbers (static, exit 0)"
+fi
+
+# --------------------------------------------------------------------------
 # the breakages
 # --------------------------------------------------------------------------
 # Twelve of these are the checker reading two files and disagreeing, and every
