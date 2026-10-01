@@ -48,6 +48,25 @@ export default async function LoginPage({
           </p>
         </div>
         <LoginForm passwordChanged={passwordChanged} />
+        {/*
+          The way in for somebody who signed up, closed the tab, and never
+          verified. It is a link rather than a banner on purpose: a banner that
+          said "your address is not verified" would have to read
+          `GET /v1/email-verification`, which answers for the CALLER's own address
+          only — so the one person who most needs to be told would never see it,
+          because they are the one who is not signed in. A plain link is reachable
+          by anybody and says nothing about whether the address behind it exists.
+
+          Rendered unconditionally, like the "forgot your password" link inside the
+          form: a control that appeared only after a failed attempt would be
+          reporting something about the address, and this is the screen that must
+          never do that.
+        */}
+        <p className="text-center text-sm text-muted">
+          <Link className="underline hover:no-underline" href="/verify-email">
+            Need to verify your email?
+          </Link>
+        </p>
       </div>
     </main>
   );

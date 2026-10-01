@@ -195,6 +195,29 @@ export type IdentityClient = {
   // ---------------------------------------------------------------------------
   requestPasswordReset(email: string): Promise<RecoveryAccepted>;
   redeemPasswordReset(input: RedeemPasswordResetInput): Promise<void>;
+
+  // ---------------------------------------------------------------------------
+  // The verification surface, which is three routes rather than two and whose
+  // enumeration stance is NOT the same as the reset surface's.
+  //
+  // `requestEmailVerification` answers the same constant 202 as
+  // `requestPasswordReset` for an address with an account, one without, and one
+  // inside the cooldown — with ONE declared exception, a 409 for an address that
+  // is already proved. That 409 is the service's own stated trade (see
+  // `RequestVerification`), so this client surfaces it rather than flattening it
+  // into the acceptance answer.
+  //
+  // `redeemEmailVerification` answers 204 and, unlike the reset redemption,
+  // revokes nothing and mints nothing: a verification is a fact about an address,
+  // not a change of credential. Nobody is signed out by it and nobody is signed in.
+  //
+  // `verificationStatus` is the ONE route here that takes the token, because it
+  // is the only one that answers a question about the caller rather than about a
+  // token they were handed.
+  // ---------------------------------------------------------------------------
+  requestEmailVerification(email: string): Promise<RecoveryAccepted>;
+  redeemEmailVerification(input: RedeemVerificationInput): Promise<void>;
+  verificationStatus(token: string): Promise<VerificationStatus>;
 };
 
 /**
@@ -215,6 +238,36 @@ export type RecoveryAccepted = { status: string };
  * is why this route is anonymous and why redeeming it signs the caller out.
  */
 export type RedeemPasswordResetInput = { token: string; password: string };
+
+/**
+ * The body of `POST /v1/email-verifications/confirm`.
+ *
+ * `tokenRequest` in the handler: one field, and the other two token routes are
+ * deliberately not folded into it. A shared type with an optional `password`
+ * would invite a client to send a password to a verification endpoint, where the
+ * service would ignore it — and "ignored" is worse than "refused", because a
+ * caller that believed the field was accepted would never learn to retry.
+ *
+ * There is no `email` and no `session`: the token IS the authority, which is why
+ * the route is anonymous and why redeeming it costs nobody their session.
+ */
+export type RedeemVerificationInput = { token: string };
+
+/**
+ * The 200 from `GET /v1/email-verification`.
+ *
+ * `verificationStatusResponse` in the handler. `email_verified_at` is OPTIONAL
+ * and that is load-bearing: it is absent for an address that was never proved,
+ * which is a different answer from an epoch timestamp, and different again from
+ * `false` on an address that was proved and then changed — a changed address
+ * lands unverified. So the type does not default it and the screen does not
+ * invent one.
+ */
+export type VerificationStatus = {
+  email: string;
+  email_verified: boolean;
+  email_verified_at?: string;
+};
 
 export class IdentityError extends Error {
   readonly status: number;
@@ -328,6 +381,29 @@ export function createIdentityClient(
       send(transport, `${base}/v1/password-resets`, "POST", { body: { email } }),
     redeemPasswordReset: (input) =>
       send(transport, `${base}/v1/password-resets/confirm`, "POST", { body: input }),
+
+    // -----------------------------------------------------------------------
+    // The verification surface.
+    //
+    // The same rule as the two calls above: both POSTs are wrapped in
+    // `sessionCredentialOnly` and take no credential, so `send` is called with no
+    // `token` and no Authorization header goes out at all. `verificationStatus`
+    // is the exception — it resolves a session through `currentUser`, so it
+    // carries the token like every other session-scoped call in this file.
+    //
+    // THE SINGULAR ROUTE IS `/v1/email-verification`, not `/v1/email-verifications`.
+    // One word, singular, reading the caller's own state against the two-word
+    // plural routes that start and redeem a flow. It is transcribed rather than
+    // guessed because it is exactly the kind of name a plausible guess gets wrong,
+    // and a wrong path here is a 404 that looks like an unverified account.
+    // -----------------------------------------------------------------------
+
+    requestEmailVerification: (email) =>
+      send(transport, `${base}/v1/email-verifications`, "POST", { body: { email } }),
+    redeemEmailVerification: (input) =>
+      send(transport, `${base}/v1/email-verifications/confirm`, "POST", { body: input }),
+    verificationStatus: (token) =>
+      send(transport, `${base}/v1/email-verification`, "GET", { token }),
   };
 }
 

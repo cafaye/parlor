@@ -454,7 +454,7 @@ fi
 #
 # COST, STATED: this is a second full gate run, so it is the slowest case in the
 # script. It is the slowest because it is the only case that runs the real
-# `npm ci`, the real 377-test suite and the real 34-breakage self-test with the
+# `npm ci`, the real 623-test suite and the real 34-breakage self-test with the
 # bytes the defect was about, and a cheaper control would be a control that
 # could go green without the gate having run at all — which is the defect this
 # script was written to catch.
@@ -662,7 +662,7 @@ expect_red 'a declaration that is entirely TRUE about a gate that exited 0 witho
 seed_sandbox proof-matches-nothing
 # The brief's third minimum, and the one that is not string matching at all: a
 # well-formed pattern that the gate's real output never contains. Nothing is
-# broken about the gate here — this runs the real `bin/prime`, all 377 tests
+# broken about the gate here — this runs the real `bin/prime`, all 623 tests
 # and all 35 checks, and fails only because the declaration promised a line
 # that line is not on.
 edit "$SANDBOX/gate.yml" \
@@ -671,8 +671,8 @@ expect_red 'a proof regex that matches nothing the gate actually prints' \
   "$SANDBOX" 'gate.proof-missing' --prove "proof 'suite'"
 
 seed_sandbox floor-above-the-suite
-edit "$SANDBOX/gate.yml" 'minimum: 377' 'minimum: 3770'
-expect_red 'a gate that proves 377 tests where the declaration promised 3770' \
+edit "$SANDBOX/gate.yml" 'minimum: 623' 'minimum: 6230'
+expect_red 'a gate that proves 623 tests where the declaration promised 6230' \
   "$SANDBOX" 'gate.floor' --prove "proof 'suite'"
 
 seed_sandbox floor-with-no-capture-group
@@ -706,7 +706,7 @@ write "$SANDBOX/bin/prime" <<'SH'
 # that the pattern matches: only then is the finding about the SECOND group
 # rather than about an absent line.
 set -euo pipefail
-printf '\033[2m      Tests \033[22m \033[1m\033[32m377 passed\033[39m\033[22m\033[90m (377)\033[39m\n'
+printf '\033[2m      Tests \033[22m \033[1m\033[32m623 passed\033[39m\033[22m\033[90m (623)\033[39m\n'
 printf '35 passed, 0 failed, 0 skipped\n'
 printf 'self_test: 34 breakages, every check proven able to fail\n'
 SH
@@ -723,7 +723,7 @@ write "$SANDBOX/bin/prime" <<'SH'
 # Prints every proof gate.yml declares and then fails. The proof being present
 # is not the gate passing; only the exit code is.
 set -euo pipefail
-echo "      Tests  377 passed (377)"
+echo "      Tests  623 passed (623)"
 echo "35 passed, 0 failed, 0 skipped"
 echo "self_test: 34 breakages, every check proven able to fail" >&2
 echo "FAIL  one assertion in a suite this gate did not really run" >&2
@@ -745,15 +745,23 @@ expect_red 'a gate that printed all three proofs and then failed' \
 #
 # THE FIXTURES ARE COPIES, NOT IMPRESSIONS. Each `printf` below is a byte-for-byte
 # transcription of a line captured from a real run of this repository's own
-# `bin/prime` on 2026-09-30, with `FORCE_COLOR=1` and without it. A fixture
-# that re-rendered the output by hand would be testing the fixture, which is
-# the mistake this section is here to prevent. The coloured `Tests` line is:
+# `bin/prime`, with `FORCE_COLOR=1` and without it. A fixture that re-rendered
+# the output by hand would be testing the fixture, which is the mistake this
+# section is here to prevent. The coloured `Tests` line is:
 #
-#   \x1b[2m      Tests \x1b[22m \x1b[1m\x1b[32m377 passed\x1b[39m\x1b[22m\x1b[90m (377)\x1b[39m
+#   \x1b[2m      Tests \x1b[22m \x1b[1m\x1b[32m623 passed\x1b[39m\x1b[22m\x1b[90m (623)\x1b[39m
 #
 # and `\033` in the fixtures below is that same byte, because bash's `printf`
 # emits ESC for `\033` and a checked-in literal escape would be invisible in a
 # diff and unreviewable.
+#
+# RE-CAPTURED whenever the floor moves, which is the rule at the top of this
+# file and the reason these numbers are the suite's real ones rather than a
+# round number: a fixture left behind by a smaller suite reports a count below
+# the new floor, and every case that expects green then goes red for a reason
+# that has nothing to do with the pattern under test. The `colour-green` case
+# is the canary — it is the one that goes red first, and it went red on this
+# packet for exactly that reason.
 
 seed_sandbox colour-green
 write "$SANDBOX/bin/prime" <<'SH'
@@ -770,8 +778,8 @@ write "$SANDBOX/bin/prime" <<'SH'
 # case is where it shows up — which is why it is a green expectation and not
 # decoration.
 set -euo pipefail
-printf '\033[2m Test Files \033[22m \033[1m\033[32m17 passed\033[39m\033[22m\033[90m (17)\033[39m\n'
-printf '\033[2m      Tests \033[22m \033[1m\033[32m377 passed\033[39m\033[22m\033[90m (377)\033[39m\n'
+printf '\033[2m Test Files \033[22m \033[1m\033[32m26 passed\033[39m\033[22m\033[90m (26)\033[39m\n'
+printf '\033[2m      Tests \033[22m \033[1m\033[32m623 passed\033[39m\033[22m\033[90m (623)\033[39m\n'
 printf '35 passed, 0 failed, 0 skipped\n'
 printf 'self_test: 34 breakages, every check proven able to fail\n'
 SH
@@ -788,15 +796,15 @@ expect_green 'the captured bytes of a real green run, with colour: the three pro
 # The fixture is the real coloured bytes with BOTH spaces after `Tests` removed,
 # so what is left is the shape a reporter that colourised the label and the
 # count with no gap between them would write. It is synthetic on purpose: it is
-# the boundary. Core strips it to `      Tests377 passed (377)` — a line vitest
+# the boundary. Core strips it to `      Tests623 passed (623)` — a line vitest
 # has never printed and never will.
 seed_sandbox no-separator
 write "$SANDBOX/bin/prime" <<'SH'
 #!/usr/bin/env bash
 # The real coloured bytes, minus the spaces between the label and the count.
-# Stripped, this line is `      Tests377 passed (377)`.
+# Stripped, this line is `      Tests623 passed (623)`.
 set -euo pipefail
-printf '\033[2m      Tests\033[22m\033[1m\033[32m377 passed\033[39m\033[22m\033[90m (377)\033[39m\n'
+printf '\033[2m      Tests\033[22m\033[1m\033[32m623 passed\033[39m\033[22m\033[90m (623)\033[39m\n'
 printf '35 passed, 0 failed, 0 skipped\n'
 printf 'self_test: 34 breakages, every check proven able to fail\n'
 SH
@@ -828,7 +836,7 @@ write "$SANDBOX/bin/prime" <<'SH'
 #!/usr/bin/env bash
 # Byte-for-byte the same gate as the case above, which is the whole point.
 set -euo pipefail
-printf '\033[2m      Tests\033[22m\033[1m\033[32m377 passed\033[39m\033[22m\033[90m (377)\033[39m\n'
+printf '\033[2m      Tests\033[22m\033[1m\033[32m623 passed\033[39m\033[22m\033[90m (623)\033[39m\n'
 printf '35 passed, 0 failed, 0 skipped\n'
 printf 'self_test: 34 breakages, every check proven able to fail\n'
 SH
@@ -845,16 +853,16 @@ expect_green 'the same line, under the escape tolerance that was deleted: the mi
 seed_sandbox colour-lost-tests
 write "$SANDBOX/bin/prime" <<'SH'
 #!/usr/bin/env bash
-# A suite that LOST tests: 300 where the floor is 377. Colour on, because
+# A suite that LOST tests: 300 where the floor is 623. Colour on, because
 # that is the bytes the pattern now has to both match and count.
 set -euo pipefail
-printf '\033[2m Test Files \033[22m \033[1m\033[32m17 passed\033[39m\033[22m\033[90m (17)\033[39m\n'
+printf '\033[2m Test Files \033[22m \033[1m\033[32m26 passed\033[39m\033[22m\033[90m (26)\033[39m\n'
 printf '\033[2m      Tests \033[22m \033[1m\033[32m300 passed\033[39m\033[22m\033[90m (300)\033[39m\n'
 printf '35 passed, 0 failed, 0 skipped\n'
 printf 'self_test: 34 breakages, every check proven able to fail\n'
 SH
 chmod +x "$SANDBOX/bin/prime"
-expect_red 'a coloured run whose suite LOST tests: 300 against a floor of 377' \
+expect_red 'a coloured run whose suite LOST tests: 300 against a floor of 623' \
   "$SANDBOX" 'gate.floor' --prove "proof 'suite'"
 
 seed_sandbox colour-skipped-one
@@ -894,10 +902,10 @@ write "$SANDBOX/bin/prime" <<'SH'
 # A gate that printed the WRONG NUMBER: the file count where the test count
 # should be, and no `Tests` line at all. `Test Files` is one line above the
 # real summary in every vitest run, so this is not a hypothetical — it is the
-# line a looser pattern would read, and 17 is below the floor and 377 would be
+# line a looser pattern would read, and 26 is below the floor and 623 would be
 # the number a gate that never ran the suite could print.
 set -euo pipefail
-printf '\033[2m Test Files \033[22m \033[1m\033[32m17 passed\033[39m\033[22m\033[90m (17)\033[39m\n'
+printf '\033[2m Test Files \033[22m \033[1m\033[32m26 passed\033[39m\033[22m\033[90m (26)\033[39m\n'
 printf '35 passed, 0 failed, 0 skipped\n'
 printf 'self_test: 34 breakages, every check proven able to fail\n'
 SH
@@ -937,7 +945,7 @@ write "$SANDBOX/bin/prime" <<'SH'
 #!/usr/bin/env bash
 # The same captured coloured bytes, against the pattern this packet replaced.
 set -euo pipefail
-printf '\033[2m      Tests \033[22m \033[1m\033[32m377 passed\033[39m\033[22m\033[90m (377)\033[39m\n'
+printf '\033[2m      Tests \033[22m \033[1m\033[32m623 passed\033[39m\033[22m\033[90m (623)\033[39m\n'
 printf '35 passed, 0 failed, 0 skipped\n'
 printf 'self_test: 34 breakages, every check proven able to fail\n'
 SH
@@ -1078,7 +1086,7 @@ gate:
   proof:
     - id: suite
       match: '^[ ]*Tests[ ]+([0-9]+) passed'
-      minimum: 377
+      minimum: 623
 
 external:
   selfContained: true

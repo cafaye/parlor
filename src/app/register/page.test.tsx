@@ -117,6 +117,225 @@ describe("register page", () => {
     });
   });
 
+  /**
+   * ---------------------------------------------------------------------------
+   * ASKING FOR THE VERIFICATION LINK, WHICH `POST /v1/users` DOES NOT DO
+   * ---------------------------------------------------------------------------
+   *
+   * identity's contract is explicit: "Verification is not automatic at
+   * registration. `POST /v1/users` does not send anything, and a client that wants
+   * an address proved calls this route afterwards. That is one extra call in
+   * exchange for a registration that cannot fail because a mail provider is down."
+   *
+   * So this screen makes the second call, and everything hard about it is the
+   * failure handling: **the account exists from the moment the first call
+   * returns.** A request that fails afterwards must not turn a created account
+   * into "something went wrong", because the person would reasonably read that as
+   * "no account" and register again — against a 409 on an address they just
+   * proved they own.
+   */
+  describe("after the account exists", () => {
+    const registered = (extra = {}) =>
+      stubIdentity({
+        register: vi.fn(async () => ({ id: "usr_1", email: CREDENTIALS.email })),
+        requestEmailVerification: vi.fn(async () => ({ status: "accepted" })),
+        ...extra,
+      });
+
+    it("asks for the verification link the registration did not send", async () => {
+      const identity = registered();
+
+      renderWithProviders(<RegisterPage />, { identity });
+      fillIn(CREDENTIALS);
+      submit();
+
+      await waitFor(() =>
+        expect(identity.requestEmailVerification).toHaveBeenCalledWith(CREDENTIALS.email),
+      );
+    });
+
+    it("asks for it with the address the service returned, not the one that was typed", async () => {
+      // The service normalizes to lower case and trims; `POST /v1/users` echoes the
+      // stored address back. Following the echo rather than the input is what keeps
+      // a lookup keyed on the account's own row.
+      const identity = registered({
+        register: vi.fn(async () => ({ id: "usr_1", email: "kaka@example.com" })),
+      });
+
+      renderWithProviders(<RegisterPage />, { identity });
+      fillIn({ email: "  KAKA@Example.COM  ", password: CREDENTIALS.password });
+      submit();
+
+      await waitFor(() =>
+        expect(identity.requestEmailVerification).toHaveBeenCalledWith("kaka@example.com"),
+      );
+    });
+
+    it("says the link is on its way", async () => {
+      renderWithProviders(<RegisterPage />, { identity: registered() });
+
+      fillIn(CREDENTIALS);
+      submit();
+
+      expect(await screen.findByRole("status")).toHaveTextContent(/link is on its way/i);
+    });
+
+    it("names the address it just created, which is safe here and only here", async () => {
+      // THE DELIBERATE ASYMMETRY with `/verify-email`, which must not name an
+      // address at all. Here the person typed it thirty seconds ago and the
+      // service just created a row for it, so echoing it back confirms nothing
+      // they do not already know — and "we sent a link to kaka@example.com" is the
+      // sentence that makes the mail findable when two accounts exist on one
+      // device. The rule is not "never name an address"; it is "never name one you
+      // did not just create".
+      renderWithProviders(<RegisterPage />, { identity: registered() });
+
+      fillIn(CREDENTIALS);
+      submit();
+
+      expect(await screen.findByRole("status")).toHaveTextContent(CREDENTIALS.email);
+    });
+
+    it("still says the account was created, not just that a mail is coming", async () => {
+      renderWithProviders(<RegisterPage />, { identity: registered() });
+
+      fillIn(CREDENTIALS);
+      submit();
+
+      // The primary fact. A screen that reported only the mail would leave a
+      // person who never received it believing they had not signed up. And the
+      // address is in it, in every branch — see `CREATED_AND_SENT`.
+      expect(await screen.findByRole("status")).toHaveTextContent(
+        `Account created for ${CREDENTIALS.email}`,
+      );
+    });
+
+    it("offers the way to sign in", async () => {
+      renderWithProviders(<RegisterPage />, { identity: registered() });
+
+      fillIn(CREDENTIALS);
+      submit();
+      await screen.findByRole("status");
+
+      // The name is longer than a bare "Sign in" on purpose: the page's heading
+      // carries an "Already have one? Sign in" link, and two links with the same
+      // name and the same destination on one screen is an ambiguous name for a
+      // screen reader and a coin flip for everybody else.
+      expect(screen.getByRole("link", { name: /sign in to your new account/i })).toHaveAttribute(
+        "href",
+        "/login",
+      );
+      // And the heading's hint is still exactly one, not a second "Sign in".
+      expect(screen.getAllByRole("link", { name: "Sign in" })).toHaveLength(1);
+    });
+
+    it("offers the resend for somebody who cannot find the mail", async () => {
+      renderWithProviders(<RegisterPage />, { identity: registered() });
+
+      fillIn(CREDENTIALS);
+      submit();
+      await screen.findByRole("status");
+
+      // The resend action. It goes to the screen that asks rather than re-posting
+      // here, so the one-minute cooldown is the service's to answer rather than
+      // something this screen counts — a second post from this page would be a
+      // promise the service cannot keep inside that window.
+      expect(screen.getByRole("link", { name: /send it again/i })).toHaveAttribute(
+        "href",
+        "/verify-email",
+      );
+    });
+
+    it("does not sign anyone in by sending a link", async () => {
+      // Both of these routes are anonymous and neither mints a session. A signed-in
+      // header here would be a session the service has never heard of.
+      const identity = registered();
+
+      renderWithProviders(<RegisterPage />, { identity });
+      fillIn(CREDENTIALS);
+      submit();
+
+      await screen.findByRole("status");
+      expect(identity.login).not.toHaveBeenCalled();
+      expect(screen.queryByRole("button", { name: "Sign out" })).not.toBeInTheDocument();
+    });
+  });
+
+  describe("when the verification link cannot be asked for", () => {
+    const accountCreatedThen = (thrown: unknown) =>
+      stubIdentity({
+        register: vi.fn(async () => ({ id: "usr_1", email: CREDENTIALS.email })),
+        requestEmailVerification: vi.fn(async () => {
+          throw thrown;
+        }),
+      });
+
+    it("still says the account was created, because it was", async () => {
+      renderWithProviders(
+        <RegisterPage />,
+        { identity: accountCreatedThen(anIdentityError(503, "service_unavailable")) },
+      );
+
+      fillIn(CREDENTIALS);
+      submit();
+
+      // The whole reason this branch exists. Reporting "something went wrong" here
+      // would be read as "no account was created", and the obvious next move is to
+      // register again — into a 409 for an address they just proved they own.
+      expect(await screen.findByRole("status")).toHaveTextContent(/account created/i);
+    });
+
+    it("does not send anybody to an inbox when the deployment cannot send", async () => {
+      renderWithProviders(
+        <RegisterPage />,
+        { identity: accountCreatedThen(anIdentityError(503, "service_unavailable")) },
+      );
+
+      fillIn(CREDENTIALS);
+      submit();
+
+      // `RequestVerification` checks the mailer before it looks anything up, so
+      // this 503 is about the deployment and says nothing about the address.
+      const status = await screen.findByRole("status");
+      expect(status).toHaveTextContent(/cannot send email/i);
+      expect(status).not.toHaveTextContent(/on its way/i);
+    });
+
+    it("keeps the resend available, because the link is still worth asking for later", async () => {
+      renderWithProviders(
+        <RegisterPage />,
+        { identity: accountCreatedThen(anIdentityError(503, "service_unavailable")) },
+      );
+
+      fillIn(CREDENTIALS);
+      submit();
+      await screen.findByRole("status");
+
+      expect(screen.getByRole("link", { name: /send it again/i })).toHaveAttribute(
+        "href",
+        "/verify-email",
+      );
+    });
+
+    it("does not claim a mail is coming when something else failed", async () => {
+      // A network failure here is the same situation as the 503: the account
+      // exists, and no message was sent.
+      const thrown = new TypeError("Failed to fetch. ECONNREFUSED 10.0.0.4:8080");
+      renderWithProviders(<RegisterPage />, { identity: accountCreatedThen(thrown) });
+
+      fillIn(CREDENTIALS);
+      submit();
+
+      const status = await screen.findByRole("status");
+      expect(status).toHaveTextContent(/account created/i);
+      expect(status).not.toHaveTextContent(/on its way/i);
+      // And the failure itself never reaches the page: a proxy's address is not
+      // something to put in front of a person.
+      expect(status).not.toHaveTextContent(/ECONNREFUSED/);
+      expect(status).not.toHaveTextContent(/10\.0\.0\.4/);
+    });
+  });
+
   describe("when the service rejects the address", () => {
     const rejects422 = () =>
       stubIdentity({

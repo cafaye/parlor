@@ -8,6 +8,77 @@ All notable changes to parlor are recorded here. The format follows
 
 ### Added
 
+- **The email-verification surface: `/verify-email`, `/verify-email/confirm`, the
+  post-signup state, and the affordance on the sign-in screen.** identity's Mailer
+  sends verification mail for real and `POST /v1/users` does not — its contract says
+  a client that wants an address proved calls `POST /v1/email-verifications`
+  "afterwards" — so the platform had a service that mails a link and no page for
+  the person who clicks it. Three client calls and three screens, transcribed from
+  `identity/internal/httpapi/recovery.go`:
+
+  - **`/verify-email` asks, and says one thing.** Same constant-202 discipline as
+    the reset request screen: the acceptance sentence is one constant string that
+    names no address, so an address with an account and one without render
+    byte-identically; the form is replaced on success rather than annotated; and a
+    503 gets its own sentence because identity checks the mailer before the lookup,
+    so rendering it distinctly leaks nothing while "a link is on its way" when no
+    mail will ever arrive is the sentence that strands somebody. It is also the
+    discoverable way in from `/login`, which is the only place a person who signed
+    up, closed the tab and never verified will look — a signed-in banner could not
+    reach them, because `GET /v1/email-verification` answers for the caller's own
+    address and they are the one who is not signed in.
+  - **The 409 is rendered, and that is a decision rather than an oversight.**
+    `Service.RequestVerification` answers `409 conflict` for an address that is
+    already proved — the one request route in the service that is not a constant,
+    and the only answer on it that distinguishes an address. Flattening it into the
+    acceptance sentence was rejected: identity declares the 409 precisely to stop a
+    client telling somebody to watch an inbox nothing will arrive in, and hiding a
+    proved state is a smaller wrong than stranding a person. What the screen
+    guarantees instead is that it never *widens* the disclosure — the sentence
+    names the state, never the address, and never the service's `detail`. Recorded
+    under "Known gaps" as DECISION NEEDED.
+  - **`/verify-email/confirm` spends the link**, reading the **`token`** query
+    parameter from the same `RECOVERY_LINK_TEMPLATE` the reset link uses, and
+    `robots: noindex, nofollow` because a one-time credential in a URL should not
+    be indexed. It does not submit on load, for the invitation and reset screens'
+    reason. It has no fields at all — the token IS the credential and arrived in
+    the URL — so the whole form is one button, which is also the double-submit
+    guard: the token is single-use, and a second call is a guaranteed 404 that would
+    replace a working confirmation with "this link cannot be used".
+  - **The stale-token state has a way forward rather than being a dead end.** A
+    404 covers four cases behind one sentinel — never existed, expired, spent, or
+    minted for another flow — and a link with no `token` is a fifth state that a
+    deployment can produce by pointing the template at a path segment. Both offer a
+    new link, and neither names any of the four, because naming one confirms the
+    token was once real and turns a guess into a probe.
+  - **A confirmation that does not sign you out, because a verification does not.**
+    `RedeemVerification` revokes nothing and mints nothing — it records a fact
+    about an address rather than changing a credential — so the success state reads
+    the session and sends a signed-in reader on to `/accounts` and a signed-out one
+    to `/login`. It is the one flow that does not answer a 204 with "sign in
+    again", and getting that backwards would be a confirmation that signs you out.
+  - **The register screen makes the second call and can no longer be misread.** The
+    account exists from the moment `POST /v1/users` returns, so a failed
+    verification request says "account created" first and the mail problem second,
+    in every branch. Reporting it as a failed registration would be read as "no
+    account", and the obvious next move for somebody who believes that is to
+    register again — into a 409 for an address they just proved they own. This is
+    also the only screen that names an address it was given: the person typed it
+    thirty seconds ago and the service has just created a row for it, so echoing it
+    back confirms nothing, and "Account created for kaka@example.com" is how a
+    reader knows the POST reached a real service and a real database — which the
+    end-to-end tier asserts.
+  - **`validatePasswordResetRequest` is now `validateRecoveryEmailRequest`,** used
+    by both request routes, because identity declares one `emailRequest` body for
+    both and pins with `TestTheTwoRequestRoutesAnswerIdentically` that they answer
+    identically. Two validators here would be two places for that identity to drift.
+  - **`e2e/email-verification.e2e.spec.ts`**, six specs against a real identity:
+    the 503 that a courier-less deployment must not dress as a sent mail, a real
+    404 for a token nobody minted, the link with no code in it, the register screen
+    refusing to un-say that the account was created when the mail request behind it
+    fails, the sign-in affordance, and the byte-identical rendering of a request for
+    an address with an account and one without.
+
 - **The password-reset flow: `/forgot-password`, `/reset-password`, and the
   affordance on the sign-in screen.** identity merged its Mailer (`08e346d`), so
   `POST /v1/password-resets` now actually sends a link and the platform had no
@@ -625,9 +696,61 @@ recorded so it is not rediscovered from a UI symptom.
   an already-accepted one to 410 with the code `gone`, separated only by prose in
   `detail`. The accept page renders one state for both, which is all the status
   supports.
+- **`POST /v1/email-verifications` answers 409 for an address that is already
+  verified, which makes it the one request route in the service that is not a
+  constant.** Measured on a running identity while building the verification
+  surface: an address with an account and an address without one both answer
+  `202 {"status":"accepted"}` with identical bytes, and an address that has
+  already been proved answers `409 conflict`. `Service.RequestVerification` orders
+  it after the account lookup (`user.IsVerified()`) and before the cooldown, so
+  409-against-202 tells a prober that an address has an account **and** is proved.
+  This is deliberate on the service's side — identity declares the 409 in order to
+  stop a client telling somebody to watch an inbox nothing will arrive in — so
+  `/verify-email` renders it truthfully rather than flattening it into the
+  acceptance sentence, and guarantees instead never to widen it: the sentence names
+  the state, never the address and never the service's `detail`. **DECISION NEEDED:
+  whether the constant-202 defence that `requestPasswordReset` gets should extend
+  here, or whether the 409 is the intended trade.**
+- **`identity/openapi/v1.yaml` declares a 422 on `POST
+  /v1/email-verifications/confirm` that the handler never produces.** The
+  document fixes `RecoveryTokenRequest.token` at `minLength: 43, maxLength: 43`
+  and lists a 422 response; measured on a running identity, `{"token":"too-short"}`
+  answers `404 not_found`, because `RedeemVerification` goes straight to
+  `tokens.Live(sessions.Digest(in.Token))` and `tokenRequest` is one `string` with
+  no validation on it. A truncated link is therefore one of the four cases behind
+  the single `ErrTokenNotFound` sentinel, and `/verify-email/confirm` gives it the
+  same sentence as a spent one. The client follows the handler over the document,
+  as it does for the tenancy surface.
+- **`RECOVERY_LINK_TEMPLATE` is ONE template for every recovery link, and there
+  are now two kinds of link to land.** Measured: `internal/courier`'s
+  `RecoveryMailer` holds a single `linkTemplate` field and renders it for both the
+  `password_reset` and the `verify_email` message, so a reset link and a
+  verification link resolve to the *same configured URL* with different tokens —
+  and identity's mail body is courier's `welcome` template, which says nothing
+  about which flow the link belongs to. A deployment serving both flows therefore
+  cannot route both correctly with the configuration as it stands: point it at
+  `/reset-password` and every verification link lands on a screen that answers
+  "cannot be used"; point it at `/verify-email/confirm` and every reset link does
+  the same. **DECISION NEEDED on the service side: per-kind link templates, or a
+  landing screen that can redeem either kind.** The fix belongs in `identity`
+  (`RecoveryMailer` and `LinkTemplate`) and this repository may not edit a
+  sibling; the two landing screens are built and each offers the right way
+  forward for its own flow, so the day one template can be per-kind both work.
 
 ### Changed
 
+- `/register` — the confirmation now carries the whole sentence the two-call
+  sequence produces. "Account created for {email}." leads it in every branch,
+  including the two where the verification request behind it failed, because the
+  end-to-end tier asserts that address to prove `POST /v1/users` reached a real
+  service and a real database, and dropping it from the failure branches would have
+  silently deleted that proof from the only place a failure is exercised. The
+  sign-in link's name grew to "Sign in to your new account": the page's heading
+  already carries an "Already have one? Sign in" link, and two links with the same
+  name and the same destination on one screen is an ambiguous name for a screen
+  reader and a coin flip for everyone else. A "Did not arrive? Send it again" link
+  is the resend action, pointing at `/verify-email` rather than re-posting — the
+  one-minute cooldown is the service's to answer.
 - `src/lib/identity.ts` — a typed client for the four identity endpoints fixed by
   contract: `POST /v1/users`, `POST /v1/session`, `DELETE /v1/session`,
   `GET /v1/me`. Base URL from `NEXT_PUBLIC_IDENTITY_URL`, defaulting to

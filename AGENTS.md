@@ -230,9 +230,10 @@ House rule (PLAN.md §3): write the test, watch it fail, then implement.
 
 `src/lib/identity.ts` is the **only** file that knows the identity contract:
 `POST /v1/users`, `POST /v1/session`, `DELETE /v1/session`, `GET /v1/me`, the two
-password-reset routes under `/v1/password-resets` (see "Recovery" below), and
-the ten tenancy routes under `/v1/accounts` and `/v1/invitations`. Base URL from
-`NEXT_PUBLIC_IDENTITY_URL` (default `http://localhost:8080`).
+password-reset routes under `/v1/password-resets` and the three verification
+routes under `/v1/email-verification(s)` (see "Recovery" and "Verification" below),
+and the ten tenancy routes under `/v1/accounts` and `/v1/invitations`. Base URL
+from `NEXT_PUBLIC_IDENTITY_URL` (default `http://localhost:8080`).
 
 - **The tenancy shapes are transcribed from the service's handler, not from its
   OpenAPI document** — `identity/internal/httpapi/accounts.go`, because
@@ -310,6 +311,56 @@ asserts the header is absent.
 - **The password floor applies on reset and NOT on sign in.** See
   `src/lib/credentials.ts`: refusing to *send* a short password at sign-in would
   lock out the accounts whose passwords predate the rule.
+
+## Verification
+
+Three routes, and the sign-in screen offers `/verify-email` because that is where
+the person who signed up, closed the tab and never verified will actually look —
+a signed-in banner could not reach them, since `GET /v1/email-verification`
+answers for the caller's own address.
+
+- **The two POSTs are anonymous and the GET is not.** `POST
+  /v1/email-verifications` and `POST /v1/email-verifications/confirm` are wrapped
+  in `sessionCredentialOnly` like the reset pair and send no `Authorization`
+  header. `GET /v1/email-verification` resolves a session through `currentUser`
+  and does take the token. Note the singular route: one word, against the two
+  plural routes that start and redeem a flow.
+- **`POST /v1/users` sends nothing.** A client that wants an address proved calls
+  `POST /v1/email-verifications` afterwards, so `register-form.tsx` makes a second
+  call. **The account exists from the moment the first one returns**, so that
+  second call must never be able to report a failed registration — a person who
+  reads it as "no account" registers again, into a 409 for an address they just
+  proved they own. Every branch says "Account created for {email}" first.
+- **`/verify-email` may not name an address; `/register` may.** The rule is not
+  "never name an address", it is "never name one you did not just create". The
+  resend screen is reachable by a stranger who typed somebody else's address;
+  the register screen is showing back what was typed thirty seconds ago.
+- **The 409 on the request route is the one answer that is not constant.**
+  `Service.RequestVerification` orders `user.IsVerified()` after the lookup, so
+  an address that is already proved answers 409 where every other address answers
+  202 — which does tell a prober that an account exists. It is rendered, because
+  identity declares it deliberately (so a client does not send somebody to an
+  inbox nothing will arrive in) and flattening it would be unmaking a published
+  contract decision. What this app guarantees is that it never *widens* it: the
+  sentence names the state, never the address, never the service's `detail`. See
+  CHANGELOG "Known gaps" — DECISION NEEDED.
+- **A verification revokes nothing and mints nothing**, so the success state reads
+  the session: a signed-in reader continues to `/accounts`, a signed-out one signs
+  in. It is the only flow whose 204 is not followed by "sign in again".
+- **A short token is a 404, not a 422.** The OpenAPI document declares
+  `minLength: 43` on `RecoveryTokenRequest.token` and lists a 422; measured
+  against a running identity, `{"token":"too-short"}` answers `404 not_found`,
+  because `RedeemVerification` goes straight to `tokens.Live(digest)` and
+  `tokenRequest` validates nothing. The client follows the handler. A truncated
+  link is one of the four cases behind `ErrTokenNotFound` and gets one sentence.
+- **`RECOVERY_LINK_TEMPLATE` is one string for both link kinds.** Measured:
+  `internal/courier`'s `RecoveryMailer` holds a single `linkTemplate` and renders
+  it for `password_reset` and `verify_email` alike, so a deployment cannot route
+  both mails correctly with it. That is a service-side fix (per-kind templates) in
+  a repository this one may not edit; DECISION NEEDED in CHANGELOG.
+- **The confirmation does not submit on load.** Same reason as the reset and
+  invitation screens: a mail client or link scanner fetching the URL would spend
+  the token, and the link would be dead for the person who then clicked it.
 
 ## Security copy
 
@@ -408,7 +459,8 @@ Non-negotiable, because it is the property the screen exists to protect:
 
 ```
 src/app/            routes: page, login/, register/, forgot-password/,
-                    reset-password/, accounts/, accounts/[accountId]/,
+                    reset-password/, verify-email/, verify-email/confirm/,
+                    accounts/, accounts/[accountId]/,
                     invitations/[token]/, billing/plans/, billing/customers/,
                     healthz/, readyz/,
                     providers.tsx — the client provider stack, mounted by layout
