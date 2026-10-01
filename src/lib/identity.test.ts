@@ -428,6 +428,196 @@ describe("fieldErrorMessage", () => {
     expect(message).toBe("Email is not valid.");
     expect(message).not.toContain("something_new_in_the_contract");
   });
+
+  it("says a mismatched confirmation plainly, since the service never sees one", () => {
+    // The service's confirm body is `{token, password}` — there is no
+    // confirmation field for it to refuse, so this code exists only on this side.
+    // It still gets a real sentence rather than the generic fallback.
+    expect(fieldErrorMessage("password_confirmation", "mismatch")).toBe(
+      "The two passwords do not match.",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The password-reset surface.
+//
+// Transcribed from the handler, `identity/internal/httpapi/recovery.go`:
+// `handleRequestPasswordReset` and `handleRedeemPasswordReset`, the
+// `acceptedResponse` constant, `passwordResetRequest`, and the table in
+// `writeRecoveryError`. The route table is `registerRecoveryRoutes`.
+//
+// The property these tests exist to hold is the enumeration one: both routes are
+// anonymous (`sessionCredentialOnly`), so a client that sent a credential would
+// be refused by the service. The "sends no bearer token" assertions below are the
+// client half of that same rule.
+// ---------------------------------------------------------------------------
+
+describe("password reset: requesting a link", () => {
+  it("posts only the address to /v1/password-resets", async () => {
+    const { transport, calls } = stubTransport(() => json(202, { status: "accepted" }));
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await client.requestPasswordReset("kaka@example.com");
+
+    expect(calls[0].method).toBe("POST");
+    expect(calls[0].url).toBe(`${baseUrl}/v1/password-resets`);
+    expect(JSON.parse(calls[0].body as string)).toEqual({ email: "kaka@example.com" });
+  });
+
+  it("sends no bearer token, because the service refuses one on this route", async () => {
+    // `sessionCredentialOnly` wraps all eight recovery routes. A scoped API key
+    // presented here is a 403, and an identity session token would be a
+    // credential in a request that needs none.
+    const { transport, calls } = stubTransport(() => json(202, { status: "accepted" }));
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await client.requestPasswordReset("kaka@example.com");
+
+    expect(calls[0].headers.Authorization).toBeUndefined();
+  });
+
+  it("reads the constant 202 body as accepted", async () => {
+    // `acceptedResponse` is a CONSTANT in the service: the same bytes for a
+    // registered address, an unregistered one, and one inside the cooldown.
+    // Typed rather than discarded, and the client asserts the literal value so a
+    // service that grew a field (`sent`, `expires_at`) shows up here.
+    const { transport } = stubTransport(() => json(202, { status: "accepted" }));
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await expect(client.requestPasswordReset("kaka@example.com")).resolves.toEqual({
+      status: "accepted",
+    });
+  });
+
+  it("gives an unregistered address exactly the same answer", async () => {
+    // Not a real service — the point is that the client cannot tell the two
+    // apart, because there is nothing in a 202 to tell them apart with. The
+    // anti-enumeration property is the service's; this asserts the client is not
+    // in a position to undo it.
+    const { transport } = stubTransport(() => json(202, { status: "accepted" }));
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const known = await client.requestPasswordReset("kaka@example.com");
+    const unknown = await client.requestPasswordReset("nobody@example.com");
+
+    expect(unknown).toEqual(known);
+  });
+
+  it("surfaces a 503 when the deployment cannot send email", async () => {
+    // `ErrNoMailer` maps to 503, checked BEFORE the address is looked up so that
+    // "503 against 202" cannot become an existence oracle. The screen must not
+    // render "check your inbox" for this, which is the whole reason it is a 503.
+    const { transport } = stubTransport(() =>
+      problem(503, {
+        code: "service_unavailable",
+        title: "Service unavailable",
+        detail: "this deployment cannot send email, so it cannot send that link",
+      }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const error = await theFailure(client.requestPasswordReset("kaka@example.com"));
+
+    expect(error.status).toBe(503);
+    expect(error.code).toBe("service_unavailable");
+  });
+
+  it("surfaces a 422 field error from the request route", async () => {
+    const { transport } = stubTransport(() =>
+      problem(422, {
+        code: "validation_failed",
+        title: "Validation failed",
+        errors: [{ field: "email", code: "invalid_format" }],
+      }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const error = await theFailure(client.requestPasswordReset("not-an-address"));
+
+    expect(error.status).toBe(422);
+    expect(error.fieldErrors).toEqual([{ field: "email", code: "invalid_format" }]);
+  });
+});
+
+describe("password reset: spending a link", () => {
+  const TOKEN = "0Kq3Zs1oQw7bXn0K9dLpR2vT4yE6hJ8cF1gM5nA2qU0";
+
+  it("posts the token and the new password, and nothing else", async () => {
+    const { transport, calls } = stubTransport(() => new Response(null, { status: 204 }));
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await client.redeemPasswordReset({ token: TOKEN, password: "a brand new password" });
+
+    expect(calls[0].method).toBe("POST");
+    expect(calls[0].url).toBe(`${baseUrl}/v1/password-resets/confirm`);
+    // No email, no session, no confirmation: the service's body is
+    // `passwordResetRequest{token, password}` and anything else is ignored.
+    expect(JSON.parse(calls[0].body as string)).toEqual({
+      token: TOKEN,
+      password: "a brand new password",
+    });
+  });
+
+  it("sends no bearer token: the token in the body IS the credential", async () => {
+    const { transport, calls } = stubTransport(() => new Response(null, { status: 204 }));
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await client.redeemPasswordReset({ token: TOKEN, password: "a brand new password" });
+
+    expect(calls[0].headers.Authorization).toBeUndefined();
+  });
+
+  it("resolves on an empty 204, which is the whole success answer", async () => {
+    // The 204 carries no session on purpose: redeeming a reset mints nothing,
+    // because that would be a second way to turn a mailbox into a credential.
+    const { transport } = stubTransport(() => new Response(null, { status: 204 }));
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await expect(
+      client.redeemPasswordReset({ token: TOKEN, password: "a brand new password" }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("reads one 404 for a link that never existed, expired, or was already spent", async () => {
+    // `ErrTokenNotFound` is a single sentinel covering four cases, and the
+    // service answers 404 for all of them. The screen cannot tell them apart and
+    // must not try to.
+    const { transport } = stubTransport(() =>
+      problem(404, {
+        code: "not_found",
+        title: "Not found",
+        detail: "no such link, or it has already been used",
+      }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const error = await theFailure(
+      client.redeemPasswordReset({ token: TOKEN, password: "a brand new password" }),
+    );
+
+    expect(error.status).toBe(404);
+    expect(error.code).toBe("not_found");
+  });
+
+  it("surfaces a too-short password as a 422 on the password field", async () => {
+    // `RedeemPasswordReset` runs `users.ValidatePassword` before it hashes
+    // anything, so a short value is a `FieldError{password, too_short}`.
+    const { transport } = stubTransport(() =>
+      problem(422, {
+        code: "validation_failed",
+        title: "Validation failed",
+        detail: "the request has an invalid field",
+        errors: [{ field: "password", code: "too_short" }],
+      }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const error = await theFailure(client.redeemPasswordReset({ token: TOKEN, password: "short" }));
+
+    expect(error.status).toBe(422);
+    expect(error.fieldErrors).toEqual([{ field: "password", code: "too_short" }]);
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -386,7 +386,18 @@ Deliberately absent, by packet boundary rather than oversight:
   is the first thing a reviewer should look at.
 - OAuth sign-in and MFA enrollment (TOTP, recovery codes) — the service side
   lands in identity's later packets; the UI follows its contract.
-- Password reset, email verification, and every other identity screen.
+- **Email verification, email change, and every other identity screen.**
+  Password reset is built — `/forgot-password`, `/reset-password`, and the
+  affordance on the sign-in screen — because `POST /v1/password-resets` and
+  `POST /v1/password-resets/confirm` are anonymous routes with no session state
+  on this side of them. Verification is a different shape: `GET
+  /v1/email-verification` is **session-only**, and parlor has no "unverified"
+  state to render a confirmation landing *into*. `/v1/me` projects exactly `id`
+  and `email`, so there is nothing on a signed-in screen that says whether the
+  address is proved. Building the landing page now would mean inventing that
+  state; the honest next step is a verification banner on the account screen, and
+  that is a packet. The email-change surface needs settings screens that do not
+  exist yet.
 - **The subscription lifecycle** — upgrade, downgrade, cancel, and the five
   subscription states. billing's master contract has no `/v1/subscriptions*` and
   `Customer` has no plan field, so none of it can be read from anywhere. This is

@@ -8,9 +8,10 @@
  *   DELETE /v1/session  204
  *   GET    /v1/me        200 {id,email} | 401
  *
- * and the tenancy surface the same service exposes under /v1/accounts and
- * /v1/invitations. See "The tenancy surface" below for where those shapes come
- * from, which is not the place you would expect.
+ * plus the two password-reset routes below, and the tenancy surface the same
+ * service exposes under /v1/accounts and /v1/invitations. See "The tenancy
+ * surface" below for where those shapes come from, which is not the place you
+ * would expect.
  *
  * Two decisions are worth stating up front, because both will look like
  * accidents otherwise.
@@ -181,7 +182,39 @@ export type IdentityClient = {
     input: { role: Role },
   ): Promise<Membership>;
   removeMember(token: string, accountId: string, userId: string): Promise<void>;
+
+  // ---------------------------------------------------------------------------
+  // The recovery surface — see the wiring below for why neither takes a token.
+  //
+  // `requestPasswordReset` answers 202 for every address and returns the
+  // service's constant `{"status":"accepted"}`, which is the entire
+  // account-enumeration defence on that route. `redeemPasswordReset` answers 204
+  // with no body, revokes every session and access token the account holds, and
+  // mints nothing: a caller who redeems a reset is signed out by the same write
+  // that changed the password. Both facts are load-bearing for the screens.
+  // ---------------------------------------------------------------------------
+  requestPasswordReset(email: string): Promise<RecoveryAccepted>;
+  redeemPasswordReset(input: RedeemPasswordResetInput): Promise<void>;
 };
+
+/**
+ * `202 {"status":"accepted"}` — the body of `POST /v1/password-resets`.
+ *
+ * It is typed rather than discarded because the contract declares it, but the
+ * screens must not branch on it: it is the same for a registered address and an
+ * unregistered one, which is the property worth having, so there is nothing in it
+ * to read.
+ */
+export type RecoveryAccepted = { status: string };
+
+/**
+ * The body of `POST /v1/password-resets/confirm`.
+ *
+ * `token` is the credential from the emailed link and `password` is the value to
+ * move to. There is no `email` and no `session`: the token IS the authority, which
+ * is why this route is anonymous and why redeeming it signs the caller out.
+ */
+export type RedeemPasswordResetInput = { token: string; password: string };
 
 export class IdentityError extends Error {
   readonly status: number;
@@ -274,6 +307,27 @@ export function createIdentityClient(
       }),
     removeMember: (token, accountId, userId) =>
       send(transport, `${base}/v1/accounts/${accountId}/members/${userId}`, "DELETE", { token }),
+
+    // -----------------------------------------------------------------------
+    // The recovery surface.
+    //
+    // NEITHER CALL TAKES A TOKEN, and that is the service's rule rather than an
+    // omission here. All eight recovery routes are wrapped in
+    // `sessionCredentialOnly`, which refuses a scoped API key outright: a key
+    // that can mint a password reset is a takeover with a delay rather than a
+    // break-in. The four anonymous routes, these two among them, are exactly the
+    // ones where presenting a credential would be worst. So `send` is called with
+    // no `token`, and no `Authorization` header goes out at all.
+    //
+    // The request bodies and the statuses are transcribed from the handler
+    // (`identity/internal/httpapi/recovery.go`) for the same reason the tenancy
+    // shapes above are transcribed rather than read off the OpenAPI document.
+    // -----------------------------------------------------------------------
+
+    requestPasswordReset: (email) =>
+      send(transport, `${base}/v1/password-resets`, "POST", { body: { email } }),
+    redeemPasswordReset: (input) =>
+      send(transport, `${base}/v1/password-resets/confirm`, "POST", { body: input }),
   };
 }
 
@@ -440,6 +494,16 @@ export function fieldErrorMessage(field: string, code: string): string {
  * actually happened rather than what shape a value had.
  */
 function tenancyFieldMessage(field: string, code: string): string | null {
+  // Two client-only codes, not ones from the service.
+  //
+  // `POST /v1/password-resets/confirm` takes `{token, password}` and never sees
+  // a confirmation, so "these two do not match" is only catchable on this side.
+  // It goes through here rather than into the reset screen anyway, because this
+  // is the one place a field code becomes a sentence, and a screen that wrote
+  // its own would be the second place.
+  if (field === "password_confirmation" && code === "mismatch") {
+    return "The two passwords do not match.";
+  }
   if (field === "name" && code === "invalid_format") {
     // ValidateName's third rule. A name with nothing sluggable in it would
     // produce an empty slug, and a slug is NOT NULL and unique — so the service

@@ -29,6 +29,8 @@ export type StubIdentity = IdentityClient & {
   acceptInvitation: MockedFunction<IdentityClient["acceptInvitation"]>;
   changeMemberRole: MockedFunction<IdentityClient["changeMemberRole"]>;
   removeMember: MockedFunction<IdentityClient["removeMember"]>;
+    requestPasswordReset: MockedFunction<IdentityClient["requestPasswordReset"]>;
+    redeemPasswordReset: MockedFunction<IdentityClient["redeemPasswordReset"]>;
 };
 
 const unscripted = (method: string) =>
@@ -52,6 +54,8 @@ export function stubIdentity(overrides: Partial<IdentityClient> = {}): StubIdent
     acceptInvitation: vi.fn(overrides.acceptInvitation ?? unscripted("acceptInvitation")),
     changeMemberRole: vi.fn(overrides.changeMemberRole ?? unscripted("changeMemberRole")),
     removeMember: vi.fn(overrides.removeMember ?? unscripted("removeMember")),
+    requestPasswordReset: vi.fn(overrides.requestPasswordReset ?? unscripted("requestPasswordReset")),
+    redeemPasswordReset: vi.fn(overrides.redeemPasswordReset ?? unscripted("redeemPasswordReset")),
   } as StubIdentity;
 }
 
