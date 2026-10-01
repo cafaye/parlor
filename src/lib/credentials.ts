@@ -11,6 +11,11 @@
  * set. Sign in cannot: refusing to *send* a short password would lock out
  * anyone whose password predates the rule, and the only thing a sign-in screen
  * has to decide is whether these two fields are worth a round trip.
+ *
+ * Resetting a password is that moment again, which is why
+ * `validateNewPassword` applies the floor and `validateSignIn` does not. The two
+ * live in the same file precisely so the difference is visible in one place
+ * rather than rediscovered as a bug.
  */
 
 import { MIN_PASSWORD_LENGTH, type Credentials, type FieldError } from "@/lib/identity";
@@ -38,6 +43,73 @@ export function validateSignIn({ email, password }: Credentials): FieldError[] {
   if (address) failures.push(address);
 
   if (password === "") failures.push({ field: "password", code: "required" });
+
+  return failures;
+}
+
+/**
+ * Rules for `POST /v1/password-resets`.
+ *
+ * THE SAME ADDRESS RULE AS SIGN IN, and there is no more to it: that request
+ * carries an address and nothing else, so this is `checkEmail` on its own rather
+ * than a new shape. The important thing it does NOT do is anything about whether
+ * the address has an account — the service answers 202 either way, and a local
+ * check that guessed would put back the oracle the constant 202 exists to remove.
+ */
+export function validatePasswordResetRequest({ email }: { email: string }): FieldError[] {
+  const failures: FieldError[] = [];
+
+  const address = checkEmail(email);
+  if (address) failures.push(address);
+
+  return failures;
+}
+
+/**
+ * Rules for `POST /v1/password-resets/confirm`: the new password and its
+ * confirmation.
+ *
+ * **The floor APPLIES HERE AND NOT ON SIGN IN**, which is the whole distinction
+ * this file draws and the reason it exists in this shape. Resetting is the moment
+ * a password is being set, so `MinPasswordLength` applies to the value somebody
+ * is choosing. Signing in is not that moment: an account may predate the rule,
+ * and refusing to *send* a short password would lock out the accounts the reset
+ * screen exists to rescue. See `validateSignIn` above.
+ *
+ * **`password_confirmation` is a client-only field.** The service's body is
+ * `{token, password}` and it never sees a confirmation, so a mismatch can only be
+ * caught here — and `mismatch` is therefore a code this app invents rather than
+ * one from the contract. It goes through `fieldErrorMessage` all the same, because
+ * that is where a code becomes a sentence and a screen must not write its own.
+ *
+ * A mismatch is reported only once both fields have something in them. Three
+ * complaints about one unfinished form is noise, and the too-short line already
+ * says what to fix.
+ */
+export function validateNewPassword({
+  password,
+  confirmation,
+}: {
+  password: string;
+  confirmation: string;
+}): FieldError[] {
+  const failures: FieldError[] = [];
+
+  if (password === "") {
+    failures.push({ field: "password", code: "required" });
+  } else if (password.length < MIN_PASSWORD_LENGTH) {
+    failures.push({ field: "password", code: "too_short" });
+  }
+
+  if (confirmation === "") {
+    failures.push({ field: "password_confirmation", code: "required" });
+  } else if (
+    failures.length === 0 &&
+    password !== "" &&
+    confirmation !== password
+  ) {
+    failures.push({ field: "password_confirmation", code: "mismatch" });
+  }
 
   return failures;
 }

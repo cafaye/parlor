@@ -229,7 +229,8 @@ House rule (PLAN.md §3): write the test, watch it fail, then implement.
 ## Identity
 
 `src/lib/identity.ts` is the **only** file that knows the identity contract:
-`POST /v1/users`, `POST /v1/session`, `DELETE /v1/session`, `GET /v1/me`, and
+`POST /v1/users`, `POST /v1/session`, `DELETE /v1/session`, `GET /v1/me`, the two
+password-reset routes under `/v1/password-resets` (see "Recovery" below), and
 the ten tenancy routes under `/v1/accounts` and `/v1/invitations`. Base URL from
 `NEXT_PUBLIC_IDENTITY_URL` (default `http://localhost:8080`).
 
@@ -278,6 +279,37 @@ the ten tenancy routes under `/v1/accounts` and `/v1/invitations`. Base URL from
   the window where the second click lands.
 - The token in `localStorage` is a deliberate, temporary, weaker position — the
   BFF packet moves it into an `HttpOnly` cookie. See README, "Sessions".
+
+## Recovery
+
+`POST /v1/password-resets` and `POST /v1/password-resets/confirm` are **anonymous**.
+Both are wrapped in identity's `sessionCredentialOnly`, which refuses a scoped API
+key outright, so neither call carries an `Authorization` header at all — the token
+in a reset link IS the credential, and a session token alongside it would be a
+second one for no reason. There is a test per route in `identity.test.ts` that
+asserts the header is absent.
+
+- **The request route's answer is a constant and this app must not unmake it.**
+  identity answers `202 {"status":"accepted"}` for a registered address, an
+  unregistered one, and one inside the cooldown. So `forgot-password-form.tsx`
+  names no address, uses one sentence for every input, and replaces the form on
+  success rather than annotating it — a second request inside
+  `RequestWindow` (one minute) sends nothing and still answers 202.
+- **A 503 is the one failure on that route that may read differently.** identity
+  checks the mailer BEFORE looking the address up, so `503 against 202` cannot be
+  an existence oracle. It must NOT borrow the acceptance sentence: no mail is
+  coming, and "check your inbox" is what strands somebody.
+- **A 404 on the confirm route must never say "expired."** One sentinel,
+  `ErrTokenNotFound`, covers never-existed, expired, spent, and another flow's
+  token. Naming "expired" tells anyone probing tokens that the one they held had
+  once been good.
+- **The reset link's parameter is `token`**, from `RECOVERY_LINK_TEMPLATE`
+  (`https://…/reset?token={token}` in every example in identity). It is
+  deployment configuration rather than something the service fixes, so a link with
+  no `token` is a rendered state with a way forward, not an exception.
+- **The password floor applies on reset and NOT on sign in.** See
+  `src/lib/credentials.ts`: refusing to *send* a short password at sign-in would
+  lock out the accounts whose passwords predate the rule.
 
 ## Security copy
 
@@ -375,15 +407,17 @@ Non-negotiable, because it is the property the screen exists to protect:
 ## Layout
 
 ```
-src/app/            routes: page, login/, register/, accounts/,
-                    accounts/[accountId]/, invitations/[token]/,
-                    billing/plans/, billing/customers/, healthz/, readyz/,
+src/app/            routes: page, login/, register/, forgot-password/,
+                    reset-password/, accounts/, accounts/[accountId]/,
+                    invitations/[token]/, billing/plans/, billing/customers/,
+                    healthz/, readyz/,
                     providers.tsx — the client provider stack, mounted by layout
 e2e/                the whole-stack end-to-end tier: the compose topology, the
                     Playwright specs, and the guards that make a green run mean
                     something
 src/lib/            identity.ts (identity contract), roles.ts (role vocabulary),
-                    accounts.ts (tenancy queries), money.ts, billing.ts,
+                    accounts.ts (tenancy queries), credentials.ts (what to check
+                    before asking the service), money.ts, billing.ts,
                     billing-context.tsx, token-store.ts, auth.tsx (session)
 src/components/ui/  primitives: one per file, re-exported from index.ts
 src/components/shell/  session-aware chrome (header)

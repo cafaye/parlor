@@ -18,13 +18,32 @@
  * about what exists.
  */
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState, type FormEvent } from "react";
 
-import { Button, Field, FieldSummary, Input } from "@/components/ui";
+import { Button, Callout, Field, FieldSummary, Input } from "@/components/ui";
 import { useAuth } from "@/lib/auth";
 import { validateSignIn } from "@/lib/credentials";
 import { IdentityError, fieldErrorMessage, type FieldError } from "@/lib/identity";
+
+/**
+ * The query parameter a completed reset sends you back with.
+ *
+ * It is a fact about a page load, not about a person, so it lives in the URL
+ * rather than in session storage or a context: it survives the navigation with
+ * nothing to carry it, and there is no state to clear afterwards. The value is
+ * ignored entirely — only the parameter's PRESENCE is read, because "a password
+ * was just changed somewhere else" is the whole message and there is nothing in
+ * it worth varying.
+ *
+ * `reset-password/reset-password-form.tsx` is where the redirect is written, and
+ * this is the other end of that pair.
+ */
+export const PASSWORD_CHANGED_PARAM = "password-changed";
+
+const PASSWORD_CHANGED =
+  "Your password has been changed. Sign in with the new one.";
 
 /** One sentence, every time, for every refused sign in. */
 const INVALID_CREDENTIALS = "Invalid email or password.";
@@ -36,7 +55,7 @@ type FormState =
   | { kind: "local"; fields: FieldError[] }
   | { kind: "failed"; summary: string; fields: FieldError[] };
 
-export function LoginForm() {
+export function LoginForm({ passwordChanged = false }: { passwordChanged?: boolean } = {}) {
   const router = useRouter();
   const { login, pending } = useAuth();
   const [email, setEmail] = useState("");
@@ -83,6 +102,13 @@ export function LoginForm() {
 
   return (
     <form className="flex flex-col gap-4" noValidate onSubmit={onSubmit}>
+      {/* Polite and positive, not an alert. Nothing has failed here: a reset
+          succeeded elsewhere and this page is reporting it on arrival. An
+          assertive region would interrupt somebody who has just been redirected
+          for no reason — and `tone="positive"` is already `role="status"`,
+          because `Callout` reserves `alert` for a critical tone. */}
+      {passwordChanged ? <Callout tone="positive">{PASSWORD_CHANGED}</Callout> : null}
+
       {state.kind === "local" || state.kind === "failed" ? (
         <FieldSummary>
           <ul className="list-inside list-disc">
@@ -120,6 +146,22 @@ export function LoginForm() {
       <Button aria-busy={pending} busy={pending} disabled={pending} type="submit">
         Sign in
       </Button>
+
+      {/*
+        The affordance, placed under the button rather than beside the password
+        field. It is what somebody reaches for when the sign-in above it has
+        failed twice, and the bottom of a form is where a hand already is.
+
+        It says "your password" rather than "your email" because that is the
+        failure it addresses, and it never becomes enabled conditionally: a screen
+        that only offered it after a 401 would be leaking whether an address is
+        registered.
+      */}
+      <p className="text-sm">
+        <Link className="underline hover:no-underline" href="/forgot-password">
+          Forgot your password?
+        </Link>
+      </p>
     </form>
   );
 }

@@ -8,6 +8,66 @@ All notable changes to parlor are recorded here. The format follows
 
 ### Added
 
+- **The password-reset flow: `/forgot-password`, `/reset-password`, and the
+  affordance on the sign-in screen.** identity merged its Mailer (`08e346d`), so
+  `POST /v1/password-resets` now actually sends a link and the platform had no
+  page for the person who cannot log in to click it. Three screens and two client
+  calls, built from the handler rather than a guess:
+
+  - **`/forgot-password` asks, and says one thing.** The service answers a
+    constant `202 {"status":"accepted"}` for a registered address, an
+    unregistered one, and one inside its one-minute cooldown — that constant IS
+    the enumeration defence. So the acceptance sentence names no address and is
+    the same string for every input, the form is REPLACED on success rather than
+    annotated (a second attempt inside the cooldown sends nothing while still
+    answering 202, so it would be a promise the service cannot keep), and a 503
+    gets its own sentence: identity checks the mailer BEFORE the address lookup,
+    so rendering it distinctly cannot leak anything, and "check your inbox" when
+    no mail will ever arrive is the sentence that strands somebody. A 422 is the
+    only failure that names a field, and it names `email` for a malformed
+    address — the caller's own input, before any lookup.
+  - **`/reset-password` spends the link.** The token comes from the **`token`
+    query parameter**, which is what `RECOVERY_LINK_TEMPLATE` spells in every
+    example in identity (`https://…/reset?token={token}`), rendered by
+    `internal/courier`'s `LinkTemplate` into courier's `url` field for a
+    `password_reset` message. It does not submit on load, for the reason the
+    invitation screen does not accept on load: mail clients and link scanners
+    fetch a URL to preview it, and a redeem-on-render screen would set somebody's
+    password before they chose one. Success redirects to
+    `/login?password-changed=1`, and the sign-in screen reads only that
+    parameter's PRESENCE — the 204 mints no session, so signing in again is the
+    only route forward, and the sentence is there to say why.
+  - **Four failure states on the reset screen, none of them a blank screen.** A
+    404 covers four cases behind one sentinel — never existed, expired, spent,
+    or minted for another flow — and there is no honest way to tell them apart,
+    so it says the link cannot be used and offers a new one. It deliberately does
+    NOT say "expired": the first draft did ("it may have expired, or it may
+    already have been used"), which reads as more careful and is strictly worse,
+    because naming two of the four as plausible tells anyone probing tokens that
+    the one they held had once been good. The others are the weak-password 422 on
+    the password field, a 503 that does not send anyone to their inbox, and a
+    generic sentence for everything else — `thrown.message` is never rendered,
+    which is where a proxy's host and port live.
+  - **The password floor applies on reset and not on sign in**, and the two
+    validators now sit in the same file so the difference is visible in one
+    place. Resetting is the moment a password is being *set*; refusing to *send*
+    a short password at sign-in would lock out the accounts whose passwords
+    predate the rule, which are the ones the reset screen exists to rescue.
+  - **`password_confirmation` / `mismatch` is a code this app invents**, because
+    the service's confirm body is `{token, password}` and never sees a
+    confirmation. It goes through `fieldErrorMessage` anyway — that is the one
+    place a field code becomes a sentence.
+
+  **The e2e tier covers the half a stub cannot.** `e2e/password-reset.e2e.spec.ts`
+  drives the real screens against the real identity over a socket, which is what
+  makes the anti-enumeration claim mean something: the unit tests prove what a
+  screen does with a status it was handed, and only the stack proves the service
+  hands out that status. Notably it asserts the 503 path does NOT say "check your
+  inbox" (this stack runs no courier, so `recovery.Unavailable{}` makes identity
+  answer 503 — which is exactly the case where that sentence is harmful), and
+  that a real 404 offers a new link rather than rendering a form that could only
+  fail again.
+
 - **A real design system, replacing the placeholder palette.** `tokens.css` was
   explicitly a "PLACEHOLDER PALETTE … NOT the cafaye brand" — a neutral graphite
   ramp chosen only so the shell had something coherent. It is now a designed
