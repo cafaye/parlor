@@ -1,0 +1,189 @@
+[e2e] starting the registry the sibling artifacts are pulled from (localhost:16010)
+ Network parlor-e2e_platform Creating 
+ Network parlor-e2e_platform Created 
+ Container parlor-e2e-registry-1 Creating 
+ Container parlor-e2e-registry-1 Created 
+ Container parlor-e2e-registry-1 Starting 
+ Container parlor-e2e-registry-1 Started 
+ Container parlor-e2e-registry-1 Waiting 
+ Container parlor-e2e-registry-1 Healthy 
+[e2e] registry up in 6s
+[e2e] building identity from /Users/kaka/Code/any/moon/cafaye/wt-m39-parlor-registry-02/../identity
+#0 building with "orbstack" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 1.61kB 0.0s done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for gcr.io/distroless/static-debian12:nonroot
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/golang:1.26
+#3 DONE 2.0s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 2B done
+#4 DONE 0.0s
+
+#5 [runtime 1/3] FROM gcr.io/distroless/static-debian12:nonroot
+#5 DONE 0.0s
+
+#6 [build 1/6] FROM docker.io/library/golang:1.26@sha256:0f063af2d465d8dcae54cce04278ada488b96f77b42449c8d071e47d016cc65a
+#6 DONE 0.0s
+
+#7 [internal] load build context
+#7 transferring context: 179.45kB 0.2s done
+#7 DONE 0.2s
+
+#8 [build 3/6] COPY go.mod go.sum ./
+#8 CACHED
+
+#9 [build 2/6] WORKDIR /src
+#9 CACHED
+
+#10 [build 4/6] RUN go mod download
+#10 CACHED
+
+#11 [build 5/6] COPY . .
+#11 DONE 0.7s
+
+#12 [build 6/6] RUN go build -trimpath -ldflags="-s -w" -o /out/service ./cmd/identity
+#12 DONE 18.8s
+
+#13 [runtime 2/3] WORKDIR /app
+#13 CACHED
+
+#14 [runtime 3/3] COPY --from=build /out/service /app/service
+#14 CACHED
+
+#15 exporting to image
+#15 exporting layers done
+#15 writing image sha256:f801e9b1723e33a980d6ada6ab403cc40917bc32685b9df5c941c425b5f5d423 done
+#15 naming to docker.io/cafaye/identity:e2e done
+#15 naming to localhost:16010/cafaye/identity:e2e done
+#15 DONE 0.0s
+[e2e]   identity built in 23s
+[e2e] building guard from /Users/kaka/Code/any/moon/cafaye/wt-m39-parlor-registry-02/../guard
+#0 building with "orbstack" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 4.44kB done
+#1 DONE 0.1s
+
+#2 resolve image config for docker-image://docker.io/docker/dockerfile:1.7
+#2 DONE 1.1s
+
+#3 docker-image://docker.io/docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e
+#3 CACHED
+
+#4 [internal] load metadata for docker.io/oven/bun:1.3.12-slim
+#4 DONE 1.8s
+
+#5 [internal] load .dockerignore
+#5 transferring context: 1.67kB done
+#5 DONE 0.0s
+
+#6 [prod-deps 1/4] FROM docker.io/oven/bun:1.3.12-slim@sha256:d3c7094c144dd3975d183a4dbc4ec0a764223995bff73290d983edb47043a75f
+#6 DONE 0.0s
+
+#7 [internal] load build context
+#7 transferring context: 1.48kB done
+#7 DONE 0.0s
+
+#8 [prod-deps 3/4] COPY package.json bun.lock ./
+#8 CACHED
+
+#9 [prod-deps 4/4] RUN bun install --frozen-lockfile --production && rm -rf /root/.bun/install/cache
+#9 CACHED
+
+#10 [prod-deps 2/4] WORKDIR /app
+#10 CACHED
+
+#11 [runtime 3/5] COPY --from=prod-deps --chown=bun:bun /app/node_modules ./node_modules
+#11 CACHED
+
+#12 [runtime 4/5] COPY --chown=bun:bun package.json ./
+#12 CACHED
+
+#13 [runtime 5/5] COPY --chown=bun:bun src ./src
+#13 CACHED
+
+#14 exporting to image
+#14 exporting layers done
+#14 writing image sha256:d038f17cab8b403391340ed5f91204ad8abef7fc1f1e07a235aa5e270f5c212c done
+#14 naming to docker.io/cafaye/guard:e2e done
+#14 naming to localhost:16010/cafaye/guard:e2e done
+#14 DONE 0.0s
+[e2e]   guard built in 3s
+[e2e] pushing localhost:16010/cafaye/identity:e2e
+The push refers to repository [localhost:16010/cafaye/identity]
+f6be862f3c34: Preparing
+c06ceea78a96: Preparing
+5904c32f457c: Preparing
+6e7fbcf090d0: Preparing
+ad51d0769d16: Preparing
+4cde6b0bb6f5: Preparing
+bd3cdfae1d3f: Preparing
+6f1cdceb6a31: Preparing
+af5aa97ebe6c: Preparing
+4d049f83d9cf: Preparing
+114dde0fefeb: Preparing
+35b5ba6e08cd: Preparing
+8fa10c0194df: Preparing
+6fc9269a8b4d: Preparing
+6f1cdceb6a31: Waiting
+af5aa97ebe6c: Waiting
+4d049f83d9cf: Waiting
+114dde0fefeb: Waiting
+35b5ba6e08cd: Waiting
+4cde6b0bb6f5: Waiting
+8fa10c0194df: Waiting
+bd3cdfae1d3f: Waiting
+6fc9269a8b4d: Waiting
+ad51d0769d16: Pushed
+c06ceea78a96: Pushed
+6e7fbcf090d0: Pushed
+5904c32f457c: Pushed
+4cde6b0bb6f5: Pushed
+bd3cdfae1d3f: Pushed
+af5aa97ebe6c: Pushed
+6f1cdceb6a31: Pushed
+4d049f83d9cf: Pushed
+114dde0fefeb: Pushed
+8fa10c0194df: Pushed
+6fc9269a8b4d: Pushed
+35b5ba6e08cd: Pushed
+f6be862f3c34: Pushed
+e2e: digest: sha256:3d1c274bffc7300611ccf31d1c089263f407deff0fba0f5ca3acc28caae2086a size: 3228
+[e2e] pushing localhost:16010/cafaye/guard:e2e
+The push refers to repository [localhost:16010/cafaye/guard]
+6554433fe5a4: Preparing
+923ed507ed5c: Preparing
+6a0f0f62487a: Preparing
+33cfc8d44155: Preparing
+72d586aba069: Preparing
+71dc4ab4ecad: Preparing
+832a0de98206: Preparing
+a11324fe295e: Preparing
+5dd6d0944088: Preparing
+f38e00a1a324: Preparing
+71dc4ab4ecad: Waiting
+832a0de98206: Waiting
+a11324fe295e: Waiting
+5dd6d0944088: Waiting
+f38e00a1a324: Waiting
+923ed507ed5c: Pushed
+33cfc8d44155: Pushed
+72d586aba069: Pushed
+6554433fe5a4: Pushed
+832a0de98206: Pushed
+71dc4ab4ecad: Pushed
+5dd6d0944088: Pushed
+6a0f0f62487a: Pushed
+a11324fe295e: Pushed
+f38e00a1a324: Pushed
+e2e: digest: sha256:4cf42f061f0f555b9ddec7a88138e2bf5ea743b401b03f029468f25846507b38 size: 2403
+[e2e]   published identity -> localhost:16010/cafaye/identity:e2e  localhost:16010/cafaye/identity@sha256:3d1c274bffc7300611ccf31d1c089263f407deff0fba0f5ca3acc28caae2086a
+[e2e]   published guard -> localhost:16010/cafaye/guard:e2e  localhost:16010/cafaye/guard@sha256:4cf42f061f0f555b9ddec7a88138e2bf5ea743b401b03f029468f25846507b38
+timeout 900 ./bin/e2e-stack publish-siblings  0.60s user 0.56s system 3% cpu 36.659 total
+PUBLISH_EXIT=0

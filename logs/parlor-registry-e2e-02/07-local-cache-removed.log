@@ -1,0 +1,14 @@
+=== removing the LOCAL sibling tags so a green can only come from a real pull ===
+localhost:16010/cafaye/identity:e2e -> Untagged: localhost:16010/cafaye/identity@sha256:3d1c274bffc7300611ccf31d1c089263f407deff0fba0f5ca3acc28caae2086a
+localhost:16010/cafaye/guard:e2e -> Untagged: localhost:16010/cafaye/guard@sha256:4cf42f061f0f555b9ddec7a88138e2bf5ea743b401b03f029468f25846507b38
+cafaye/identity:e2e -> Deleted: sha256:f801e9b1723e33a980d6ada6ab403cc40917bc32685b9df5c941c425b5f5d423
+cafaye/guard:e2e -> Deleted: sha256:d038f17cab8b403391340ed5f91204ad8abef7fc1f1e07a235aa5e270f5c212c
+
+=== local store now (must be empty for both) ===
+(none)
+
+=== registry still holds (the source of truth) ===
+{"repositories":["cafaye/guard","cafaye/identity"]}
+
+cafaye/identity e2e -> 200
+cafaye/guard e2e -> 200

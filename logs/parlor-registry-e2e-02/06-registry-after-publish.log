@@ -1,0 +1,6 @@
+=== registry catalog AFTER publish ===
+{"repositories":["cafaye/guard","cafaye/identity"]}
+
+=== manifest digests ===
+cafaye/identity e2e -> Docker-Content-Digest: sha256:3d1c274bffc7300611ccf31d1c089263f407deff0fba0f5ca3acc28caae2086a
+cafaye/guard e2e -> Docker-Content-Digest: sha256:4cf42f061f0f555b9ddec7a88138e2bf5ea743b401b03f029468f25846507b38

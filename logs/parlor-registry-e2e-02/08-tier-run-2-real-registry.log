@@ -1,0 +1,262 @@
+[e2e] starting the registry the sibling artifacts are pulled from (localhost:16010)
+ Container parlor-e2e-registry-1 Running 
+ Container parlor-e2e-registry-1 Waiting 
+ Container parlor-e2e-registry-1 Healthy 
+[e2e] registry up in 0s
+[e2e] pulling localhost:16010/cafaye/identity:e2e
+[e2e] pulling localhost:16010/cafaye/guard:e2e
+[e2e] sibling artifacts: pulled from localhost:16010
+[e2e] building images (budget 1800s)
+[e2e]   parlor    <- . (no build args: the BFF reads IDENTITY_URL at run time)
+[e2e]   identity, guard, postgres, redis, nginx and registry: pulled, not built
+[e2e]   edge      <- nginx, a pinned image: see e2e/edge.conf for why it exists
+ Image cafaye/e2e-parlor:local Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 580B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 5.77kB done
+#2 DONE 0.0s
+
+#3 resolve image config for docker-image://docker.io/docker/dockerfile:1
+#3 DONE 0.4s
+
+#4 docker-image://docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+#4 CACHED
+
+#5 [internal] load metadata for docker.io/library/node:22.22.2-slim
+#5 DONE 0.0s
+
+#6 [internal] load .dockerignore
+#6 transferring context: 142B done
+#6 DONE 0.0s
+
+#7 [base 1/1] FROM docker.io/library/node:22.22.2-slim
+#7 DONE 0.0s
+
+#8 [internal] load build context
+#8 transferring context: 55.38kB 0.0s done
+#8 DONE 0.0s
+
+#9 [deps 1/3] WORKDIR /app
+#9 CACHED
+
+#10 [deps 2/3] COPY package.json package-lock.json .npmrc ./
+#10 CACHED
+
+#11 [deps 3/3] RUN npm ci --include=dev
+#11 CACHED
+
+#12 [builder 2/4] COPY --from=deps /app/node_modules ./node_modules
+#12 CACHED
+
+#13 [builder 3/4] COPY . .
+#13 DONE 0.1s
+
+#14 [builder 4/4] RUN npm run build
+#14 0.760 
+#14 0.760 > parlor@0.1.0 build
+#14 0.760 > next build
+#14 0.760 
+#14 1.092 ▲ Next.js 16.3.7 (Turbopack)
+#14 1.295 ✓ Running next.config.ts took 205ms
+#14 1.304 
+#14 1.344   Creating an optimized production build ...
+#14 7.077 ✓ Compiled successfully in 5.6s
+#14 7.080   Running TypeScript ...
+#14 14.50   Finished TypeScript in 7.4s ...
+#14 14.50   Collecting page data using 7 workers ...
+#14 15.10   Generating static pages using 7 workers (0/15) ...
+#14 15.33   Generating static pages using 7 workers (3/15) 
+#14 15.38   Generating static pages using 7 workers (7/15) 
+#14 15.42   Generating static pages using 7 workers (11/15) 
+#14 15.45 ✓ Generating static pages using 7 workers (15/15) in 355ms
+#14 15.46   Finalizing page optimization ...
+#14 15.63 
+#14 15.63 Route (app)
+#14 15.63 ┌ ○ /
+#14 15.63 ├ ○ /_not-found
+#14 15.63 ├ ○ /accounts
+#14 15.63 ├ ƒ /accounts/[accountId]
+#14 15.63 ├ ○ /billing/customers
+#14 15.63 ├ ○ /billing/plans
+#14 15.63 ├ ○ /forgot-password
+#14 15.63 ├ ƒ /healthz
+#14 15.63 ├ ƒ /invitations/[token]
+#14 15.63 ├ ƒ /login
+#14 15.63 ├ ƒ /readyz
+#14 15.63 ├ ○ /register
+#14 15.63 ├ ƒ /reset-password
+#14 15.63 ├ ƒ /v1/[...path]
+#14 15.63 ├ ○ /verify-email
+#14 15.63 └ ƒ /verify-email/confirm
+#14 15.63 
+#14 15.63 
+#14 15.63 ○  (Static)   prerendered as static content
+#14 15.63 ƒ  (Dynamic)  server-rendered on demand
+#14 15.63 
+#14 15.65 npm notice
+#14 15.65 npm notice New major version of npm available! 10.9.7 -> 12.2.0
+#14 15.65 npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+#14 15.65 npm notice To update run: npm install -g npm@12.2.0
+#14 15.65 npm notice
+#14 DONE 16.2s
+
+#15 [runner 3/5] RUN groupadd --system --gid 1001 nodejs  && useradd --system --uid 1001 --gid nodejs nextjs
+#15 CACHED
+
+#16 [runner 4/5] COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+#16 DONE 0.2s
+
+#17 [runner 5/5] COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+#17 DONE 0.1s
+
+#18 exporting to image
+#18 exporting layers
+#18 exporting layers 0.3s done
+#18 writing image sha256:6fd6513c0e99827bffa55d4c1227d2d14ebd83ebf5071e70a4a199ad530ecee3
+#18 writing image sha256:6fd6513c0e99827bffa55d4c1227d2d14ebd83ebf5071e70a4a199ad530ecee3 done
+#18 naming to docker.io/cafaye/e2e-parlor:local done
+#18 DONE 0.3s
+
+#19 resolving provenance for metadata file
+#19 DONE 0.0s
+ Image cafaye/e2e-parlor:local Built 
+[e2e] images built in 19s
+[e2e] starting the stack in project parlor-e2e
+ Volume parlor-e2e_guard-redis-data Creating 
+ Volume parlor-e2e_guard-redis-data Created 
+ Volume parlor-e2e_identity-postgres-data Creating 
+ Volume parlor-e2e_identity-postgres-data Created 
+ Container parlor-e2e-guard-redis-1 Creating 
+ Container parlor-e2e-registry-1 Running 
+ Container parlor-e2e-identity-postgres-1 Creating 
+ Container parlor-e2e-guard-redis-1 Created 
+ Container parlor-e2e-identity-postgres-1 Created 
+ Container parlor-e2e-identity-1 Creating 
+ Container parlor-e2e-identity-1 Created 
+ Container parlor-e2e-parlor-1 Creating 
+ Container parlor-e2e-guard-1 Creating 
+ Container parlor-e2e-parlor-1 Created 
+ Container parlor-e2e-edge-1 Creating 
+ Container parlor-e2e-guard-1 Created 
+ Container parlor-e2e-edge-1 Created 
+ Container parlor-e2e-identity-postgres-1 Starting 
+ Container parlor-e2e-guard-redis-1 Starting 
+ Container parlor-e2e-identity-postgres-1 Started 
+ Container parlor-e2e-identity-postgres-1 Waiting 
+ Container parlor-e2e-guard-redis-1 Started 
+ Container parlor-e2e-identity-postgres-1 Healthy 
+ Container parlor-e2e-identity-1 Starting 
+ Container parlor-e2e-identity-1 Started 
+ Container parlor-e2e-guard-redis-1 Waiting 
+ Container parlor-e2e-parlor-1 Starting 
+ Container parlor-e2e-parlor-1 Started 
+ Container parlor-e2e-parlor-1 Waiting 
+ Container parlor-e2e-guard-redis-1 Healthy 
+ Container parlor-e2e-guard-1 Starting 
+ Container parlor-e2e-guard-1 Started 
+ Container parlor-e2e-parlor-1 Healthy 
+ Container parlor-e2e-edge-1 Starting 
+ Container parlor-e2e-edge-1 Started 
+[e2e] containers started in 12s (dependency health ordered)
+[e2e] applying identity's migrations (../identity/migrations)
+2026/10/03 00:16:09 EMPTY 00001_init.sql (2.71ms)
+2026/10/03 00:16:09 OK   00002_users.sql (5.64ms)
+2026/10/03 00:16:09 OK   00003_sessions.sql (6.59ms)
+2026/10/03 00:16:09 OK   00004_outbox_events.sql (5.72ms)
+2026/10/03 00:16:09 OK   00005_accounts.sql (5.42ms)
+2026/10/03 00:16:09 OK   00006_account_users.sql (5.19ms)
+2026/10/03 00:16:09 OK   00007_account_invitations.sql (5.84ms)
+2026/10/03 00:16:09 OK   00008_connected_accounts.sql (6.49ms)
+2026/10/03 00:16:09 OK   00009_oidc_clients.sql (11.44ms)
+2026/10/03 00:16:09 OK   00010_mfa.sql (10.13ms)
+2026/10/03 00:16:09 OK   00011_api_keys.sql (6.22ms)
+2026/10/03 00:16:09 OK   00012_account_audit_log.sql (6.28ms)
+2026/10/03 00:16:09 OK   00013_account_invitation_revocation.sql (5.59ms)
+2026/10/03 00:16:09 OK   00014_user_email_verified_at.sql (2.61ms)
+2026/10/03 00:16:09 OK   00015_recovery_tokens.sql (5.15ms)
+2026/10/03 00:16:09 goose: successfully migrated database to version: 15
+[e2e] migrations applied in 0s
+[e2e] waiting for /readyz on identity-postgres identity guard parlor edge (budget 180s each)
+[e2e]   identity ready after 0s (1 polls) — http://127.0.0.1:16080/readyz
+[e2e]   guard ready after 0s (1 polls) — http://127.0.0.1:16081/readyz
+[e2e]   parlor ready after 0s (1 polls) — http://127.0.0.1:16003/readyz
+[e2e]   edge ready after 0s (1 polls) — http://127.0.0.1:16000/readyz
+[e2e] the whole stack is ready
+[e2e] edge    http://127.0.0.1:16000   <- the origin the browser uses
+[e2e] parlor  http://127.0.0.1:16003   <- the app directly
+[e2e] identity http://127.0.0.1:16080
+[e2e] guard   http://127.0.0.1:16081
+[e2e] ensuring the chromium build for @playwright/test is installed
+[e2e] running the end-to-end suite
+
+Running 23 tests using 1 worker
+
+[1/23] [chromium] › e2e/design-system.e2e.spec.ts:130:5 › every interactive primitive is keyboard-reachable and paints a visible focus ring
+[2/23] [chromium] › e2e/design-system.e2e.spec.ts:220:5 › the focus ring is visible against the surface it is drawn on
+[3/23] [chromium] › e2e/design-system.e2e.spec.ts:262:5 › text on the page meets the 4.5:1 text floor in the browser, not just on paper
+[4/23] [chromium] › e2e/design-system.e2e.spec.ts:355:5 › prefers-color-scheme: dark actually repaints the page
+[5/23] [chromium] › e2e/design-system.e2e.spec.ts:399:5 › the account's destructive actions are confirmed, and the dialog is keyboard-only operable
+[6/23] [chromium] › e2e/design-system.e2e.spec.ts:475:5 › a busy control keeps its accessible name, in a real browser
+[7/23] [chromium] › e2e/email-verification.e2e.spec.ts:101:5 › asking for a verification link never promises a mail this deployment cannot send
+[8/23] [chromium] › e2e/email-verification.e2e.spec.ts:129:5 › a verification link that cannot be used says so and offers a new one, for a real 404
+[9/23] [chromium] › e2e/email-verification.e2e.spec.ts:163:5 › a verification link with no code in it explains itself rather than rendering a button that cannot work
+[10/23] [chromium] › e2e/email-verification.e2e.spec.ts:177:5 › a created account is never un-said when the verification mail cannot be sent
+[11/23] [chromium] › e2e/email-verification.e2e.spec.ts:207:5 › the sign in screen offers the way to ask for a link, without saying anything about the address
+[12/23] [chromium] › e2e/email-verification.e2e.spec.ts:225:5 › an address that has no account and one that does are answered identically
+[13/23] [chromium] › e2e/password-reset.e2e.spec.ts:104:5 › asking for a reset link never promises a mail this deployment cannot send
+[14/23] [chromium] › e2e/password-reset.e2e.spec.ts:135:5 › a link that cannot be used says so and offers a new one, for a real 404
+[15/23] [chromium] › e2e/password-reset.e2e.spec.ts:174:5 › a link with no token explains itself rather than rendering a form that cannot work
+[16/23] [chromium] › e2e/password-reset.e2e.spec.ts:188:5 › the sign in screen offers the way out, and nothing about it leaks an address
+[17/23] [chromium] › e2e/password-reset.e2e.spec.ts:204:5 › an address that has no account and one that does are answered identically
+[18/23] [chromium] › e2e/session.e2e.spec.ts:119:5 › a person can create an account and sign in to it
+[19/23] [chromium] › e2e/session.e2e.spec.ts:150:5 › the session survives a page load, so a signed-in person can reach their accounts
+[20/23] [chromium] › e2e/session.e2e.spec.ts:257:5 › a wrong password and an unknown address say exactly the same thing
+[21/23] [chromium] › e2e/stack.e2e.spec.ts:62:5 › every service in the stack reports itself ready, from the outside
+[22/23] [chromium] › e2e/stack.e2e.spec.ts:107:5 › the gateway refuses a caller that cannot prove who they are
+[23/23] [chromium] › e2e/stack.e2e.spec.ts:120:5 › the gateway's browser surface is pointed at this stack's identity
+[e2e] scanned 0 produced file(s), archive members included, for 2 session token(s): none found
+[e2e] no report yet; tests/assert-e2e-ran.mjs is the authority on it
+  23 passed (7.9s)
+[e2e] the tier ran: 23 passed, 0 failed, 0 skipped, 0 retried
+[e2e] end-to-end tier finished in 43s
+[e2e] stopping parlor-e2e and deleting its volumes
+[e2e]  Container parlor-e2e-edge-1 Stopping 
+[e2e]  Container parlor-e2e-registry-1 Stopping 
+[e2e]  Container parlor-e2e-guard-1 Stopping 
+[e2e]  Container parlor-e2e-registry-1 Stopped 
+[e2e]  Container parlor-e2e-registry-1 Removing 
+[e2e]  Container parlor-e2e-registry-1 Removed 
+[e2e]  Container parlor-e2e-edge-1 Stopped 
+[e2e]  Container parlor-e2e-edge-1 Removing 
+[e2e]  Container parlor-e2e-edge-1 Removed 
+[e2e]  Container parlor-e2e-parlor-1 Stopping 
+[e2e]  Container parlor-e2e-parlor-1 Stopped 
+[e2e]  Container parlor-e2e-parlor-1 Removing 
+[e2e]  Container parlor-e2e-parlor-1 Removed 
+[e2e]  Container parlor-e2e-guard-1 Stopped 
+[e2e]  Container parlor-e2e-guard-1 Removing 
+[e2e]  Container parlor-e2e-guard-1 Removed 
+[e2e]  Container parlor-e2e-guard-redis-1 Stopping 
+[e2e]  Container parlor-e2e-identity-1 Stopping 
+[e2e]  Container parlor-e2e-identity-1 Stopped 
+[e2e]  Container parlor-e2e-identity-1 Removing 
+[e2e]  Container parlor-e2e-identity-1 Removed 
+[e2e]  Container parlor-e2e-identity-postgres-1 Stopping 
+[e2e]  Container parlor-e2e-guard-redis-1 Stopped 
+[e2e]  Container parlor-e2e-guard-redis-1 Removing 
+[e2e]  Container parlor-e2e-guard-redis-1 Removed 
+[e2e]  Container parlor-e2e-identity-postgres-1 Stopped 
+[e2e]  Container parlor-e2e-identity-postgres-1 Removing 
+[e2e]  Container parlor-e2e-identity-postgres-1 Removed 
+[e2e]  Volume parlor-e2e_identity-postgres-data Removing 
+[e2e]  Volume parlor-e2e_guard-redis-data Removing 
+[e2e]  Network parlor-e2e_platform Removing 
+[e2e]  Volume parlor-e2e_identity-postgres-data Removed 
+[e2e]  Volume parlor-e2e_guard-redis-data Removed 
+[e2e]  Network parlor-e2e_platform Removed 
+[e2e] stopped
+timeout 900 ./bin/e2e  10.87s user 3.57s system 26% cpu 54.373 total
+TIER_EXIT=0
