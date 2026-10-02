@@ -20,7 +20,7 @@
 # and a partial parse is a worse reader than a grep that says what it wants.
 #
 #   bash tests/validate-ci.sh              the checks
-#   bash tests/validate-ci.sh --self-test  prove they can fail (39 breakages,
+#   bash tests/validate-ci.sh --self-test  prove they can fail (40 breakages,
 #                                         plus the opposite case)
 #
 # `--self-test` is part of the gate, not an extra. A check nobody has watched
@@ -374,13 +374,20 @@ else
   no "bin/prime is executable" "$PRIME is not chmod +x"
 fi
 
-# The gate is two commands and its own header says a green run means the
-# checkout reproduces. An extra install in here would change what that means.
-prime_commands=$(grep -oE '^(npm|bun|yarn|pnpm)( ci| install| test)?$' "$PRIME" | tr '\n' ' ')
-if [ "$prime_commands" = "npm ci npm test " ]; then
-  ok "bin/prime runs exactly npm ci then npm test"
+# The gate is three commands and its own header says a green run means the
+# checkout reproduces AND the tree compiles. An extra install in here would
+# change what that means.
+#
+# `npm run build` is in the list on purpose, and the alternation has to name it
+# explicitly. A pattern of `( ci| install| test)?$` would simply not match the
+# line, so this check would keep reporting "exactly npm ci then npm test" while
+# the gate had grown a third command — a check that is confidently true about a
+# gate it can no longer see. Naming the command is what keeps the two honest.
+prime_commands=$(grep -oE '^(npm|bun|yarn|pnpm)( ci| install| test| run build)?$' "$PRIME" | tr '\n' ' ')
+if [ "$prime_commands" = "npm ci npm test npm run build " ]; then
+  ok "bin/prime runs exactly npm ci, npm test, then npm run build"
 else
-  no "bin/prime runs exactly npm ci then npm test" \
+  no "bin/prime runs exactly npm ci, npm test, then npm run build" \
     "found: ${prime_commands:-<nothing>}"
 fi
 
@@ -881,7 +888,7 @@ else
 fi
 
 # --- prove the checks can fail --------------------------------------------
-# Thirty-nine breakages of a throwaway copy of every file these checks read,
+# Forty breakages of a throwaway copy of every file these checks read,
 # each asserted to send this gate red. A check that has only ever been seen
 # green is a check nobody has watched fail, and this is the difference between
 # a gate and a rubber stamp (PLAN.md §1: a skipped test proves nothing; a check
@@ -970,6 +977,7 @@ self_test() {
     "stale-script-name|sed -i '' 's|npm run typecheck|npm run typecheckp|' '$SANDBOX/.github/workflows/ci.yml'" \
     "ci-does-not-run-prime|sed -i '' 's|\\./bin/prime|echo skipping the gate|' '$SANDBOX/.github/workflows/ci.yml'" \
     "npm-install-in-prime|sed -i '' 's|^npm ci\$|npm install|' '$SANDBOX/bin/prime'" \
+      "no-build-in-prime|sed -i '' '/^npm run build\$/d' '$SANDBOX/bin/prime'" \
     "manifest-reintroduces-a-gate-command|printf 'prime: ./bin/other\n' >>'$SANDBOX/cafaye.yml'" \
     "no-engines-field|node -e 'const f=process.argv[1];const p=require(f);delete p.engines;require(\"fs\").writeFileSync(f,JSON.stringify(p,null,2))' '$SANDBOX/package.json'" \
     "range-instead-of-a-pin|sed -i '' 's|\"node\": \"22.22.2\"|\"node\": \"^22\"|' '$SANDBOX/package.json'" \

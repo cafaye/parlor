@@ -1,11 +1,30 @@
 #!/usr/bin/env bash
 # Prime a fresh checkout of parlor.
 #
-# Three commands on purpose: install EXACTLY the committed lockfile (`npm ci`,
-# which deletes node_modules and refuses to drift), run the full suite, then
-# check that the tree still says what CI assumes about it. A green `bin/prime`
-# means the checkout reproduces AND the gate is the gate. Run it before touching
-# code, and again before handing work off.
+# Four commands on purpose: install EXACTLY the committed lockfile (`npm ci`,
+# which deletes node_modules and refuses to drift), run the full suite, PROVE
+# THE TREE STILL BUILDS, then check that the tree still says what CI assumes
+# about it. A green `bin/prime` means the checkout reproduces AND the gate is
+# the gate. Run it before touching code, and again before handing work off.
+#
+# WHY `npm run build` IS HERE AND WAS NOT, which cost a fork months.
+#
+# The suite cannot see this class of error at all. `src/components/ui/feedback.tsx`
+# calls useCallback/useEffect/useId/useRef with no `"use client"` directive, so
+# a Server Component that reaches it through the `@/components/ui` barrel cannot
+# compile. Every test renders in jsdom, and jsdom has no server/client boundary
+# to cross, so the suite is green on a tree that does not build. The only thing
+# that catches it is `next build`.
+#
+# CI DID catch it — there is a `typecheck + build` job and it went red. That is
+# not the same as catching it. cafaye/site forked this template and inherited
+# the trap; its local gate was green, its CI build job was red, and it stayed
+# that way for months because a developer who trusts the gate they can run has
+# no reason to open a browser tab and read CI. A check that only runs on a
+# runner is a check its author watches fail from a distance.
+#
+# So the build is in the gate a developer runs. It costs seconds, and it is the
+# difference between "the local gate is green" and "the tree compiles".
 #
 # `tests/validate-ci.sh` is here rather than only in the workflow on purpose: it
 # is the check that the runtime pin, the lockfile guard and the gate command
@@ -21,6 +40,9 @@ npm ci
 
 echo "==> npm test"
 npm test
+
+echo "==> npm run build"
+npm run build
 
 echo "==> tests/validate-ci.sh --self-test"
 bash tests/validate-ci.sh --self-test

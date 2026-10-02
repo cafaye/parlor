@@ -79,6 +79,37 @@ All notable changes to parlor are recorded here. The format follows
 
 ### Changed
 
+- **`bin/prime` now runs `npm run build`, and the check that reads `bin/prime`
+  was fixed so it can still see the gate.** The gate was `npm ci` then
+  `npm test`, so a green gate meant "the suite passes" and nothing more.
+  `src/components/ui/feedback.tsx` calls `useCallback`/`useEffect`/`useId`/
+  `useRef` with no `"use client"` directive and is re-exported from the
+  `@/components/ui` barrel, so a Server Component that reaches it through that
+  barrel cannot compile. The suite is structurally unable to notice: jsdom has
+  no server/client boundary to cross, so every test renders green on a tree
+  that does not build. Only `next build` catches this class of error.
+
+  It is a `Changed` and not a `Fixed` because the tree builds today — measured,
+  `npm run build` exits 0 — since every app-code importer of that barrel happens
+  to be a client component, and the only Server Components are `.test.tsx`
+  files. It is one Server Component away from red. CI *does* have a
+  `typecheck + build` job and *did* go red, which is the argument rather than a
+  defence: cafaye/site forked this template, inherited the trap, and sat with a
+  green local gate and a red CI build for months, because a developer who
+  trusts the gate they can run has no reason to go read a runner's output. A
+  check that only runs somewhere else is a check its author watches fail from a
+  distance. The build costs seconds and is the difference between "the local
+  gate is green" and "the tree compiles".
+
+  The check that inspects `bin/prime`'s contents was a second, smaller instance
+  of the same failure: its alternation `( ci| install| test)?` could not match
+  `npm run build`, so adding the command would have left it still reporting
+  "exactly npm ci then npm test" — a check confidently true about a gate it
+  could no longer see. It now names ` run build` explicitly, and a 40th
+  self-test breakage (`no-build-in-prime`) proves that check can go red.
+  Measured: `bin/prime` exits 0, and `--self-test` reports 40 breakages with
+  every check proven able to fail.
+
 - **The Dockerfile's runner stage is pinned.** `FROM node:22-slim` became
   `FROM node:22.22.2-slim`, so the image is *built* on the pin and *runs* on it.
   The file's own header has claimed "One pin, four mirrors, and the image is the
