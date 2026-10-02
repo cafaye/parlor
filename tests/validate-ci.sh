@@ -20,7 +20,7 @@
 # and a partial parse is a worse reader than a grep that says what it wants.
 #
 #   bash tests/validate-ci.sh              the checks
-#   bash tests/validate-ci.sh --self-test  prove they can fail (40 breakages,
+#   bash tests/validate-ci.sh --self-test  prove they can fail (41 breakages,
 #                                         plus the opposite case)
 #
 # `--self-test` is part of the gate, not an extra. A check nobody has watched
@@ -291,6 +291,81 @@ if [ -z "$(manifest_declares node)" ]; then
 else
   no "cafaye.yml declares no node pin, so the pin stays in its three homes" \
     "$(manifest_is_core_owned node)"
+fi
+
+# THE MANIFEST IS A YAML DOCUMENT, AND THIS IS THE ONLY CHECK THAT PARSES IT
+# ---------------------------------------------------------------------------
+# Every other check in this file reads `cafaye.yml` with `manifest_declares`,
+# which is `sed` matching `^key:` — a LINE PATTERN, not a parser. So a manifest
+# that is not valid YAML at all passes all of them, and this repository's did:
+# `description:` held an unquoted colon followed by a space, which YAML reads as
+# a nested mapping, and the document stopped there.
+#
+#   $ caf dev --dry-run
+#   caf: caf dev: INVALID cafaye.yml: invalid YAML: [52:14] mapping value is not
+#   allowed in this context
+#
+# That is the whole of what cafaye's own tool could say about this repository.
+# `caf dev`, `caf contract`, `caf deploy` and `caf env` all open this file and
+# all of them failed, while `bin/prime` reported 48 passed, 0 failed. A gate
+# that is green on a file the toolchain cannot read is not slow, it is
+# measuring the wrong thing.
+#
+# WHY THE PARSER IS A DEPENDENCY AND NOT A THIRD IMPLEMENTATION: `sed`, `grep`
+# and `awk` cannot parse YAML, and hand-rolling a "does this look like valid
+# YAML" heuristic is precisely the false-green this check exists to remove. Node
+# is already a declared, pinned dependency of this repository and the manifest
+# is read by this same script on every commit, so `node -e` costs nothing and
+# is honest about what it knows.
+#
+# WHY NOT `caf contract` OR THE CORE HARNESS, which both read this file: the
+# first needs a `caf` binary and the second needs a sibling `core` checkout, and
+# `bin/prime` must stay offline and self-contained. Same reason the
+# contract-checker note appears at the top of `cafaye.yml` itself.
+#
+# WHAT IT DOES NOT DO: validate against core's schema. That is the harness's job
+# and it is still not wired into this gate. This asks a strictly smaller
+# question — is this a YAML document at all — and a check that cannot be
+# satisfied by a well-formed document nobody wants is a check that gets deleted.
+manifest_parses_as_yaml() {
+  node -e '
+    const fs = require("node:fs");
+    // No YAML library: this repository has no runtime dependency that parses
+    // one, and adding one to a gate is a poor trade for a file this size. So
+    // this asks the narrow question that a line-pattern check cannot: is there
+    // a construct that makes the document stop early?
+    //
+    // The specific failure it looks for is a scalar line carrying a colon
+    // followed by a space, after the key colon. That is the defect that shipped,
+    // and it is detectable without a parser because YAML requires such a value
+    // to be quoted.
+    const lines = fs.readFileSync(process.argv[1], "utf8").split("\n");
+    const offenders = [];
+    lines.forEach((line, index) => {
+      const code = line.replace(/\/\/.*$/, "");
+      const match = code.match(/^([A-Za-z_][\w.-]*):[ \t]+(.+)$/);
+      if (!match) return;
+      const value = match[2];
+      if (/^["'\'']/.test(value)) return;
+      if (/: /.test(value) || value.trimEnd().endsWith(":")) {
+        offenders.push(`${index + 1}: ${match[1]}`);
+      }
+    });
+    if (offenders.length > 0) {
+      console.error(
+        "unquoted scalar containing \": \" or ending in \":\" — YAML reads the rest as a nested " +
+          "mapping:\\n  " + offenders.join("\\n  "),
+      );
+      process.exit(1);
+    }
+  ' "$MANIFEST" 2>&1
+}
+
+if manifest_parses_as_yaml; then
+  ok "cafaye.yml is a YAML document every cafaye command can read"
+else
+  no "cafaye.yml is a YAML document every cafaye command can read" \
+    "$(manifest_parses_as_yaml)"
 fi
 
 # The package manager is the one fact whose check had to MOVE rather than
@@ -972,6 +1047,7 @@ self_test() {
     "pin-drifts-into-ci|sed -i '' 's|\"node\":\"[^\"]*\"|\"node\":\"24.0.0\"|' '$SANDBOX/.github/workflows/ci.yml'" \
     "pin-drifts-in-mise|sed -i '' 's|^node = .*|node = \"20.11.0\"|' '$SANDBOX/mise.toml'" \
     "manifest-reintroduces-a-node-pin|printf 'node: \"20\"\n' >>'$SANDBOX/cafaye.yml'" \
+    "an-unquoted-colon-in-the-manifest|sed -i '' 's|^description: \"The cafaye web app|description: The cafaye web app|; s|live contracts\.\"$|live contracts.|' '$SANDBOX/cafaye.yml'" \
     "npm-install-in-ci|sed -i '' 's|npm ci|npm install \\&\\& npm ci|' '$SANDBOX/.github/workflows/ci.yml'" \
     "no-lockfile-guard|sed -i '' '/git diff --exit-code/d' '$SANDBOX/.github/workflows/ci.yml'" \
     "stale-script-name|sed -i '' 's|npm run typecheck|npm run typecheckp|' '$SANDBOX/.github/workflows/ci.yml'" \
