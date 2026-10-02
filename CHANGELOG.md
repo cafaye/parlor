@@ -8,6 +8,69 @@ All notable changes to parlor are recorded here. The format follows
 
 ### Added
 
+- **Two gate checks that run on every commit with no caf and no container
+  runtime: the local stack's catalog is one `caf dev` can believe, and the
+  lockfile's `file:` dependencies name bytes npm can actually produce.** Both
+  guard against defects that were real in this fleet, and both are found in CI
+  rather than at `mise run stack`, which is the moment a developer is looking
+  at something else.
+
+  **`caf.dev.json` is readable by caf.** `caf` already refuses a catalog it
+  cannot believe — and refuses it well, naming every unknown key and the service
+  it is in rather than stopping at the first. What it cannot do is run on a CI
+  runner with no caf and no Docker, which is exactly where a per-commit check
+  belongs. Three of the four invariants are re-stated from `dev.Entry`'s own
+  comments and need no schema copy: an entry's `name` must equal the key it is
+  filed under (so a document cannot run billing's image as identity), `image`
+  must be non-empty (a registry entry with no image has nothing to run), and a
+  `healthcheck` must carry a `test` (without one the service counts as ready
+  while merely running).
+
+  The fourth does need the key list, and it is a second copy — so the drift is
+  pointed at rather than hidden. It is `dev.Entry` and `dev.Healthcheck` as of
+  caf `31e77e6`, with `git -C ../caf show 31e77e6:internal/dev/registry.go`
+  named as the authority. **If caf grows a field this check fails loudly**, and
+  that direction is deliberate: a false FAIL costs a minute, and the false PASS
+  it replaces is the defect class this gate exists for — caf used to drop a
+  misspelled key in silence and then tell a developer their catalog was missing
+  something it plainly contained.
+
+  **Every `file:` dependency's integrity matches the tarball it names.** A
+  `file:` dependency is a tarball in the repository, and `npm ci` checks the
+  tarball against the sha512 the lockfile records for it. When they disagree the
+  install fails `EINTEGRITY` — and it fails only against a cache that does not
+  already hold the bytes under the old key, which is why it can be green on the
+  machine that made the mistake and red on the one that clones. That is not
+  hypothetical: commit `89553a8` in this repository's sibling `site` grew
+  `vendor/cafaye-ts-0.0.0.tgz` and updated its manifest, and left the lockfile's
+  integrity naming the bytes the tarball used to be. The deployable image could
+  not be built. The hash here is computed straight from the file rather than
+  through npm, so the check cannot inherit the disagreement it is looking for.
+
+  It is **vacuous today** — this repository vendors nothing — and still
+  correct: an invariant over an empty set holds, and a service generated from
+  this template that vendors the TS client inherits the check that would have
+  caught it. The message says how many there were, so "0 to check" is visible
+  rather than silently green.
+
+  **Both are proven able to fail, and each is proven to fail for its own
+  reason.** Six new breakages — no catalog, a misspelled key, an entry named for
+  another service, an entry with no image, a healthcheck with no test, and a
+  lockfile naming bytes the tarball does not have — and one new control in the
+  other direction, a `file:` dependency carrying the *correct* sha512, because a
+  check that rejects everything passes every breakage.
+
+  The lockfile breakage was wrong on its first run and the control caught it.
+  The planted tarball was written relative to the current directory rather than
+  to the sandbox, so the check went red for "resolved to a file that is not in
+  the tree" instead of for the integrity mismatch — a breakage passing for the
+  wrong reason, which is a control that has proved nothing. Both now derive the
+  tarball's directory from the lockfile's own path, and each breakage was
+  re-checked against the message it produces rather than against its exit code.
+
+  Gate: 43 passed, 0 failed. Self-test: 47 breakages, every check proven able to
+  fail. `shellcheck -S warning` clean.
+
 - **A local stack that exists: `caf.dev.json`, `mise run stack`, and the
   facts that make it work — so a service generated from this template is born
   able to talk to identity instead of discovering how later.** The template had

@@ -20,7 +20,7 @@
 # and a partial parse is a worse reader than a grep that says what it wants.
 #
 #   bash tests/validate-ci.sh              the checks
-#   bash tests/validate-ci.sh --self-test  prove they can fail (41 breakages,
+#   bash tests/validate-ci.sh --self-test  prove they can fail (47 breakages,
 #                                         plus the opposite case)
 #
 # `--self-test` is part of the gate, not an extra. A check nobody has watched
@@ -948,6 +948,172 @@ else
     "$DEPLOY_RUNNER is the only thing that runs kamal against config/deploy.yml, and it cannot be run"
 fi
 
+# ---------------------------------------------------------------------------
+# The local stack's catalog
+# ---------------------------------------------------------------------------
+# `caf.dev.json` is the file `mise run stack` hands `caf dev -registry`, and it
+# is committed rather than generated, so a service generated from this template
+# inherits a local stack instead of rediscovering how to get one. What can be
+# wrong with it is worth a per-commit check, because the alternative is finding
+# out at `mise run stack` — which is the moment you most need to be looking at
+# something else.
+#
+# `caf` already refuses a catalog it cannot believe, and its refusal is a good
+# one: it reports EVERY unknown key rather than the first, and it names the
+# service as well as the key. What it cannot do is run on a CI runner that has
+# no caf and no container runtime, which is exactly where a per-commit check
+# belongs. So this re-states caf's own invariants in node, which the script's
+# header already establishes is present by construction.
+#
+# Three of them need no list of keys and are stated from `dev.Entry`'s own
+# comments: an entry's `name` must equal the key it is filed under (so a
+# document cannot run billing's image as identity), `image` must be non-empty
+# (a registry entry with no image has nothing to run), and a `healthcheck` must
+# carry a `test` (without it the service is ready the moment it is running,
+# which is a different and much worse claim).
+#
+# The fourth needs the list, and the list is a second copy — so it is here with
+# the drift pointed at rather than hidden. It is `dev.Entry` and
+# `dev.Healthcheck` as of caf 31e77e6;
+# `git -C ../caf show 31e77e6:internal/dev/registry.go` is the authority. If caf
+# grows a field this check FAILS LOUDLY and the fix is one line here. That
+# direction is deliberate: a false FAIL costs a minute, and the false PASS it
+# replaces is the defect class this whole gate exists for — caf used to drop a
+# misspelled key in silence and then tell a developer their catalog was missing
+# something it plainly contained.
+
+CATALOG="$ROOT/caf.dev.json"
+if [ ! -f "$CATALOG" ]; then
+  no "caf.dev.json exists" \
+    "$CATALOG is the catalog 'mise run stack' passes to 'caf dev -registry'; without it caf refuses the required identity dependency and no stack starts"
+else
+  ok "caf.dev.json exists"
+  # Existence and readability are separate checks on purpose. Collapsing them
+  # makes a catalog that is present but malformed report FAIL against a check
+  # named "exists", and the message under it then contradicts the label — which
+  # is the shape of defect this gate is trying to stop producing, not to
+  # reproduce.
+  catalog_report=$(node -e '
+const fs = require("fs");
+
+// dev.Entry and dev.Healthcheck, as of caf 31e77e6. The x- prefix is caf own
+// escape hatch (internal/dev/registry.go, extensionPrefix) and is stripped on
+// purpose, so an x- key is never an unknown field.
+const KNOWN = new Set([
+  "name", "image", "command", "port", "publish", "environment", "volumes",
+  "healthcheck", "dependencies",
+  "test", "interval", "timeout", "retries", "startPeriod",
+]);
+
+const problems = [];
+let doc;
+try {
+  doc = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+} catch (err) {
+  process.stdout.write("caf.dev.json is not JSON: " + err.message);
+  process.exit(0);
+}
+
+if (doc === null || typeof doc !== "object" || Array.isArray(doc)) {
+  process.stdout.write("caf.dev.json is not a JSON object keyed by service name");
+  process.exit(0);
+}
+
+for (const [key, entry] of Object.entries(doc)) {
+  if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+    problems.push(key + ": is not an object");
+    continue;
+  }
+  for (const field of Object.keys(entry)) {
+    if (!field.startsWith("x-") && !KNOWN.has(field)) {
+      problems.push(key + ": " + JSON.stringify(field) + " is not a field of dev.Entry");
+    }
+  }
+  if (entry.name !== key) {
+    problems.push(key + ": name is " + JSON.stringify(entry.name) +
+      ", and it must equal the key the entry is filed under");
+  }
+  if (typeof entry.image !== "string" || entry.image === "") {
+    problems.push(key + ": names no image, so caf has nothing to run");
+  }
+  if (entry.healthcheck !== undefined) {
+    const hc = entry.healthcheck;
+    if (hc === null || typeof hc !== "object" || Array.isArray(hc)) {
+      problems.push(key + ": healthcheck is not an object");
+    } else if (!Array.isArray(hc.test) || hc.test.length === 0) {
+      problems.push(key + ": healthcheck carries no test, so the service counts as ready while merely running");
+    }
+  }
+}
+
+process.stdout.write(problems.join("; "));
+' "$CATALOG")
+  if [ -z "$catalog_report" ]; then
+    ok "every entry in caf.dev.json is one caf dev can believe"
+  else
+    no "every entry in caf.dev.json is one caf dev can believe" "$catalog_report"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# The lockfile names bytes npm can actually produce
+# ---------------------------------------------------------------------------
+# A `file:` dependency is a tarball in this repository, and `npm ci` checks the
+# tarball against the sha512 the lockfile records for it. When those two
+# disagree the install fails EINTEGRITY — and it fails only against a cache that
+# does not already hold the bytes under the old key, which is why it can be
+# green on the machine that made the mistake and red on the one that clones.
+#
+# That is not hypothetical: this fleet shipped a launch blocker of exactly this
+# shape. Commit 89553a8 grew vendor/cafaye-ts-0.0.0.tgz and updated its
+# manifest, and left package-lock.json's integrity naming the bytes the tarball
+# used to be. The image could not be built, so nothing could be deployed. The
+# hash here is computed straight from the file rather than through npm, so the
+# check cannot inherit the disagreement it is looking for.
+#
+# Vacuous today — this repository vendors nothing — and still correct: an
+# invariant over an empty set holds, and a generated service that vendors the TS
+# client inherits the check that would have caught it.
+
+lock_report=$(node -e '
+const fs = require("fs"), path = require("path"), crypto = require("crypto");
+
+const root = process.argv[1];
+const lock = JSON.parse(fs.readFileSync(path.join(root, "package-lock.json"), "utf8"));
+const problems = [];
+let checked = 0;
+
+for (const [key, entry] of Object.entries(lock.packages || {})) {
+  const resolved = entry && entry.resolved;
+  if (typeof resolved !== "string" || !resolved.startsWith("file:")) {
+    continue;
+  }
+  checked += 1;
+  const tarball = path.resolve(root, resolved.slice("file:".length));
+  if (!fs.existsSync(tarball)) {
+    problems.push(key + ": resolved to " + resolved + ", which is not in the tree");
+    continue;
+  }
+  const actual = "sha512-" + crypto.createHash("sha512")
+    .update(fs.readFileSync(tarball)).digest("base64");
+  if (entry.integrity !== actual) {
+    problems.push(
+      key + ": package-lock.json records " + (entry.integrity || "<none>") + " for " + resolved +
+      ", and the file hashes to " + actual + "; npm ci fails EINTEGRITY on a clean cache, " +
+      "and the cache is what makes it pass here"
+    );
+  }
+}
+
+process.stdout.write(String(checked) + (problems.length ? "|" + problems.join("; ") : ""));
+' "$ROOT")
+lock_checked=${lock_report%%|*}
+if [ "$lock_report" = "$lock_checked" ]; then
+  ok "every file: dependency's integrity matches the tarball it names ($lock_checked to check)"
+else
+  no "every file: dependency's integrity matches the tarball it names" "${lock_report#*|}"
+fi
+
 # --- optional: shellcheck --------------------------------------------------
 # Reported either way. A skip is never hidden, and it is never the difference
 # between this gate and a green build — every check above is dependency-free.
@@ -963,7 +1129,7 @@ else
 fi
 
 # --- prove the checks can fail --------------------------------------------
-# Forty breakages of a throwaway copy of every file these checks read,
+# Forty-seven breakages of a throwaway copy of every file these checks read,
 # each asserted to send this gate red. A check that has only ever been seen
 # green is a check nobody has watched fail, and this is the difference between
 # a gate and a rubber stamp (PLAN.md §1: a skipped test proves nothing; a check
@@ -994,6 +1160,10 @@ self_test() {
     cp "$MANIFEST" "$SANDBOX/cafaye.yml"
     cp "$ROOT/$LOCKFILE" "$SANDBOX/$LOCKFILE"
     cp "$WF" "$SANDBOX/.github/workflows/ci.yml"
+    # The local stack's catalog, for the same reason: a sandbox without it is red
+    # for the "caf.dev.json exists" check, so the baseline would be red for a
+    # reason that has nothing to do with the breakages under test.
+    cp "$ROOT/caf.dev.json" "$SANDBOX/caf.dev.json"
     # The deployment story's three files, for the same reason the rest are here:
     # a sandbox without them is red for a reason that has nothing to do with the
     # breakage under test, and a self-test whose baseline is red proves nothing
@@ -1081,7 +1251,13 @@ self_test() {
     "an-accessory-in-the-deploy-config|printf '\naccessories:\n  postgres:\n    image: postgres:17-alpine\n' >>'$SANDBOX/config/deploy.yml'" \
     "a-builder-arg-without-a-dockerfile-arg|sed -i '' 's|^    NEXT_PUBLIC_BILLING_URL: |    NEXT_PUBLIC_CDN_URL: |' '$SANDBOX/config/deploy.yml'" \
     "an-unpinned-node-base|sed -i '' 's|^FROM node:22.22.2-slim AS runner|FROM node:22-slim AS runner|' '$SANDBOX/Dockerfile'" \
-    "the-deploy-tier-is-not-executable|chmod -x '$SANDBOX/bin/deploy-config'"
+    "the-deploy-tier-is-not-executable|chmod -x '$SANDBOX/bin/deploy-config'" \
+    "no-service-catalog|rm -f '$SANDBOX/caf.dev.json'" \
+    "a-misspelled-key-in-the-catalog|sed -i '' 's|\"image\": \"cafaye/identity:dev\"|\"imag\": \"cafaye/identity:dev\"|' '$SANDBOX/caf.dev.json'" \
+    "an-entry-named-for-another-service|sed -i '' 's|\"name\": \"identity\"|\"name\": \"parlor\"|' '$SANDBOX/caf.dev.json'" \
+    "a-catalog-entry-with-no-image|sed -i '' 's|\"image\": \"cafaye/identity:dev\",||' '$SANDBOX/caf.dev.json'" \
+    "a-healthcheck-with-no-test|sed -i '' 's|\"test\": \[\"CMD\", \"/app/service\", \"-healthcheck\"\],||' '$SANDBOX/caf.dev.json'" \
+    "the-lockfile-does-not-know-the-tarball|node -e 'const fs=require(\"fs\"),p=require(\"path\"),c=require(\"crypto\");const f=process.argv[1];const root=p.dirname(f);const l=JSON.parse(fs.readFileSync(f,\"utf8\"));const rel=\"vendor/thing-1.0.0.tgz\";fs.mkdirSync(p.join(root,\"vendor\"),{recursive:true});fs.writeFileSync(p.join(root,rel),\"a tarball\");l.packages[\"node_modules/thing\"]={version:\"1.0.0\",resolved:\"file:\"+rel,integrity:\"sha512-AAAA\"+c.createHash(\"sha512\").update(\"different bytes\").digest(\"base64\")};fs.writeFileSync(f,JSON.stringify(l,null,2)+\"\\n\")' '$SANDBOX/package-lock.json'"
   do
     name=${proof%%|*}
     breakage=${proof#*|}
@@ -1108,6 +1284,22 @@ self_test() {
     printf '  ok   a comment mentioning npm install does not go red\n'
   else
     echo "self_test: prose mentioning npm install went red; the checks read comments" >&2
+    return 1
+  fi
+
+  # The same direction for the two checks added with the local stack, and the
+  # reason they are controls rather than breakages. Both of them can be
+  # satisfied by always failing — a catalog check that rejects every catalog
+  # passes every breakage, and an integrity check that rejects every lockfile
+  # entry does too — so each needs a tree it must NOT reject. The file: entry
+  # here carries the CORRECT sha512 for the tarball beside it, computed from
+  # that tarball, which is the only shape both of them are meant to accept.
+  seed_sandbox
+  node -e 'const fs=require("fs"),p=require("path"),c=require("crypto");const f=process.argv[1];const root=p.dirname(f);const l=JSON.parse(fs.readFileSync(f,"utf8"));const rel="vendor/thing-1.0.0.tgz";fs.mkdirSync(p.join(root,"vendor"),{recursive:true});const t=p.join(root,rel);fs.writeFileSync(t,"a tarball");l.packages["node_modules/thing"]={version:"1.0.0",resolved:"file:"+rel,integrity:"sha512-"+c.createHash("sha512").update(fs.readFileSync(t)).digest("base64")};fs.writeFileSync(f,JSON.stringify(l,null,2)+"\n")' "$SANDBOX/package-lock.json"
+  if bash "$SANDBOX/tests/validate-ci.sh" >/dev/null 2>&1; then
+    printf '  ok   a file: dependency whose integrity is right does not go red\n'
+  else
+    echo "self_test: a correct file: dependency went red; the check rejects what it should accept" >&2
     return 1
   fi
 
