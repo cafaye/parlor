@@ -142,6 +142,70 @@ pin_in_workflow() {
   sed -n "s/.*\"node\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" "$WF" | head -1
 }
 
+# Does cafaye.yml PARSE? Not "does it declare what we expect" — every check in
+# this file reads the manifest with `sed` line matching, and a document that is
+# not valid YAML still matches every line pattern they use. So all of them can
+# pass on a manifest no cafaye tool can open.
+#
+# This is not hypothetical. parlor-25 removed the quotes from `description`,
+# which makes the value `The cafaye web app: App Router shell...`. An unquoted
+# YAML scalar may contain a colon only when no space follows it, so YAML reads
+# the remainder as a nested mapping and stops there:
+#
+#   $ caf dev --dry-run
+#   caf: caf dev: INVALID cafaye.yml: invalid YAML: [21:14] mapping value is not
+#   allowed in this context
+#
+# and every other check in this file stayed green. A check that reports on a
+# subject it never actually read is the vacuous pass this gate exists to
+# prevent, so the read itself has to be a check.
+#
+# The AUTHORITY is `caf`, not a YAML library: caf is the tool that has to open
+# this file, so asking caf is the check that cannot drift from the requirement.
+# A hand-rolled parse answers a slightly different question -- "is this valid
+# YAML" rather than "can the consumer read this" -- and the gap between those
+# two is where a manifest that parses but that caf rejects would live.
+#
+# No node module is used, deliberately. This repository declares no YAML parser
+# as a direct dependency, so `require("yaml")` resolves only by accident of
+# some transitive install and would turn this check into a silent skip on a
+# machine with a different tree -- the exact shape of vacuous pass this gate
+# exists to prevent. A check that needs a dependency to prove anything must
+# declare that dependency, and adding one to prove a file parses is not worth
+# the lockfile.
+#
+# `cd "$ROOT"` is load-bearing and not tidiness. caf resolves cafaye.yml from
+# the CURRENT DIRECTORY -- run it from elsewhere and it reports "no manifest: no
+# cafaye.yml in ." -- and this script never changes directory, so without the cd
+# it inspects whatever directory the caller happened to be in. The first version
+# of this check had no cd and PASSED on a manifest caf had just refused, which
+# is how a check written to catch this bug ended up not catching it.
+manifest_parses() {
+  if ! command -v caf >/dev/null 2>&1; then
+    echo "caf not on PATH; nothing on this machine can be asked whether it reads the manifest"
+    return 2
+  fi
+  local out
+  out="$(cd "$ROOT" && caf dev --dry-run 2>&1)" || true
+  case "$out" in
+    *"INVALID cafaye.yml"*)
+      printf '%s\n' "$out" | head -1
+      return 1
+      ;;
+  esac
+  return 0
+}
+
+manifest_parses_rc=0
+manifest_err="$(manifest_parses)" || manifest_parses_rc=$?
+case "$manifest_parses_rc" in
+  0) ok "cafaye.yml is a document caf can open (asked caf, not line-matched)" ;;
+  2) skip "cafaye.yml is a document caf can open" \
+        "${manifest_err:-caf is not on PATH; nothing here can read the manifest}" ;;
+  *) no "cafaye.yml is a document caf can open (asked caf, not line-matched)" \
+        "${manifest_err:-caf refused it without saying why}" ;;
+esac
+
 # Whether cafaye.yml declares `key` as a real key, printing "yes" or nothing.
 #
 # Comments are stripped first, and that is not tidiness. This manifest now
