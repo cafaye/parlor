@@ -445,7 +445,10 @@ Non-negotiable, because it is the property the screen exists to protect:
 ## Health surfaces
 
 - `/healthz` — liveness. Never checks a dependency; a slow upstream must not
-  get the process restarted.
+  get the process restarted. It is what the image's own `HEALTHCHECK` and
+  `e2e/docker-compose.yml` both use, and that is a decision rather than a
+  default: a supervisor asking "is this process alive?" wants the
+  unconditional answer.
 - `/readyz` — readiness. `deps: "none"` is a reserved placeholder string that
   becomes an array when a dependency check is wired in. Note that parlor now
   calls identity, and *that* has not been done yet — a real check is its own
@@ -454,6 +457,35 @@ Non-negotiable, because it is the property the screen exists to protect:
   platform contract reads them.
 - Both are `no-store`. If you change either shape, change the tests and
   `cafaye.yml` in the same commit.
+
+## Deploying
+
+`config/deploy.yml` is a copy of kit's template with five differences, and the
+file says all five in its own header. The three worth carrying in your head:
+
+- **The rollout gate is `/readyz` and the restart check is `/healthz`, and the
+  difference is the whole content of the choice.** A probe is code, not config:
+  `config/deploy.yml`'s `proxy.healthcheck.path` names a route this app has to
+  serve, and `src/app/readyz/route.test.ts` reads that path out of the config
+  and asserts a 200 there. Nothing upstream can — measured on kamal 2.12.0,
+  `kamal config` exits 0 and kamal's own proxy validator accepts a path the app
+  does not serve, and every rollout is then torn back after `deploy_timeout` on a
+  release that is otherwise fine.
+- **`NEXT_PUBLIC_*` is build-time and can never be runtime env.** Next
+  substitutes it into the client bundle, so a deploy config that put those two
+  addresses in `env.clear` would configure nothing. They are `builder.args`,
+  fed by two extra required variables (`KIT_IDENTITY_URL`, `KIT_BILLING_URL`) on
+  top of the five kit requires, and `tests/validate-ci.sh` fails the gate when a
+  builder arg and a Dockerfile `ARG` stop being the same name — because
+  `docker build --build-arg` for an undeclared name is a warning, not an error.
+- **No accessories, no `DATABASE_URL`, no `config/kamal-backup.yml`.** parlor's
+  state is identity's and billing's, over HTTP. The absence is argued in
+  `config/deploy.yml` where the template would have put the postgres block,
+  because an absence with no reason reads as an oversight and the next re-copy of
+  the template quietly fills it back in. **A deploy of that config still cannot
+  complete a sign-in** — the browser calls identity cross-origin and identity
+  serves no CORS headers, and kamal-proxy routes by hostname rather than by path,
+  so it cannot be papered over. CHANGELOG "Known gaps", DECISION NEEDED.
 
 ## Layout
 
@@ -464,6 +496,16 @@ src/app/            routes: page, login/, register/, forgot-password/,
                     invitations/[token]/, billing/plans/, billing/customers/,
                     healthz/, readyz/,
                     providers.tsx — the client provider stack, mounted by layout
+config/deploy.yml   the Kamal configuration, copied from kit's template with
+                    five differences. NO accessories key: parlor keeps no
+                    database, and the reason is written where the template
+                    would have put the postgres block. `builder.args` carries the
+                    two `NEXT_PUBLIC_*` addresses because next inlines them at
+                    BUILD time, so they can never be runtime env
+bin/deploy-config   the tier that runs the real kamal binary against the
+                    rendered config. NOT in bin/prime — kamal and ruby are on
+                    neither a CI runner nor a node-only checkout. Three-valued
+                    exit: 0 proven, 1 failed, 2 could not run
 e2e/                the whole-stack end-to-end tier: the compose topology, the
                     Playwright specs, and the guards that make a green run mean
                     something

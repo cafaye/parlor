@@ -304,13 +304,139 @@ docker build -t parlor .
 docker run --rm -p 3000:3000 parlor
 ```
 
-Multi-stage `node:22.22.2-slim` — the pin `package.json` declares, not
-whatever `node:22-slim` resolves to this week — standalone Next output,
-non-root user, `/healthz` wired to the image `HEALTHCHECK`.
+```sh
+# With the addresses a deployment needs. Both are BUILD args and neither can be
+# an env var at run time: next inlines `NEXT_PUBLIC_*` into the bundle, so a
+# later value is not a later value, it is no value at all.
+docker build \
+  --build-arg NEXT_PUBLIC_IDENTITY_URL=https://identity.example.com \
+  --build-arg NEXT_PUBLIC_BILLING_URL=https://billing.example.com \
+  -t parlor .
+```
+
+Multi-stage `node:22.22.2-slim` — the pin `package.json` declares, on **both**
+stages, not whatever `node:22-slim` resolves to this week — standalone Next
+output, non-root user, `/healthz` wired to the image `HEALTHCHECK`.
+`tests/validate-ci.sh` fails the gate on an unpinned `FROM node:` anywhere in
+the Dockerfile, so the header's claim that the image is the fourth mirror of the
+pin is a check rather than a comment.
 
 The image is not the point of this section any more. `bin/e2e` builds it, and
 so builds `identity` and `guard` from their own checkouts, and drives all of it
 from a browser. Read on.
+
+## Deploying
+
+`config/deploy.yml` is the Kamal configuration. It is a copy of
+`templates/kamal/deploy.yml.erb` from `cafaye/kit` (at kit commit `b9d8a30`)
+with five differences, each argued at the line it is on and listed in the file's
+own header, so a diff against the template shows five differences rather than a
+fork.
+
+```sh
+export KIT_SERVICE=parlor KIT_REGISTRY_ORG=cafaye KIT_REPO=parlor \
+       KIT_WEB_HOST=203.0.113.10 KIT_APP_DOMAIN=app.example.com \
+       KIT_IDENTITY_URL=https://identity.example.com \
+       KIT_BILLING_URL=https://billing.example.com
+kamal registry login --password-stdin < "$HOME/.kamal/registry-password"
+kamal deploy
+
+mise run deploy:config   # prove the config against the real binary, offline
+```
+
+The five differences, in one place so this section can be read without the file:
+
+| # | Difference | Why |
+| --- | --- | --- |
+| 1 | `healthcheck.path: /readyz`, not `/up` | The App Router serves exactly `/healthz` and `/readyz`. `/up` is a 404 on every request the proxy makes, the container never goes healthy, and every rollout is torn back after `deploy_timeout` on a release that is otherwise fine. |
+| 2 | No `accessories:` block at all — no postgres, no backup | parlor keeps no state of its own. |
+| 3 | `builder.args` carries both service addresses | Next inlines `NEXT_PUBLIC_*` at build time. |
+| 4 | `env.clear` and `env.secret` are both empty | The only two variables the app reads are the two above, and neither is a credential. |
+| 5 | `builder.cache` kept, but nothing in CI publishes an image | See "Known gaps" below. |
+
+### `/readyz` and `/healthz` are not interchangeable
+
+`/healthz` is unconditional while the process serves. That is what a **supervisor**
+wants — a container whose upstream is unhappy should be left alone, not bounced —
+and it is what the image's own `HEALTHCHECK` and `e2e/docker-compose.yml` both
+use. `/readyz` is the **orchestrator's** question: should this container take
+traffic now? It is the answer that gates a rollout.
+
+So the image's `HEALTHCHECK` stays on `/healthz` and `proxy.healthcheck.path` is
+`/readyz`. Nothing upstream can tell you the second one names a route the app
+actually serves: measured on kamal 2.12.0, `kamal config` exits 0 with
+`path: /up` set, and kamal's own `Kamal::Configuration::Proxy` validator accepts
+it too (`Kamal::Configuration#to_h` does not even carry `proxy` or `env`). So
+`src/app/readyz/route.test.ts` reads the path out of `config/deploy.yml` and
+asserts this app serves a 200 there. Break it and watch the suite go red.
+
+### parlor has no database, and no backups of one
+
+No accessory, no `DATABASE_URL`, no `config/kamal-backup.yml`. Accounts,
+memberships, invitations and sessions are identity's rows, read over HTTP by
+`src/lib/identity.ts`; plans and customers are billing's, read over HTTP by
+`src/lib/billing.ts`. Nothing in this repository writes to a datastore — no ORM,
+no client, no migration, no schema file.
+
+The reason is written in `config/deploy.yml` where the template would have put
+the `postgres:` block, because an absence with no reason reads as an oversight
+and the next re-copy of the template quietly fills it back in. The backup
+mechanism is spelled out there too: `kamal-backup` is configured entirely by a
+file the `backup` accessory mounts, this file mounts nothing, and so a committed
+`kamal-backup.yml` would be a document no process opens. What backs parlor up is
+its git history; what needs backing up is identity's database, and identity
+does that itself.
+
+### The tier that checks this
+
+```sh
+mise run deploy:config    # or ./bin/deploy-config
+```
+
+It renders the ERB, hands the result to the **real** `kamal` binary, reads the
+resolved document, runs kamal's own proxy validator, checks that every build arg
+matches a `Dockerfile` `ARG`, and proves each of seven required variables fails
+the render by name. It also plants three defects and asserts each one goes red,
+because a check that has only ever been green is a check nobody has watched
+fail.
+
+It is deliberately **not** in `bin/prime`: `kamal` and `ruby` are on neither a
+developer's node-only checkout nor a CI runner, so it has a three-valued exit
+instead — `0` proven, `1` a property failed, `2` the binaries are absent and
+nothing was proven. `2` is not `0` on purpose. `tests/validate-ci.sh` holds the
+four **shape** properties that need no binaries at all: that the deploy config
+exists and declares no database, that every builder arg is a `Dockerfile` `ARG`,
+that every `FROM node:` in the Dockerfile carries the `engines.node` pin, and
+that this script is executable.
+
+### What it does not do yet
+
+- **A deploy of this config cannot complete a sign-in against a deployed
+  identity.** `src/lib/identity.ts` fetches from the browser, identity serves no
+  CORS headers at all, and `OPTIONS /v1/session` answers 405 — so the preflight
+  fails and `/login` renders its generic failure. `e2e/edge.conf` states the
+  whole measured argument, and its nginx is harness scaffolding that no
+  deployment can call. kamal-proxy cannot cover for it either: it routes by
+  hostname, not by path. The two real fixes are identity growing a CORS policy or
+  parlor growing a same-origin BFF route in front of it (the `guard` packet).
+  **DECISION NEEDED** in CHANGELOG "Known gaps".
+- **No CI job builds or pushes the image.** `.github/workflows/ci.yml` has three
+  jobs and none of them runs `docker build`, `docker push` or `kamal build`, so
+  `kamal deploy` on a fresh host will run `kamal build` there — which is the OOM
+  the `builder` block exists to prevent. **DECISION NEEDED**.
+- **TLS is `proxy.ssl: true` and nothing more.** No certificate pinning, no HSTS,
+  no `ssl: {certificate_pem: …}` — kamal-proxy terminates with Let's Encrypt on
+  the host, and the app behind it needs no knowledge of TLS because it makes no
+  server-side calls and generates no absolute URLs.
+- **One host, one role, one replica.** `servers.web` is a single address. A
+  multi-host rollout is `servers.web` gaining entries and nothing else changing,
+  but nothing here has been measured against one.
+- **No CDN, and deliberately no static asset export.** `output: "standalone"`
+  (Dockerfile) is not `output: "export"`, so there is no `out/` to upload and
+  `next start`/`node server.js` remains the only way this app runs. A CDN in
+  front would also be the wrong shape for the first release: the sign-in screen
+  is a server-rendered shell that then fetches from a cross-origin API, so the
+  assets are not the interesting part of the latency.
 
 ## End to end
 

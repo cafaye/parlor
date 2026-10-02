@@ -1,0 +1,403 @@
+---
+# `config/deploy.yml` — the Kamal configuration for parlor.
+#
+# IT IS A COPY of `templates/kamal/deploy.yml.erb` in cafaye/kit, at kit commit
+# `b9d8a30` — which is the commit the template last changed, measured with
+# `git -C ../kit log -1 -- templates/kamal/deploy.yml.erb`, not the tip
+# (`af73bc1` when this file was written). Re-copy on a kit bump and re-apply the
+# five differences below. It is a copy rather than a symlink or a fetch because
+# Kamal reads one file on the machine running the deploy, and that file has to
+# review the same way every other config here reviews.
+#
+# WHY THIS FILE IS IN THE REPOSITORY. parlor is the product UI: every other
+# service in the fleet deploys and this one could not, because there was no
+# config to deploy from. A `Dockerfile` builds an image and a deploy config is
+# what turns an image into a running service with a hostname, a health gate and
+# a rollback, so the absence was not cosmetic — it was the last mile.
+#
+# THE ERB IS STILL IN IT, ON PURPOSE, so nothing here is a guessed operator
+# fact. Kamal evaluates this file through ERB before it parses it
+# (Kamal::Configuration uses `ERB.new(...).result`), so the copy below works as
+# committed: an operator exports the KIT_* variables the preamble requires and
+# runs kamal. `servers.web`, the proxy host and the registry org are therefore
+# NOT written down in this repository — they are facts about the box this
+# installation runs on, and a config that guesses them is a config that deploys
+# to a host somebody chose by accident. A missing variable fails the render with
+# a message naming it, rather than rendering empty and surfacing three layers
+# away as "cannot find a host".
+#
+# NOTHING SECRET IS IN THIS FILE, AND NOTHING BELOW IS A VALUE. Every credential
+# is a NAME; the values live in `.kamal/secrets` on the operator's machine,
+# which is git-ignored. A rendered config is an ordinary file that gets
+# committed, pasted into a ticket and read over somebody's shoulder, so the only
+# safe content for one is the name of a secret and where to find it.
+#
+# ---------------------------------------------------------------------------
+# THE FIVE PLACES THIS DIFFERS FROM KIT'S TEMPLATE
+# ---------------------------------------------------------------------------
+#
+#   1. `healthcheck.path: /readyz`, not `/up`.
+#   2. NO `accessories:` BLOCK AT ALL — no postgres, no backup.
+#   3. `builder.args` carries the two service addresses.
+#   4. `env` carries nothing at all, on purpose.
+#   5. `builder.cache` is kept, but nothing in CI publishes an image yet.
+#
+# Each one is parlor's own fact and each is argued at the line it is on, so a
+# reader diffing this against `templates/kamal/deploy.yml.erb` sees five
+# differences rather than a fork.
+#
+# ---------------------------------------------------------------------------
+# AND THE ONE THING THAT MAKES A DEPLOY OF THIS FILE NOT YET SERVE A SIGN-IN
+# ---------------------------------------------------------------------------
+#
+#   This config is correct in shape and cannot complete a sign-in against a
+#   deployed identity, and the reason is measured rather than suspected.
+#
+#   `src/lib/identity.ts` fetches from the BROWSER, so the caller of identity is
+#   a person on `parlor`'s origin. identity serves no CORS headers at all — there
+#   is no `Access-Control-Allow-*` anywhere in `identity/internal/`, and
+#   `OPTIONS /v1/session` answers 405 because the route implements POST and a
+#   preflight is not that. So with `NEXT_PUBLIC_IDENTITY_URL` pointing at
+#   identity's own address, the preflight fails, the response is unreadable, and
+#   `/login` renders "Something went wrong. Try again."
+#
+#   This is the first defect the end-to-end tier found, and the unit suite
+#   cannot see it: every test injects a stub transport and opens no socket. The
+#   end-to-end stack works around it with nginx — see `e2e/edge.conf`, which
+#   states the whole argument — and nginx there is NOT a cafaye service, so
+#   nothing in this file can call it.
+#
+#   kamal-proxy cannot do the same job: it routes by hostname, not by path, so
+#   one hostname cannot send `/v1/*` to identity and everything else to parlor.
+#   There are exactly two real fixes and neither is in this repository: identity
+#   grows a CORS policy, or parlor grows a same-origin BFF route in front of
+#   identity — the `guard` packet, which is also where the session token moves
+#   out of `localStorage` (README, "Sessions").
+#
+#   Recorded under CHANGELOG "Known gaps" as DECISION NEEDED. It is written down
+#   here rather than left for a launch to discover, because a green deploy that
+#   serves a broken sign-in is the exact failure a deploy story is supposed to
+#   prevent.
+<%
+# WHY ERB, AND WHY ONLY FOR THESE VALUES.
+#
+#   The values below are the ones that differ per operator rather than per
+#   service: where the boxes are, what the registry org is called, the two names
+#   that make an image unambiguous, and — the two this service adds — the
+#   addresses of the services this one talks to. Everything else in this file is
+#   a decision, and a decision belongs in the file where a reviewer can read it.
+#
+#   Kamal evaluates this file with ERB before it parses it (Kamal::Configuration
+#   uses `ERB.new(...).result`), so ERB is free for anyone who already has
+#   Kamal — it is the same interpreter, not a second tool. That is the whole
+#   reason this is not "just write the values out": the alternative to ERB is a
+#   second config file per environment, and a second config file is a second
+#   thing to keep correct forever.
+#
+#   A MISSING VALUE FAILS LOUDLY, ON PURPOSE.
+#
+#   The obvious spelling interpolates ENV["WEB_HOST"] directly, which renders an
+#   empty string when the variable is unset. Empty renders as a null list item,
+#   the hosts array becomes [null], and the failure surfaces several layers away
+#   as a deploy that cannot find a host. The `require` calls below turn that into
+#   a message naming the variable at the moment it is read. This is the kit habit
+#   — refuse by name, print what to do — applied to a template rather than to a
+#   command.
+#
+#   AND A WARNING ABOUT WRITING THIS BLOCK, WHICH COST ONE RUN TO LEARN.
+#   Nothing in the comments above may contain a literal ERB tag, even inside a
+#   Ruby comment. The first version of kit's file spelled the obvious form out
+#   in full, angle brackets and all, and ERB compiled that comment as code: the
+#   tag closed the block early, the rest of the preamble was emitted as literal
+#   YAML, and the file failed with "undefined local variable or method
+#   `service'" at the first real interpolation below — several lines away from
+#   the mistake. The error names a variable that is plainly defined two lines up,
+#   which is what made it worth writing down rather than just fixing.
+#
+#   NOTHING SECRET IS RENDERED HERE, AND THAT IS THE POINT OF THE WHOLE FILE.
+#   Every credential below is a NAME in `env.secret` or `registry.password`,
+#   never a value. The values live in `.kamal/secrets` on the operator's machine,
+#   which is git-ignored, and nowhere else in the repo. The two service ADDRESSES
+#   added at the bottom are deliberately not secrets: an address is an address,
+#   and `docker inspect` on the host prints `env.clear` and `builder.args` in
+#   full either way, so putting them in `.kamal/secrets` would be a cost with no
+#   privacy behind it.
+require = lambda do |name|
+  value = ENV[name].to_s.strip
+  raise "config/deploy.yml: #{name} is not set. It is a non-secret deployment value, so it belongs in the shell that runs kamal, not in .kamal/secrets: export #{name}=... (an address or a name, never a credential)." if value.empty?
+  value
+end
+
+service     = require.call("KIT_SERVICE")
+org         = require.call("KIT_REGISTRY_ORG")
+repo        = require.call("KIT_REPO")
+registry    = ENV.fetch("KIT_REGISTRY", "ghcr.io")
+web_host    = require.call("KIT_WEB_HOST")
+app_domain  = require.call("KIT_APP_DOMAIN")
+
+# parlor's two, and they are here rather than nowhere because of what they ARE,
+# not because there is nowhere else to put them. See `builder.args` below.
+identity_url = require.call("KIT_IDENTITY_URL")
+billing_url  = require.call("KIT_BILLING_URL")
+%>
+# `config/deploy.yml` — the Kamal configuration for <%= service %>.
+#
+# Copy this file from cafaye/kit at the ref your `kit.ref` names, rename it to
+# `config/deploy.yml`, and export the KIT_* variables above. Every value that is
+# a DECISION rather than a deployment fact is written out below with the reason
+# it was made, because a number without its reason is not a decision — it is a
+# default nobody will revisit.
+
+# Names the application, and therefore every container, network and volume
+# Kamal creates for it. Changing it renames the containers, which orphans the
+# old ones; treat it as permanent.
+service: <%= service %>
+
+# THE IMAGE NAME MUST NOT CARRY THE REGISTRY HOST.
+#
+# `registry.server` below is prepended to this value by Kamal, so
+# `image: ghcr.io/org/repo` with `server: ghcr.io` resolves to
+# `ghcr.io/ghcr.io/org/repo` and the deploy fails at the push, not here.
+# Measured on kamal 2.12.0: `kamal config` reports
+# `:repository: ghcr.io/ghcr.io/cafaye/courier` for exactly that spelling.
+# The host appears in `registry.server` and nowhere else.
+image: <%= org %>/<%= repo %>
+
+servers:
+  web:
+    - <%= web_host %>
+
+proxy:
+  ssl: true
+  hosts:
+    - <%= app_domain %>
+  healthcheck:
+    # A READINESS endpoint, not a liveness one, and it must exercise the
+    # service's real dependencies — because this is the signal `kamal deploy`
+    # gates the rollout on: a container that answers 200 while the thing it
+    # needs is unreachable is a container Kamal will happily declare healthy.
+    # The interval is deliberately short for the same reason: the window in
+    # which a broken release is receiving traffic is interval x timeout.
+    #
+    # `/readyz`, CHANGED FROM KIT'S `/up`. Difference 1 of 5, and the one that
+    # would have broken a deploy rather than rolled one back: parlor's router is
+    # the App Router, and it serves exactly two paths at the root —
+    # `src/app/healthz/route.ts` and `src/app/readyz/route.ts`. `/up` is a 404 on
+    # every request the proxy makes, the container never becomes healthy, and
+    # `kamal deploy` tears the whole rollout back after `deploy_timeout` on a
+    # release that is otherwise fine.
+    #
+    # NOT `/healthz`, and the reason is the same reason the image's own
+    # HEALTHCHECK uses `/healthz`: the two paths have different jobs and the
+    # difference is the whole content of the choice. `/healthz` answers whenever
+    # the process can dispatch, so Docker restarts a container whose upstream is
+    # unhappy — which turns an identity outage into a restart loop that survives
+    # the outage and outlives it. `/readyz` is the orchestrator's question
+    # ("should this container take traffic now?") and `/healthz` is the
+    # supervisor's ("is this process alive?"). A rollout gate wants the first.
+    #
+    # What `/readyz` does NOT do yet, and this is the honest part: it answers
+    # `deps: "none"`, so today it checks nothing, exactly like `/healthz`. It is
+    # still the right path, because it is the one whose meaning is reserved for
+    # a dependency sweep — `src/app/readyz/route.ts` holds the shape and
+    # AGENTS.md, "Health surfaces", says a real check is its own packet, on the
+    # grounds that a slow identity must not necessarily mean "not ready", and
+    # that is a decision rather than a default. What that means for this file:
+    # on the day the sweep lands, this path starts meaning something, and this
+    # line does not change.
+    #
+    # The claim is pinned by a test rather than by this comment. See
+    # `src/app/readyz/route.test.ts`: it reads the path out of THIS file and
+    # asserts the app serves a route handler at it, so a path that nothing serves
+    # is a red suite and not a comment that has quietly stopped being true.
+    path: /readyz
+    interval: 2
+    timeout: 5
+  # Do not let kamal-proxy outlive a bad deploy silently. `kamal deploy`
+  # already refuses to finish a rollout that never goes green, and this is the
+  # setting that makes "never went green" observable in the proxy's own log
+  # rather than only in the deploy output.
+  #
+  # A proxy that keeps routing to a container Docker has stopped is the failure
+  # that turns a bad deploy into user-facing 502s. Kamal's default is to leave
+  # the running container up until the new one is healthy, which is the
+  # behaviour we want; this block is here to say so rather than to change it.
+  #
+  # service_timeout: 10
+
+# 180, INHERITED FROM KIT'S TEMPLATE AND LOWER-CASED HERE FOR HONESTY.
+#
+# Kit raises this from Kamal's 30s default for one stated reason: "a container
+# that boots by running migrations and then warming caches on a loaded host takes
+# longer than 30 seconds to answer its first healthcheck." parlor does NOT run
+# migrations — it owns no schema and cannot, its state is another service's — so
+# half of that sentence is about a cost this app does not have.
+#
+# The other half is the reason the number stays. A cold container runs the Node
+# runtime, loads Next's standalone server and answers its first request, and on a
+# small box with the build having just run on it, that is not instant. 180 is
+# kit's value and the brief for this file is to adapt the template, not to
+# re-decide a number for a reason nobody has measured. So the number stays, the
+# reason above is corrected rather than copied, and the trigger for changing it is
+# the same one kit wrote: replace this paragraph with the failure you actually
+# observed. If nobody ever observes one, the honest edit is to say so here.
+#
+# And note what is NOT in this file for it: no `migrate:` key. Kamal 2 has no
+# such key — it refuses the document with `unknown key: migrate`, measured
+# against kit's own template — and migrations moved to a pre-deploy hook.
+# courier still owes that hook; parlor will never need one.
+deploy_timeout: 180
+
+# `clear` is what lands in the container's environment, and it is printed by
+# `docker inspect` and by `docker compose config` — so nothing here may be a
+# credential, ever. `secret` is the list of NAMES whose VALUES come from
+# `.kamal/secrets` on the operator's machine.
+#
+# BOTH LISTS ARE EMPTY, AND THAT IS DIFFERENCE 4 OF 5. Read off the code rather
+# than assumed: the only two environment variables this application reads are
+# `NEXT_PUBLIC_IDENTITY_URL` (`src/lib/identity.ts`, `identityBaseUrl()`) and
+# `NEXT_PUBLIC_BILLING_URL` (`src/lib/billing.ts`, `billingBaseUrl()`). There is
+# no third.
+#
+# Those two cannot be set here even in principle, and that is the whole of what
+# "Next is a Node service" means for a deploy config. Next INLINES every
+# `NEXT_PUBLIC_*` into the client bundle at BUILD time: `process.env
+# .NEXT_PUBLIC_IDENTITY_URL` is text-substituted in the emitted JavaScript before
+# the image exists. Setting it at run time — with `env.clear` here, with
+# `docker run -e`, with anything — changes nothing, because by then the string is
+# already inside a bundle in the image. So they belong in `builder.args`, which
+# is difference 3, and listing them here would be a line that reads like it
+# configures the app and configures nothing.
+#
+# They are also not credentials, so they are not names in `secret`. An address is
+# an address; `docker inspect` prints a build arg in full either way, so moving
+# them to `.kamal/secrets` would cost an operator a copy-paste and buy no
+# privacy.
+#
+# WHAT WOULD GO HERE, and is deliberately absent. `SECRET_KEY_BASE`'s analogue
+# does not exist: this app signs nothing and mints no credential, so there is no
+# master key, no token-signing key and no session secret to rotate. The session
+# token it does hold is identity's, arrives from identity, and lives in
+# `localStorage` — a position README, "Sessions", calls a deliberate temporary
+# one. When the BFF lands and a cookie needs signing, THAT is the packet that
+# adds the name here, and it adds it because a code change made it necessary
+# rather than because a template had a slot for it.
+#
+# The empty lists are written out rather than the key omitted, because an absent
+# `env:` and an empty one are the same document to kamal and a different question
+# to a reader, and only one of them has an answer recorded next to it.
+env:
+  clear: {}
+  secret: []
+
+# NO ACCESSORIES BLOCK. NOT OMITTED BY ACCIDENT — READ THIS.
+#
+# Difference 2 of 5, and it is the one a reader will go looking for, because kit's
+# template has a `postgres:` accessory and a `backup:` accessory and this file has
+# neither and no `accessories:` key at all. The reason, stated once so nobody has
+# to go looking for it:
+#
+# PARLOR KEEPS NO DATABASE OF ITS OWN. Its state is identity's — accounts,
+# memberships, invitations, sessions, all rows in `identity`'s Postgres, reached
+# over HTTP by `src/lib/identity.ts`. Billing's customers and plans are billing's
+# rows, read over HTTP by `src/lib/billing.ts`. There is nothing in this
+# repository that writes to a datastore: there is no ORM, no client, no
+# migration, no schema file, and no dependency that could be one. A postgres
+# accessory here would be a container with a volume that no process in the fleet
+# ever opened — the most expensive way to keep an empty database, and a
+# `DATABASE_URL` secret on top of it that nothing would read.
+#
+# WHICH IS ALSO WHY THERE IS NO `config/kamal-backup.yml` IN THIS REPOSITORY.
+# Same reason, and it is worth being exact about the mechanism rather than
+# principled about it: `kamal-backup` is configured entirely by a file that the
+# `backup` accessory MOUNTS into its own container, and this file mounts nothing.
+# A backup config committed here would be a document no process opens — the same
+# defect one layer down that identity's `config/deploy.yml` header describes, and
+# the reason that file and its `kamal-backup.yml` are committed together.
+#
+# WHAT BACKS UP PARLOR THEN: nothing, and that is correct rather than a gap.
+# The durable state of this product lives in services that back up their own
+# databases — identity's pair is the reference implementation, and its README
+# says so. What a deploy of parlor can lose is its own image and its own
+# configuration, and both of those are in git. When the day comes that parlor
+# holds something no other service owns, the accessory comes back in this file
+# WITH its backup accessory and its `kamal-backup.yml` in the same commit, because
+# `kamal-backup validate` can only check the contract between the two files when
+# both of them are here.
+
+# Credentials for the image host. The password is a NAME, resolved from
+# `.kamal/secrets`. `kamal registry login --password-stdin` is the supported way
+# to populate it and writes the file for you.
+#
+# THIS IS THE ONLY CREDENTIAL THIS FILE NAMES, and it is deliberately named in
+# ONE place. kit's template also lists `KAMAL_REGISTRY_PASSWORD` in `env.secret`,
+# which would hand a push credential to the application container's environment
+# on every deploy — where it is readable by anything that can read the process,
+# printed by `docker inspect`, and offered to a Next.js app that has no use for
+# it. `registry.password` is the only consumer in this document, so it is the
+# only place it appears.
+registry:
+  server: <%= registry %>
+  username: <%= org %>
+  password:
+    - KAMAL_REGISTRY_PASSWORD
+
+builder:
+  arch: arm64
+  # THE TWO SERVICE ADDRESSES, AND WHY A NODE/Next DEPLOYMENT CANNOT PUT THEM
+  # ANYWHERE ELSE. Difference 3 of 5, and the one that makes this deploy actually
+  # reach the right services.
+  #
+  # `next build` substitutes every `NEXT_PUBLIC_*` reference in the source with
+  # its literal value, so the value has to exist when the image is BUILT or it is
+  # not going to be anywhere: the alternative is a bundle carrying
+  # `undefined`, and an app that quietly talks to `localhost` in production. The
+  # Dockerfile documents the same fact at its own `ARG`, and
+  # `tests/validate-ci.sh` fails the gate if the names in this block and the
+  # `ARG`s in the Dockerfile stop being the same two — because a rename on one
+  # side is invisible on the other: `docker build --build-arg` for an undeclared
+  # name is a WARNING, not an error, so the image builds and ships an app
+  # pointed at a default.
+  #
+  # These are the fleet's OWN defaults in the file, on purpose and against the
+  # obvious instinct to hide them: `DEFAULT_IDENTITY_URL = "http://localhost:8080"`
+  # and `DEFAULT_BILLING_URL = "http://localhost:3000"` (src/lib/identity.ts,
+  # src/lib/billing.ts). A deploy that renders without them produces a working
+  # image with a broken app, and this file says what they are rather than letting
+  # the Dockerfile's `ARG` defaults answer for it. `kamal` redacts build-arg
+  # VALUES in its own output, which costs nothing here: these are addresses, and
+  # this file is not where anyone reads them back.
+  args:
+    NEXT_PUBLIC_IDENTITY_URL: <%= identity_url %>
+    NEXT_PUBLIC_BILLING_URL: <%= billing_url %>
+  # Built and pushed, the server only pulls: building on the host means the
+  # build's peak memory competes with the running service, which on a small box is
+  # an OOM during a deploy. `arch` is not optional — kamal 2.12.0 refuses the
+  # config outright with "builder: Builder arch not set" when it is absent,
+  # because a wrong architecture produces an exec-format error at run time rather
+  # than at build time.
+  #
+  # `arm64` is kit's value, inherited verbatim, and it is the one value in this
+  # file an operator on an amd64 host has to change. It is called out here rather
+  # than left to be discovered as an exec-format error mid-rollout.
+  #
+  # NOTHING IN CI PUBLISHES AN IMAGE YET, and the paragraph above is therefore
+  # aspirational for this repository. Measured, not assumed: `.github/workflows/
+  # ci.yml` has three jobs — kit's `node` job, `./bin/prime`, and
+  # typecheck + `next build` — and none of them runs `docker build`, `docker push`
+  # or `kamal build`; the only place this image is built is
+  # `e2e/docker-compose.yml`, which tags it `cafaye/e2e-parlor:local` for the
+  # end-to-end stack and pushes it nowhere. So on a real host `kamal deploy` will
+  # run `kamal build` THERE, which is precisely the OOM this block exists to
+  # avoid, and the cache below is the only part of it that still does something
+  # useful.
+  #
+  # This is a real gap and it is recorded as one, in CHANGELOG "Known gaps". It
+  # is NOT fixed here, because the fix is a CI job that authenticates to
+  # `ghcr.io` with a credential nobody in this repository holds, and writing a
+  # publish job against an unverified secret would make every green badge in CI
+  # conditional on something not in the tree. The honest position is that the
+  # builder block is kit's and correct, and the thing missing is upstream of it.
+  cache:
+    type: registry
+    options: mode=max,image-manifest=true,oci-mediatypes=true

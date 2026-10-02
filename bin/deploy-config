@@ -1,0 +1,334 @@
+#!/usr/bin/env bash
+# bin/deploy-config — `config/deploy.yml` is EXECUTED, not read.
+#
+#   ./bin/deploy-config
+#
+# WHY THIS EXISTS, AND WHY IT IS NOT IN `bin/prime`
+#
+#   `config/deploy.yml` is the one file in this repository that a YAML parse
+#   says nothing useful about. Three of its properties are invisible to a parse
+#   and all three have been real defects in a template of exactly this shape:
+#
+#     * `image: ghcr.io/org/repo` next to `registry.server: ghcr.io` is valid
+#       YAML and resolves to `ghcr.io/ghcr.io/org/repo`. The push fails.
+#     * A missing `builder.arch` is valid YAML, and kamal refuses the config
+#       outright ("builder: Builder arch not set") — because a wrong
+#       architecture is an exec-format error at RUN time.
+#     * A `healthcheck.path` naming a route the app does not serve is valid YAML,
+#       accepted by `kamal config`, accepted by kamal's OWN proxy validator (see
+#       the control below — that one was measured, it is not an inference), and
+#       still tears back every rollout after `deploy_timeout` on a release that is
+#       otherwise fine.
+#
+#   So the file is rendered and handed to the real binaries, and the answers come
+#   from kamal rather than from a regex.
+#
+#   IT IS NOT PART OF THE PER-COMMIT GATE, and the reason is the same one
+#   `bin/e2e` is not: `bin/prime` must run on a developer's machine and on a CI
+#   runner with nothing but Node, and `kamal` and `ruby` are not in either. A
+#   check that skips itself in CI is a green badge over a proof nobody took, so
+#   this is a separate tier with its own three-valued exit rather than a silent
+#   skip inside the gate:
+#
+#       0   every property below was proven against the real binaries
+#       1   a property FAILED — the file is wrong
+#       2   the real binaries are not installed, so NOTHING was proven
+#
+#   Exit 2 is deliberately not exit 0. kit's own `kamal_test.sh` reports a skip
+#   and exits 0, because in kit the whole tier is optional. Here the tier is the
+#   only thing that runs kamal at all, so "I could not check" has to be a
+#   different outcome from "I checked and it is fine" or it will be read as the
+#   second.
+#
+# NOTHING IT WRITES IS A CREDENTIAL. Every value below is a throwaway, assembled
+# here and passed in the environment of a process that is about to exit, never
+# written to a file that persists. RFC 2606 reserves `.invalid` for a name that
+# must never resolve and RFC 5737 reserves `198.51.100.0/24` for documentation, so
+# a leak of one is unmistakable rather than plausible.
+#
+#   bash tests/validate-ci.sh      the shape checks that need no binaries at all
+#   ./bin/deploy-config           this one, the real binaries
+set -uo pipefail
+
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+CONFIG="$ROOT/config/deploy.yml"
+DOCKERFILE="$ROOT/Dockerfile"
+TIMEOUT_BIN=$(command -v timeout || command -v gtimeout || true)
+
+pass=0
+fail=0
+
+ok() {
+  pass=$((pass + 1))
+  printf 'PASS  %s\n' "$1"
+}
+
+no() {
+  fail=$((fail + 1))
+  printf 'FAIL  %s\n' "$1"
+  shift
+  [ "$#" -eq 0 ] || printf '      %s\n' "$@"
+}
+
+KAMAL=$(command -v kamal || true)
+RUBY=$(command -v ruby || true)
+
+if [ -z "$KAMAL" ] || [ -z "$RUBY" ]; then
+  echo "SKIP: $([ -z "$KAMAL" ] && echo kamal || echo ruby) is not installed, so config/deploy.yml was"
+  echo "      not validated by anything. Nothing here is proven — this is not a pass."
+  exit 2
+fi
+
+printf '     kamal %s, ruby %s\n' "$("$KAMAL" version 2>/dev/null | tail -1)" "$("$RUBY" --version)"
+
+if [ ! -f "$CONFIG" ]; then
+  no "config/deploy.yml exists" "$CONFIG is missing, so there is no deploy story to check"
+  printf '\n%d passed, %d failed\n' "$pass" "$fail"
+  exit 1
+fi
+
+WORK=$(mktemp -d "${TMPDIR:-/tmp}/parlor-deploy-XXXXXX")
+trap 'rm -rf "$WORK"' EXIT
+
+# ---------------------------------------------------------------------------
+# The throwaway operator facts. Every one of these is a value the ERB preamble in
+# config/deploy.yml REQUIRES by name, and supplying all of them here is also the
+# proof that the list is complete: the render fails on the first one that is
+# missing, which is the check at the bottom.
+#
+# `KIT_IDENTITY_URL` and `KIT_BILLING_URL` are this repository's own two — they
+# are not in kit's template, and a required variable that only exists in prose is
+# a required variable nobody exports.
+# ---------------------------------------------------------------------------
+export KIT_SERVICE=parlor
+export KIT_REGISTRY_ORG=cafaye
+export KIT_REPO=parlor
+export KIT_WEB_HOST=198.51.100.7      # RFC 5737 TEST-NET-2, documentation only
+export KIT_APP_DOMAIN=parlor.invalid # RFC 2606, must never resolve
+export KIT_IDENTITY_URL=https://identity.invalid
+export KIT_BILLING_URL=https://billing.invalid
+
+# The one credential this file names, as a NAME's value. It never reaches a file:
+# it lives in this shell's environment and in the environment of the two kamal
+# processes below, both of which exit before the script does.
+export KAMAL_REGISTRY_PASSWORD=parlor-probe-not-a-real-secret
+
+render() {
+  # $1 is the destination, $2 is the config to render (so the negative controls
+  # can render a planted copy of the same file).
+  "$RUBY" -rerb -e 'print ERB.new(File.read(ARGV[0])).result' "$2" >"$1"
+}
+
+bounded() {
+  if [ -n "$TIMEOUT_BIN" ]; then
+    "$TIMEOUT_BIN" 120 "$@"
+  else
+    "$@"
+  fi
+}
+
+RENDERED="$WORK/deploy.yml"
+
+# ---------------------------------------------------------------------------
+# 1. The file renders at all. If the ERB block has a syntax error or a missing
+#    variable, nothing below means anything, so this is asserted separately from
+#    the questions about the rendered document.
+# ---------------------------------------------------------------------------
+if err=$(bounded "$RUBY" -rerb -e 'print ERB.new(File.read(ARGV[0])).result' "$CONFIG" 2>&1 >"$RENDERED"); then
+  if [ -s "$RENDERED" ]; then
+    ok "the ERB renders to a non-empty config"
+  else
+    no "the ERB renders to a non-empty config" "$CONFIG rendered to 0 bytes"
+  fi
+else
+  no "the ERB renders to a non-empty config" "$err"
+fi
+
+if [ "$fail" -ne 0 ]; then
+  printf '\n%d passed, %d failed\n' "$pass" "$fail"
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# 2. The real binary accepts it.
+# ---------------------------------------------------------------------------
+if out=$(bounded "$KAMAL" config -c "$RENDERED" --version latest 2>&1); then
+  ok "kamal config  (the real binary accepts config/deploy.yml)"
+else
+  no "kamal config  (the real binary accepts config/deploy.yml)" \
+    "exit nonzero" "$(printf '%s' "$out" | tail -3)"
+fi
+RESOLVED="$WORK/resolved.yml"
+bounded "$KAMAL" config -c "$RENDERED" --version latest >"$RESOLVED" 2>/dev/null || true
+
+# ---------------------------------------------------------------------------
+# 3. THE TRAP A PARSE CHECK CANNOT SEE. `image: ghcr.io/org/repo` beside
+#    `registry.server: ghcr.io` is valid YAML, `kamal config` exits 0, and the
+#    resolved repository is wrong. Only the resolved value shows it.
+# ---------------------------------------------------------------------------
+if printf '%s' "$(grep -E '^:repository:' "$RESOLVED")" | grep -q '^:repository: ghcr\.io/cafaye/parlor$'; then
+  ok "kamal config  (the image name is not double-prefixed with the registry host)"
+else
+  no "kamal config  (the image name is not double-prefixed with the registry host)" \
+    "expected ':repository: ghcr.io/cafaye/parlor', got '$(grep -E '^:repository:' "$RESOLVED")'"
+fi
+
+# ---------------------------------------------------------------------------
+# 4. NO ACCESSORIES, READ OFF THE RESOLVED DOCUMENT. This is the no-database
+#    decision measured rather than asserted: a postgres accessory would appear
+#    here as `:accessories:`, and the empty `env.secret` is the other half — a
+#    DATABASE_URL with nothing to connect to.
+#
+#    The negative control is below, and it matters: this grep finds nothing in a
+#    file that also has nothing, so a control that PLANTS one and asserts the
+#    same check goes red is what makes the green mean something.
+# ---------------------------------------------------------------------------
+if grep -q '^:accessories:' "$RESOLVED"; then
+  no "kamal config  (the resolved document declares no accessories — parlor keeps no database)" \
+    "the resolved document carries an :accessories: block"
+else
+  ok "kamal config  (the resolved document declares no accessories — parlor keeps no database)"
+fi
+
+# ---------------------------------------------------------------------------
+# 5. `kamal config` DOES NOT LOOK AT `proxy` OR `env`, so the real proxy
+#    validator is run over the rendered block by hand. Measured while writing
+#    this: `Kamal::Configuration#to_h` (kamal 2.12.0) lists roles, hosts, the
+#    image, the builder, the accessories and logging — no proxy, no env. A
+#    deployment with a malformed `proxy` block passes `kamal config` and fails at
+#    `kamal proxy boot`.
+# ---------------------------------------------------------------------------
+if proxy_out=$(bounded "$RUBY" -e '
+  require "kamal"
+  require "yaml"
+  raw = YAML.safe_load(File.read(ARGV[0]), aliases: true)
+  Kamal::Configuration::Proxy.new(config: raw, proxy_config: raw["proxy"], secrets: {}, context: "proxy")
+  print raw["proxy"].dig("healthcheck", "path").to_s
+' "$RENDERED" 2>&1); then
+  ok "kamal's own Proxy validator accepts the proxy block"
+else
+  no "kamal's own Proxy validator accepts the proxy block" "$(printf '%s' "$proxy_out" | tail -2)"
+  proxy_out=""
+fi
+
+if [ "$proxy_out" = "/readyz" ]; then
+  ok "kamal's Proxy validator resolves healthcheck.path to /readyz"
+else
+  no "kamal's Proxy validator resolves healthcheck.path to /readyz" "got '$proxy_out'"
+fi
+
+# ---------------------------------------------------------------------------
+# 6. THE BUILD ARGS AND THE DOCKERFILE AGREE. The cross-file contract that only
+#    the pair can see, and the one whose failure is invisible: `docker build
+#    --build-arg` for a name the Dockerfile does not declare is a WARNING, so the
+#    image builds, the build exits 0, and the app ships with the compiled-in
+#    localhost default.
+#
+#    Read with grep rather than a YAML parse because the ERB on the left makes
+#    the file unparseable until it is rendered, and `builder.args` values are
+#    `<%= … %>` in the committed file.
+# ---------------------------------------------------------------------------
+for name in NEXT_PUBLIC_IDENTITY_URL NEXT_PUBLIC_BILLING_URL; do
+  if grep -qE "^[[:space:]]+${name}: " "$RENDERED" && grep -qE "^ARG ${name}=" "$DOCKERFILE"; then
+    ok "builder.args and the Dockerfile agree on ${name}"
+  else
+    no "builder.args and the Dockerfile agree on ${name}" \
+      "$(grep -qE "^[[:space:]]+${name}: " "$RENDERED" \
+        && echo 'the Dockerfile declares no matching ARG' \
+        || echo 'config/deploy.yml sets no such builder arg')"
+  fi
+done
+
+# ---------------------------------------------------------------------------
+# 7. NO SECRET VALUE IN THE RENDERED CONFIG. The rendered file is an ordinary
+#    file that gets committed, pasted into a ticket and read over somebody's
+#    shoulder, so the assertion is that the value never lands in it.
+# ---------------------------------------------------------------------------
+if grep -qF "$KAMAL_REGISTRY_PASSWORD" "$RENDERED"; then
+  no "kamal config  (no secret value appears in the rendered config)" \
+    "KAMAL_REGISTRY_PASSWORD's value is in the file"
+else
+  ok "kamal config  (no secret value appears in the rendered config)"
+fi
+
+# ---------------------------------------------------------------------------
+# 8. A MISSING REQUIRED VARIABLE IS REFUSED AT RENDER TIME, NAMING ITSELF. This
+#    is the check this service needs most and kit's does not: parlor requires two
+#    variables kit's template does not, and a required variable that is only
+#    mentioned in a comment is a variable nobody exports — the deploy then bakes
+#    in `http://localhost:8080` and serves a broken sign-in.
+#
+#    Each of the seven is tried in turn, so a preamble that quietly stops
+#    requiring one of them is a failure here rather than a surprise on a host.
+# ---------------------------------------------------------------------------
+for var in KIT_SERVICE KIT_REGISTRY_ORG KIT_REPO KIT_WEB_HOST KIT_APP_DOMAIN KIT_IDENTITY_URL KIT_BILLING_URL; do
+  if msg=$(env -u "$var" "$RUBY" -rerb -e 'print ERB.new(File.read(ARGV[0])).result' "$CONFIG" 2>&1 >/dev/null); then
+    no "the render refuses to proceed with ${var} unset" 'it rendered successfully'
+  elif printf '%s' "$msg" | grep -q "$var"; then
+    ok "the render refuses to proceed with ${var} unset, and names it"
+  else
+    no "the render refuses to proceed with ${var} unset, and names it" \
+      "it failed without naming the variable: $(printf '%s' "$msg" | tail -1)"
+  fi
+done
+
+# ---------------------------------------------------------------------------
+# 9. THE NEGATIVE CONTROLS. Every check above that can pass for the wrong reason
+#    — a grep that found nothing because it read nothing — gets the thing it
+#    forbids PLANTED, and is asserted to go red. A control that fails proves the
+#    whole file: if planting a doubled registry host or an accessory did NOT send
+#    a check red, then the checks above were reading their own emptiness.
+# ---------------------------------------------------------------------------
+planted_registry="$WORK/planted-registry"
+sed 's|^image: cafaye/parlor$|image: ghcr.io/cafaye/parlor|' "$RENDERED" >"$planted_registry"
+if grep -q '^image: ghcr.io/cafaye/parlor$' "$planted_registry"; then
+  out=$(bounded "$KAMAL" config -c "$planted_registry" --version latest 2>/dev/null || true)
+  if printf '%s' "$out" | grep -q '^:repository: ghcr\.io/ghcr\.io/'; then
+    ok "CONTROL: a planted doubled registry host reaches the resolved document — check 3 can see it"
+  else
+    no "CONTROL: a planted doubled registry host reaches the resolved document — check 3 can see it" \
+      "kamal did not report the doubled host, so check 3 would pass on a real one"
+  fi
+else
+  no "CONTROL: a planted doubled registry host reaches the resolved document — check 3 can see it" \
+    'the sed did not match, so nothing was planted and the control proved nothing'
+fi
+
+planted_accessory="$WORK/planted-accessory"
+# APPENDED, not prepended, and the reason is the control's own first version:
+# prepending put `accessories:` before the `---`, which makes the file two YAML
+# documents and leaves kamal reading the first one — a document with no `service:`
+# in it. The control then failed for a reason it had introduced, which is the
+# failure mode it exists to rule out. A trailing top-level key is the same
+# planting in a position the document can actually hold.
+cat "$RENDERED" >"$planted_accessory"
+printf '\naccessories:\n  postgres:\n    image: postgres:17-alpine\n    host: 198.51.100.7\n    volumes:\n      - parlor_postgres:/var/lib/postgresql\n' \
+  >>"$planted_accessory"
+if bounded "$KAMAL" config -c "$planted_accessory" --version latest 2>/dev/null | grep -q '^:accessories:'; then
+  ok "CONTROL: a planted postgres accessory reaches the resolved document — check 4 can see it"
+else
+  no "CONTROL: a planted postgres accessory reaches the resolved document — check 4 can see it" \
+    'the planted accessory did not appear in the resolved document, so check 4 would pass on a real one'
+fi
+
+planted_arch="$WORK/planted-no-arch"
+sed '/^builder:$/,/^  args:$/ { /^  arch: /d; }' "$RENDERED" >"$planted_arch"
+if ! grep -q '^  arch: ' "$planted_arch"; then
+  out=$(bounded "$KAMAL" config -c "$planted_arch" --version latest 2>&1 || true)
+  if printf '%s' "$out" | grep -qi 'arch'; then
+    ok "CONTROL: a config with no builder.arch is refused by the real binary"
+  else
+    no "CONTROL: a config with no builder.arch is refused by the real binary" \
+      "kamal accepted it: $(printf '%s' "$out" | tail -1)"
+  fi
+else
+  no "CONTROL: a config with no builder.arch is refused by the real binary" \
+    'the sed did not match, so nothing was planted'
+fi
+
+printf '\n'
+if [ "$fail" -ne 0 ]; then
+  printf 'FAIL: deploy-config — %d of %d case(s) failed.\n' "$fail" "$((pass + fail))"
+  exit 1
+fi
+printf 'PASS: deploy-config — %d case(s), every one against the real binaries.\n' "$pass"

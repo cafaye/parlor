@@ -43,8 +43,30 @@ WORKDIR /app
 #   docker build --build-arg NEXT_PUBLIC_IDENTITY_URL=https://identity.example.com .
 #
 # The default is the compose-stack address, which is what a local build wants.
+#
+# BOTH ARGs, AND NOT ONE. `NEXT_PUBLIC_BILLING_URL` was missing until the deploy
+# packet, and the way it was missing is the argument for the check that now holds
+# this file to config/deploy.yml: `docker build --build-arg` for a name this
+# Dockerfile does not declare is a WARNING, not an error. So a caller could pass
+# `--build-arg NEXT_PUBLIC_BILLING_URL=https://billing.example.com`, read the
+# successful exit code, and ship an image whose billing client is the compiled-in
+# default — `http://localhost:3000`, which is this app's own port, so the billing
+# screens would have asked parlor to talk to itself. Nothing about that build
+# looks wrong.
+#
+# The defaults below are the code's own (`DEFAULT_IDENTITY_URL` in
+# `src/lib/identity.ts`, `DEFAULT_BILLING_URL` in `src/lib/billing.ts`), written
+# out so the file says what an unparameterised build produces.
+#
+# WHY THESE CANNOT BE ENV VARS INSTEAD, because Kamal's `env.clear` looks like the
+# natural home for them and is not: Next substitutes `NEXT_PUBLIC_*` at build
+# time, so a run-time value is not a later value, it is no value at all. They
+# arrive as `builder.args` in `config/deploy.yml`; `tests/validate-ci.sh` fails
+# the gate when the names here and the names there stop being the same two.
 ARG NEXT_PUBLIC_IDENTITY_URL=http://localhost:8080
 ENV NEXT_PUBLIC_IDENTITY_URL=$NEXT_PUBLIC_IDENTITY_URL
+ARG NEXT_PUBLIC_BILLING_URL=http://localhost:3000
+ENV NEXT_PUBLIC_BILLING_URL=$NEXT_PUBLIC_BILLING_URL
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -53,7 +75,18 @@ RUN npm run build
 # --- runner -----------------------------------------------------------------
 # Non-root, standalone output: only .next/standalone, .next/static and public
 # are carried forward, so no devDependencies or sources land in the image.
-FROM node:22-slim AS runner
+#
+# PINNED, LIKE THE BUILDER STAGE, AND IT WAS NOT. This line said `node:22-slim`
+# while the stage above said `node:22.22.2-slim`, so the image built on the pin
+# and RAN on whatever `22-slim` resolved to that week — measured while writing
+# the deploy config: `docker manifest inspect node:22-slim` resolves a moving
+# multi-arch index, and the file's own header claims "One pin, four mirrors, and
+# the image is the fourth". For a service with no database, the runtime it
+# executes on is most of what it is, and a deploy config cannot fix an image that
+# boots a different Node than the one `npm test` and `bin/prime` verified. The
+# header's claim is now a check rather than a comment — `tests/validate-ci.sh`
+# fails the gate on an unpinned `FROM node:` anywhere in this file.
+FROM node:22.22.2-slim AS runner
 WORKDIR /app
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
