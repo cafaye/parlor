@@ -5,6 +5,22 @@
  * import path and never two ways to reach the same button.
  *
  * ---------------------------------------------------------------------------
+ * RE-EXPORTING A CLIENT COMPONENT FROM A BARREL HAS A COST, SO KNOW IT
+ * ---------------------------------------------------------------------------
+ * Most of what is re-exported here is hook-free and renders as a Server
+ * Component. `ConfirmDialog` is not: it carries `"use client"` in its own file
+ * because it uses hooks. Importing it from `@/components/ui` still works, and
+ * still gives you only the dialog — a `"use client"` boundary ends at the
+ * importing module's own frame of reference, so it does not drag the rest of
+ * this barrel across with it.
+ *
+ * That is exactly why `Callout` had to be split out of `feedback.tsx` rather
+ * than that whole file being marked `"use client"`: the split is what lets a
+ * Server Component reach `Callout` through this barrel without paying for a
+ * client bundle. Keep the two in one file again and the barrel starts lying
+ * about what is free.
+ *
+ * ---------------------------------------------------------------------------
  * THESE ARE OURS, AND THAT IS THE POINT
  * ---------------------------------------------------------------------------
  * The Button, Input, Field, Select and the state components were hand-rolled
@@ -22,7 +38,8 @@
  */
 export { Button, type ButtonProps, type ButtonSize, type ButtonVariant } from "./button";
 export { Field, FieldSummary, type FieldProps } from "./field";
-export { Callout, ConfirmDialog, type CalloutTone, type ConfirmDialogProps } from "./feedback";
+export { ConfirmDialog, type ConfirmDialogProps } from "./confirm-dialog";
+export { Callout, type CalloutTone } from "./feedback";
 export { Input, type InputProps } from "./input";
 export {
   CardLink,
