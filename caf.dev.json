@@ -1,0 +1,29 @@
+{
+  "identity": {
+    "name": "identity",
+    "image": "cafaye/identity:dev",
+    "port": 8080,
+    "publish": true,
+    "environment": {
+      "PORT": "8080",
+      "LOG_LEVEL": "debug"
+    },
+    "healthcheck": {
+      "test": ["CMD", "/app/service", "-healthcheck"],
+      "interval": "15s",
+      "timeout": "5s",
+      "retries": 5,
+      "startPeriod": "5s"
+    },
+    "dependencies": ["postgres"],
+
+    "x-why": "This catalog exists because caf ships none. caf's own package doc says why: \"an image reference guessed by a CLI is a reference that pulls the wrong thing\", so `caf dev` refuses to invent one and asks for a catalog instead. Every cafaye service generated from this template inherits this file rather than rediscovering that.",
+    "x-image": "`cafaye/identity:dev` is built from a sibling checkout: cd ../identity && docker build -t cafaye/identity:dev . It is NOT on a registry, so a fresh clone must build it once before `mise run stack` works. That cost is stated here rather than hidden behind an image name that implies a pull.",
+    "x-port": "8080 is identity's own default (identity's docker-compose.yml sets PORT: \"8080\" and its Dockerfile exposes it). `publish: true` is load-bearing in THIS repository and not merely convenient: `src/lib/identity.ts` has the browser call identity directly, with `NEXT_PUBLIC_IDENTITY_URL` defaulting to \"http://localhost:8080\", and a browser cannot resolve a compose service name. Without the published port the sign-in button fails on a connection error that names no service at all.",
+    "x-healthcheck": "Copied from identity's docker-compose.yml, not invented. `/app/service -healthcheck` rather than `curl /readyz` because the runtime image is gcr.io/distroless/static-debian12:nonroot — no shell and no HTTP client. The binary probes its own /readyz over the container loopback and exits 0 or 1. The key is `startPeriod`, not identity's `start_period`: caf's catalog is JSON with its own spelling, and caf refuses a key it does not model rather than ignoring it, so `start_period` fails the stack rather than being quietly dropped.",
+    "x-dependencies": "postgres, and this is a fact about caf rather than about identity: identity refuses to boot without DATABASE_URL, and caf hands a service that depends on postgres a DATABASE_URL built from the project name (postgres://parlor:parlor@postgres:5432/parlor). So identity runs against parlor's database here rather than its own — correct for a local stack, and not what e2e/docker-compose.yml does, which gives identity an identity-postgres of its own. redis is deliberately NOT listed: caf attaches local infrastructure to every non-infrastructure service on its own, so declaring it would be a second copy of something the stack decides for itself.",
+    "x-oidc": "OIDC_ISSUER, OIDC_SIGNING_KEY and OIDC_SIGNING_KEY_ID are deliberately absent. identity refuses to boot unless all three are set or all unset (internal/config/config.go, ErrInvalidOIDC). All-unset serves /v1 and its probes and publishes no key set, which is what a local stack wants.",
+    "x-billing": "billing is deliberately absent, and it is not an oversight. `cafaye.yml` declares billing `required: false`, which caf treats as soft: a name it cannot resolve is recorded as a skipped optional dependency and the stack starts without it, printing why. Adding billing here would start a service that is not going out on launch day, and the two screens that use it already render an error state rather than failing.",
+    "x-self": "parlor is deliberately NOT an entry in this catalog, and that is the trap this key exists to prevent. `caf dev` resolves the project service from the catalog if the catalog has it and from the repository's own Dockerfile if it does not — and a catalog entry for the project service makes caf run `image:` instead of `build:`. Naming parlor here would silently replace this repository's Dockerfile with a pull of an image that does not exist locally. The project's own service needs no catalog entry at all."
+  }
+}

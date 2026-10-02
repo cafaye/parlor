@@ -54,3 +54,10 @@ yarn-error.log*
 e2e-results.json
 e2e/.artifacts/
 playwright-report/
+
+# caf dev's rendered stack. `caf.dev.json` IS committed — it is the catalog the
+# local stack is built from, and a catalog nobody commits is a catalog that only
+# exists on the machine that wrote it. This file is not: `caf dev` prints "Do
+# not edit: every run rewrites this file", so committing it would be committing
+# a generated artifact that is a merge conflict waiting to happen.
+caf.dev.compose.yaml

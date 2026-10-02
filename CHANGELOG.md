@@ -8,6 +8,84 @@ All notable changes to parlor are recorded here. The format follows
 
 ### Added
 
+- **A local stack that exists: `caf.dev.json`, `mise run stack`, and the
+  facts that make it work — so a service generated from this template is born
+  able to talk to identity instead of discovering how later.** The template had
+  identity client code (`src/lib/identity.ts`, `src/lib/auth.tsx`, sign in, sign
+  out, register, accounts, invitations) and no way to run identity. `mise run
+  dev` started a Next.js server and nothing else, so every authenticated route
+  failed against an origin that was not there — and `cafaye.yml` calls identity
+  `required: true`, which made that failure a contradiction with the manifest
+  rather than a surprise.
+
+  caf refuses to run a local stack without a service catalog, and states why in
+  its own package doc: "an image reference guessed by a CLI is a reference that
+  pulls the wrong thing". So `caf.dev.json` is committed, and each non-obvious
+  value in it carries an `x-` key saying where it came from. The four that are
+  load-bearing rather than conventional:
+
+  - **parlor is deliberately NOT an entry in its own catalog.** `caf dev`
+    resolves the project service from the catalog when the catalog has it and
+    from the repository's own Dockerfile when it does not — and an entry makes
+    caf render `image:` instead of `build:`. Adding `parlor` here would silently
+    replace this repository's Dockerfile with a pull of an image that does not
+    exist. A generated service needs no self-entry; this is the trap the
+    `x-self` key exists to prevent.
+  - **`-port 3000` in `mise run stack` is not a preference.** `cafaye.yml`
+    declares no `exposes.api` (for the reason given in that file: this app
+    ships no OpenAPI document, and writing one would be a second copy of the
+    router that drifts), so `caf dev` cannot tell a Next.js app serves HTTP and
+    leaves its host port unpublished. Measured both ways: with `-port 3000` the
+    rendered document gives parlor `ports: ["3000:3000"]` and `GET /` answers
+    200 from a browser; without it, the only `ports:` in the whole file is
+    identity's `8080:8080` and parlor has no host binding at all. caf names this
+    rather than inventing a URL — `no published port (reached by service name
+    on the stack network)` — which is true, and useless to a browser. The
+    container port is not this flag's concern; caf derives that from `language`
+    and only rewrites the host end.
+  - **`publish: true` on identity is what makes the browser path work.**
+    `src/lib/identity.ts:34` defaults `NEXT_PUBLIC_IDENTITY_URL` to
+    `http://localhost:8080` and the browser calls identity directly, so a
+    compose service name would be unreachable by construction. Without this the
+    sign-in button fails on a connection error that names no service at all.
+  - **`startPeriod`, not `start_period`.** caf's catalog is JSON with its own
+    spelling, and caf refuses a key it does not model rather than ignoring it —
+    so identity's own compose spelling fails the stack instead of being quietly
+    dropped. Verified: the rendered `caf.dev.compose.yaml` contains
+    `start_period: 5s`, so the translation happens and the key was accepted.
+
+  billing is deliberately absent. `cafaye.yml` declares it `required: false`,
+  which caf treats as soft, so the stack starts without it and prints why:
+  `skipped billing: optional dependency, and the local registry does not know
+  how to run it`. Adding it would start a service that is not going out on
+  launch day.
+
+  `caf.dev.compose.yaml` is gitignored and `caf.dev.json` is not, and the
+  asymmetry is the point: caf prints "Do not edit: every run rewrites this
+  file", so committing the render is committing a generated artifact that is a
+  merge conflict waiting to happen, while a catalog nobody commits is a catalog
+  that only exists on the machine that wrote it.
+
+  **Proven, not asserted.** `caf dev -registry caf.dev.json -port 3000 -dry-run`
+  renders a four-service stack — `parlor` with `build: {context: ., dockerfile:
+  Dockerfile}` and `ports: ["3000:3000"]`, `identity` published on 8080, plus
+  `postgres` and `redis` — with `DATABASE_URL =
+  postgres://parlor:parlor@postgres:5432/parlor` and `REDIS_URL =
+  redis://redis:6379/0` attached to both services, billing skipped with its
+  reason, and none of the `x-` keys leaking into the render. Run for real, all
+  four services reached healthy, and from the host: `GET http://localhost:3000/`
+  answers 200, `GET /readyz` answers `{"status":"ok","deps":"none"}`, and
+  identity's own `GET http://localhost:8080/readyz` answers `{"status":"ok",
+  "deps":"postgres"}`.
+
+  **What this task does not do, stated rather than discovered later:** it does
+  not migrate. Migrations are a deploy step in every cafaye service, by policy
+  (`e2e/docker-compose.yml:39-42`), so nothing in this stack migrates on boot.
+  Against the database caf provisions, a first registration returns `500
+  relation "users" does not exist` while `/readyz` reports healthy — both are
+  correct. `./bin/e2e` runs the migrations and is the tier that proves the
+  integration end to end.
+
 - **A deploy story: `config/deploy.yml`, the tier that proves it, and a health
   gate the app is proven to serve.** Every other service in the fleet deploys and
   this one could not — there was no config to deploy from, no accessory story,
