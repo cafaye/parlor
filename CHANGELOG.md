@@ -339,6 +339,42 @@ All notable changes to parlor are recorded here. The format follows
 
 ### Fixed
 
+- **`Callout` was unreachable from a Server Component, and the only reason the
+  build was green was that no Server Component had asked for it yet.**
+  `ConfirmDialog` and `Callout` shared `src/components/ui/feedback.tsx`, and the
+  barrel re-exported both. The file calls `useId`/`useEffect`/`useCallback` for
+  the dialog and calls nothing for the callout, so the file could only be
+  resolved one way and the other component was wrong either way — as a Server
+  Component the hooks fail `next build`; with a file-level `"use client"` the
+  callout ships hydration JavaScript to render a `<div>` with a `role`.
+  jsdom cannot see this class of defect at all, because jsdom has no
+  server/client boundary to cross, so `npm test` was structurally incapable of
+  catching it and green was not evidence of anything.
+
+  Reproduced with a one-route probe before changing anything. A Server
+  Component rendering `Callout` through the barrel fails the build with:
+
+      You're importing a module that depends on `useEffect` into a React
+      Server Component module.
+
+  Note that the suggested repair in that message — "mark the file with the
+  directive" — is the wrong one here, and produces a tree that builds while
+  charging every page for a client bundle. So the fix is a split, not a
+  directive: `ConfirmDialog` moved to `src/components/ui/confirm-dialog.tsx`
+  with `"use client"`, `Callout` stayed behind hook-free, and the barrel
+  re-exports both. The same probe now compiles and prerenders as a static
+  page. The moved code is byte-for-byte unchanged — `git diff` of the old block
+  against the new file is empty — so this is a file-boundary change and not a
+  behaviour change.
+
+- **`src/components/ui/client-boundary.test.ts` now enforces both halves.** A
+  file that calls a hook must declare `"use client"`; a file that calls no hook
+  and declares it anyway ships hydration JavaScript for nothing. Both are
+  proven able to go red rather than assumed to: undoing the split breaks two
+  tests, marking `spinner.tsx` as a client component breaks a third, and the
+  blanket `"use client"` — the wrong fix — is caught only by the third, which
+  is documented in the file along with why the second cannot see it.
+
 - **The ten hand-written links in the screens had no focus ring at all.** Every
   one was `className="font-medium underline underline-offset-2 hover:no-underline"`
   with no `focus-visible` rule, so a keyboard user tabbing through the account
