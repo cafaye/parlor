@@ -454,25 +454,78 @@ ensure_sibling_artifacts() {
     return 0
   fi
 
-  local service tag present=0 missing=""
+  # ASK THE REGISTRY, NOT THE LOCAL CACHE. This loop used to accept a hit from
+  # `compose image inspect` OR from `docker image ls`, both of which read the
+  # LOCAL image store, and then logged "already published at $REGISTRY". That
+  # made a green tier's central claim unfalsifiable: a machine with a warm cache
+  # reported a registry as holding artifacts it had never been asked about.
+  #
+  # Measured, three consecutive ordinary runs on this machine, no intervention:
+  #   * run 1 — registry recreated by `down -v`, catalog empty, cache warm
+  #              -> "2/2 already published at localhost:16010, nothing to pull",
+  #                 23 passed, exit 0. The registry had been up for 6 seconds and
+  #                 had never held a blob.
+  #   * run 2 — same, after a legitimate pull, so the cache is warm BY DESIGN
+  #              -> the same false line.
+  #
+  # So the fix is to make the question the code asks match the sentence it logs.
+  # `docker manifest inspect` talks to the registry over the network and is the
+  # only probe here that can answer "is this published"; it is deliberately NOT
+  # `docker image inspect`, which would reintroduce the identical defect under a
+  # different spelling.
+  #
+  # A cached artifact is not thereby a published one. The two are separate
+  # facts and each one, when false, means the artifact has to be pulled:
+  #
+  #   published && cached  -> the steady state, and the only case where the
+  #                           correct log line is "nothing to pull"
+  #   published && !cached -> the ordinary case on a second machine; pull it
+  #   !published           -> nothing to pull BY; fall through to the checkouts
+  #
+  # Collapsing the first column into "do I have this tag locally" is what made
+  # the previous version log "already published" for a registry that had never
+  # held a blob, so both columns are computed here and neither stands in for
+  # the other.
+  local service tag present=0 missing="" unpublished=""
   for service in "${SIBLING_SERVICES[@]}"; do
     tag="$REGISTRY/$(sibling_tag "$service")"
-    if compose_timed 60 image inspect "$tag" >/dev/null 2>&1 \
-      || [ -n "$(docker image ls -q "$tag" 2>/dev/null || true)" ]; then
+    if timeout 60 docker manifest inspect "$tag" >/dev/null 2>&1; then
       present=$((present + 1))
+      # Published is not cached. Compose will not use what is not here, so this
+      # has to be a pull even though the registry has answered.
+      if [ -z "$(docker image ls -q "$tag" 2>/dev/null || true)" ]; then
+        unpublished="$unpublished $service"
+      fi
     else
       missing="$missing $service"
     fi
   done
 
   if [ -z "$missing" ]; then
-    log "sibling artifacts: $present/${#SIBLING_SERVICES[@]} already published at $REGISTRY, nothing to pull"
-    return 0
+    if [ -n "$unpublished" ]; then
+      # The steady state minus the cache. Pull rather than return, because
+      # compose's default pull policy is `missing` and it would fetch the same
+      # bytes itself one step later — this way the log says what happened.
+      log "sibling artifacts: $present/${#SIBLING_SERVICES[@]} published at $REGISTRY, not all cached locally"
+      missing="$unpublished"
+    else
+      # "published", and each tag with the digest that was verified over the
+      # network. The digest is here so this line can be checked against the
+      # registry after the fact rather than taken on trust, which is the
+      # standard the previous version of this sentence failed.
+      log "sibling artifacts: $present/${#SIBLING_SERVICES[@]} published at $REGISTRY, verified over the network, nothing to pull"
+      for service in "${SIBLING_SERVICES[@]}"; do
+        tag="$REGISTRY/$(sibling_tag "$service")"
+        log "  $service -> $(timeout 60 docker manifest inspect --verbose "$tag" 2>/dev/null \
+          | sed -n 's/.*"Digest": *"\(sha256:[0-9a-f]*\)".*/\1/p' | head -1)"
+      done
+      return 0
+    fi
   fi
 
-  # Not published. Before reaching for the checkouts, ask the registry directly:
-  # a tag can exist in the registry without being in the local image store, and
-  # that is the ordinary case on a second machine rather than an edge case.
+  # Either never published, or published but not cached here. Ask the registry
+  # by pulling, which is also what puts the artifact in the local store for
+  # compose.
   local pulled=""
   set +e
   for service in $missing; do
