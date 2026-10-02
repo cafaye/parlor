@@ -1,0 +1,2 @@
+timeout 900 npx --no-install playwright install chromium  0.69s user 0.24s system 59% cpu 1.574 total
+exit=0

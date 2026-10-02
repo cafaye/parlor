@@ -1,0 +1,9 @@
+--- registry catalog (running stack's registry) ---
+{"repositories":[]}
+
+--- local image store, registry-qualified tags ---
+localhost:16010/cafaye/guard:e2e d038f17cab8b
+localhost:16010/cafaye/identity:e2e f801e9b1723e
+--- manifest fetch (what a pull would ask for) ---
+cafaye/identity -> 404
+cafaye/guard -> 404
