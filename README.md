@@ -42,6 +42,7 @@ would your product still build? It has to be.
 | Plan catalogue | `/billing/plans` | What can be bought, at what price, on what cadence. Paged. |
 | Customers | `/billing/customers` | Billing's customer records. Platform-wide, and labelled so. |
 | Session shell | `src/components/shell/` | Header: navigation, sign out when authed, sign in when not. |
+| The one origin | `/v1/*` | The BFF. Answers the browser's identity and billing calls on this app's own origin and forwards them server-side. |
 | Identity client | `src/lib/identity.ts` | Typed, transport-injected client for every identity endpoint this app calls. The tables below are the source of truth for which. |
 | Role vocabulary | `src/lib/roles.ts` | The capability matrix, transcribed from identity's authorization. |
 | Tenancy queries | `src/lib/accounts.ts` | Query keys and invalidation for the account surface. |
@@ -49,6 +50,7 @@ would your product still build? It has to be.
 | Billing client | `src/lib/billing.ts` | Typed client for billing's five endpoints, with its own error type. |
 | Session state | `src/lib/auth.tsx` | React Query cache keyed by token + auth context. |
 | Token store | `src/lib/token-store.ts` | `localStorage` persistence, injectable. |
+| The forwarder | `src/lib/upstream.ts` | The BFF's allow-list: one fixed destination per service, twenty-two routes, and the only code that names a service address at run time. |
 | Liveness | `/healthz` | `{"status":"ok"}` — process is up. No dependency checks, on purpose. |
 | Readiness | `/readyz` | `{"status":"ok","deps":"none"}` — `deps` is a reserved placeholder. |
 | Theme tokens | `src/styles/tokens.css` | The cafaye design system: two ramps, a semantic layer, and a measured focus ring. Contrast-checked in `src/styles/tokens.test.ts`. |
@@ -135,9 +137,11 @@ not be a change to this one.
 | `getCustomer(id)` | `GET /v1/customers/{id}` | `200 Customer` |
 | `createCustomer(input, idempotencyKey?)` | `POST /v1/customers` | `201 Customer` |
 
-The base URL comes from `NEXT_PUBLIC_BILLING_URL`, defaulting to
-`http://localhost:3000`. Three things about it are decisions rather than
-accidents:
+Every call is same-origin: the base URL is `""`, so the browser asks this app for
+`/v1/plans` and `src/app/v1/[...path]/route.ts` forwards to billing from the
+server. billing's address is a server-only variable, `BILLING_URL`, and is not in
+the client bundle at all. Three things about the surface are decisions rather
+than accidents:
 
 - **No identity session token is sent.** billing declares `security: []` with no
   `securitySchemes` at all, and records the gap in its own header: `GET
@@ -157,16 +161,17 @@ accidents:
   ¥1,900 in JPY, and 12,345 is 12.345 in KWD. It is the only division in the
   codebase and the last one before a number reaches a person.
 
-The base URL comes from `NEXT_PUBLIC_IDENTITY_URL`, defaulting to
-`http://localhost:8080` — the identity service in the compose stack.
+Every call is same-origin: the base URL is `""`, so the browser asks this app for
+`/v1/session` and `src/app/v1/[...path]/route.ts` forwards to identity from the
+server.
 
-> **It is read at build time.** Next inlines `NEXT_PUBLIC_*` into the client
-> bundle, so `docker run -e NEXT_PUBLIC_IDENTITY_URL=…` changes nothing; the
-> string is already in the JavaScript. The Dockerfile takes it as a build arg:
->
-> ```sh
-> docker build --build-arg NEXT_PUBLIC_IDENTITY_URL=https://identity.example.com .
-> ```
+> **Why it is not in the bundle.** This used to be `NEXT_PUBLIC_IDENTITY_URL`,
+> which `next build` inlines into the client bundle — so the browser called
+> identity directly, at an address baked into the image. identity serves no CORS
+> headers, so a deployed sign-in could not complete: the preflight failed and
+> `/login` rendered "Something went wrong. Try again." The address is now
+> `IDENTITY_URL`, read on the server at request time, and one image serves every
+> environment.
 
 Two things about the contract are worth stating plainly, because both are
 decisions rather than accidents, and one of them is not settled:
@@ -184,26 +189,41 @@ decisions rather than accidents, and one of them is not settled:
 
 ## Sessions
 
-The session token is kept in `localStorage` under `parlor.session.token`.
+The session token is kept in `localStorage` under `parlor.session.token`, and
+identity's `__Host-session` cookie is **also** live. Both credentials work; this
+is a deliberate intermediate state, and here is exactly what each half is for.
 
-That is the weaker of the two available options, and it is here for a specific
-reason: identity sets an `HttpOnly` session cookie, which by definition cannot
-be read by this bundle, and the browser sends it only to same-origin requests
-while identity sits on another port. With no server between the browser and
-identity, the token is the only credential this code can actually hold.
+**The cookie is real now.** The browser's traffic is same-origin, so
+`src/app/v1/[...path]/route.ts` carries `Set-Cookie` back and `Cookie` forward
+byte for byte, and the transport says `credentials: "same-origin"` rather than
+`"omit"`. The attributes are load-bearing in a way they were not, and the part
+that matters is the `__Host-` prefix, which is a contract the **browser**
+enforces: `Secure`, `Path=/`, and **no `Domain`**. The `Set-Cookie` header is
+therefore never rewritten. Adding a `Domain` to "make it work" is exactly what
+makes a `__Host-` cookie stop working, and dropping the prefix would trade a
+browser-enforced guarantee for a convention. Three consequences worth stating:
 
-What it buys: a session that survives a reload, and a shell that knows who you
-are on the first paint. What it costs: any XSS on this origin becomes a session
-compromise, and a token readable by script is a weaker thing to hand out than a
-cookie the browser owns.
+- `Secure` means the browser stores it only on an HTTPS origin. A deploy behind
+  kamal-proxy has `ssl: true`, so production is fine. On the plain-HTTP compose
+  stack the browser refuses it — which is correct behaviour, and the reason the
+  bearer token is still there.
+- `SameSite=Lax` is what makes this CSRF-safe. Every request the browser makes to
+  this app is same-site, so the cookie is sent; a cross-site page gets nothing.
+  The protection comes from the topology, not from anything this app sets.
+- It is `HttpOnly`, so no script on this origin can read it. That is strictly
+  better than the `localStorage` half and is the direction the next packet moves.
 
-**The BFF packet reverses this.** A server route in front of identity, same
-origin, a `Secure`/`HttpOnly`/`SameSite=Lax` cookie as the only authority, a
-CSRF token on the mutating calls, and nothing in script-reachable storage. When
-that lands: drop the token from the query key, read the session from a server
-component, add the CSRF header, and let identity own CORS instead of the browser
-calling it cross-origin. Until then, `SESSION_TOKEN_KEY` in
-`src/lib/token-store.ts` is the one string to keep in step.
+**The `localStorage` half is what is left to do.** Two credentials are live, and
+that is untidy: identity prefers the `Authorization` header over the cookie
+(`presentedToken`), so the header is what is actually being exercised today.
+Retiring the token means dropping it from the React Query cache key, reading the
+session from a server component, and removing `src/lib/token-store.ts` — the
+guard packet's work, and the one place where `SESSION_TOKEN_KEY` has to change.
+
+What the current position buys: a session that survives a reload, a shell that
+knows who you are on the first paint, and a cookie that works if the token is
+lost. What it costs: any XSS on this origin still reads the token out of
+`localStorage`, so the `HttpOnly` cookie does not yet protect anyone.
 
 ## Stack
 
@@ -281,12 +301,16 @@ Two decisions worth knowing about:
   props are typed explicitly rather than with Next's generated `LayoutProps`
   precisely so a fresh clone typechecks, and the workflow deletes `.next`
   first so it has to.
-- **The build is given `NEXT_PUBLIC_IDENTITY_URL` and
-  `NEXT_PUBLIC_BILLING_URL` explicitly.** Next inlines `NEXT_PUBLIC_*` at
-  build time, so an unset value leaves a live `process.env` lookup in a
-  browser bundle — `undefined` there — and the app quietly talks to
-  `localhost`. The workflow passes RFC 2606 `.invalid` names, which resolve
-  nowhere, so a build that somehow reached for one fails loudly.
+- **The build is given no service addresses at all, and that is the assertion.**
+  The workflow used to pass `NEXT_PUBLIC_IDENTITY_URL` and
+  `NEXT_PUBLIC_BILLING_URL` as build args, because Next inlines `NEXT_PUBLIC_*`
+  at build time and an unset value left a live `process.env` lookup in a browser
+  bundle — `undefined` there — so the app quietly talked to `localhost`. The BFF
+  removed the reason for any of it: the browser no longer knows where the
+  services are. `IDENTITY_URL` and `BILLING_URL` are run-time variables, so one
+  build serves every environment, and
+  `src/app/v1/[...path]/route.test.ts` asserts against the **built** client
+  chunks that no service address is in them.
 
 `language: none` and coverage: kit's coverage gate is **0** here on purpose.
 Raising it needs a `coverage` script, which needs `@vitest/coverage-v8`, which
@@ -305,13 +329,15 @@ docker run --rm -p 3000:3000 parlor
 ```
 
 ```sh
-# With the addresses a deployment needs. Both are BUILD args and neither can be
-# an env var at run time: next inlines `NEXT_PUBLIC_*` into the bundle, so a
-# later value is not a later value, it is no value at all.
-docker build \
-  --build-arg NEXT_PUBLIC_IDENTITY_URL=https://identity.example.com \
-  --build-arg NEXT_PUBLIC_BILLING_URL=https://billing.example.com \
-  -t parlor .
+# The addresses a deployment needs are RUN-TIME variables, not build args.
+# This is the change the BFF made: `next build` inlines `NEXT_PUBLIC_*` into the
+# client bundle, so a service address in one is a value the browser can read and
+# change — and the browser no longer needs to know where the services are.
+docker build -t parlor .
+docker run --rm -p 3000:3000 \
+  -e IDENTITY_URL=https://identity.example.com \
+  -e BILLING_URL=https://billing.example.com \
+  parlor
 ```
 
 Multi-stage `node:22.22.2-slim` — the pin `package.json` declares, on **both**
@@ -350,8 +376,8 @@ The five differences, in one place so this section can be read without the file:
 | --- | --- | --- |
 | 1 | `healthcheck.path: /readyz`, not `/up` | The App Router serves exactly `/healthz` and `/readyz`. `/up` is a 404 on every request the proxy makes, the container never goes healthy, and every rollout is torn back after `deploy_timeout` on a release that is otherwise fine. |
 | 2 | No `accessories:` block at all — no postgres, no backup | parlor keeps no state of its own. |
-| 3 | `builder.args` carries both service addresses | Next inlines `NEXT_PUBLIC_*` at build time. |
-| 4 | `env.clear` and `env.secret` are both empty | The only two variables the app reads are the two above, and neither is a credential. |
+| 3 | `env.clear` carries both service addresses, at run time | The BFF reads them on the server, so one image serves every environment. They are addresses, not credentials, so they are not names in `secret`. |
+| 4 | `builder.args` is gone entirely | A `NEXT_PUBLIC_*` service address is inlined into the client bundle, and the browser no longer needs one. Keeping the block would put a service address back where the browser can change it. |
 | 5 | `builder.cache` kept, but nothing in CI publishes an image | See "Known gaps" below. |
 
 ### `/readyz` and `/healthz` are not interchangeable
@@ -394,32 +420,39 @@ mise run deploy:config    # or ./bin/deploy-config
 ```
 
 It renders the ERB, hands the result to the **real** `kamal` binary, reads the
-resolved document, runs kamal's own proxy validator, checks that every build arg
-matches a `Dockerfile` `ARG`, and proves each of seven required variables fails
-the render by name. It also plants three defects and asserts each one goes red,
-because a check that has only ever been green is a check nobody has watched
-fail.
+resolved document, runs kamal's own proxy validator, checks that the two service
+addresses are run-time env vars and that no builder arg is a `NEXT_PUBLIC_*`
+name, and proves each of seven required variables fails the render by name. It
+also plants three defects and asserts each one goes red, because a check that has
+only ever been green is a check nobody has watched fail.
 
 It is deliberately **not** in `bin/prime`: `kamal` and `ruby` are on neither a
-developer's node-only checkout nor a CI runner, so it has a three-valued exit
+developer’s node-only checkout nor a CI runner, so it has a three-valued exit
 instead — `0` proven, `1` a property failed, `2` the binaries are absent and
 nothing was proven. `2` is not `0` on purpose. `tests/validate-ci.sh` holds the
-four **shape** properties that need no binaries at all: that the deploy config
-exists and declares no database, that every builder arg is a `Dockerfile` `ARG`,
-that every `FROM node:` in the Dockerfile carries the `engines.node` pin, and
-that this script is executable.
+**shape** properties that need no binaries at all: that the deploy config exists
+and declares no database, that the two service addresses are run-time env vars,
+that no `NEXT_PUBLIC_*` name reaches the browser, that every `FROM node:` in the
+Dockerfile carries the `engines.node` pin, and that this script is executable.
 
 ### What it does not do yet
 
-- **A deploy of this config cannot complete a sign-in against a deployed
-  identity.** `src/lib/identity.ts` fetches from the browser, identity serves no
-  CORS headers at all, and `OPTIONS /v1/session` answers 405 — so the preflight
-  fails and `/login` renders its generic failure. `e2e/edge.conf` states the
-  whole measured argument, and its nginx is harness scaffolding that no
-  deployment can call. kamal-proxy cannot cover for it either: it routes by
-  hostname, not by path. The two real fixes are identity growing a CORS policy or
-  parlor growing a same-origin BFF route in front of it (the `guard` packet).
-  **DECISION NEEDED** in CHANGELOG "Known gaps".
+- **A deploy of this config now completes a sign-in, and the fix is in the
+  product.** This used to be the first item under "what it does not do yet", and
+  the whole measured argument is recorded at `src/lib/upstream.ts` and in
+  `e2e/edge.conf`. The short version: the browser called identity cross-origin,
+  identity serves no CORS headers, and kamal-proxy routes by hostname rather than
+  by path so it could not paper over it. `src/app/v1/[...path]/route.ts` now
+  answers `/v1/*` on this app's own origin and forwards server-side, and no
+  `Access-Control-*` header was added to identity to achieve it.
+- **`__Host-session` needs an HTTPS origin, and that is the deployment's job.**
+  The cookie is `Secure`, so a browser stores it only over HTTPS. kamal-proxy
+  terminates TLS with `ssl: true` and the app origin is HTTPS, so this holds in
+  production — but a plain-HTTP deployment would silently lose the cookie, and the
+  symptom is a session that does not survive a reload rather than an error.
+- **The session token is still in `localStorage`.** The cookie is live, but the
+  client keeps sending the bearer header too and identity prefers it, so the
+  `HttpOnly` half does not yet protect anyone. See "Sessions" above.
 - **No CI job builds or pushes the image.** `.github/workflows/ci.yml` has three
   jobs and none of them runs `docker build`, `docker push` or `kamal build`, so
   `kamal deploy` on a fresh host will run `kamal build` there — which is the OOM
@@ -435,8 +468,8 @@ that this script is executable.
   (Dockerfile) is not `output: "export"`, so there is no `out/` to upload and
   `next start`/`node server.js` remains the only way this app runs. A CDN in
   front would also be the wrong shape for the first release: the sign-in screen
-  is a server-rendered shell that then fetches from a cross-origin API, so the
-  assets are not the interesting part of the latency.
+  is a server-rendered shell whose API calls go through this app's own origin,
+  so the assets are not the interesting part of the latency.
 
 ## End to end
 
@@ -454,7 +487,7 @@ per-commit gate. The tier is `bin/e2e` and CI runs it as its own job.
 
 | Container | From | Published on | What it is for |
 | --- | --- | --- | --- |
-| `edge` | `nginx:1.27.4-alpine` | `16000` | The origin a browser loads. Routes `/v1/*` to identity and everything else to parlor. |
+| `edge` | `nginx:1.27.4-alpine` | `16000` | The single origin a browser loads. Everything goes to parlor, including `/v1/*` — the app forwards that itself. |
 | `parlor` | this repository | `16003` | The app under test, also reachable directly. |
 | `identity` | `../identity` | `16080` | Auth, sessions, accounts, on a real Postgres. |
 | `guard` | `../guard` | `16081` | The gateway: JWT verification, rate limits, a BFF. |
@@ -468,22 +501,25 @@ a published port leaves the block or lands on one of those.
 
 ### Why there is a reverse proxy in it
 
-`e2e/edge.conf` states this in full and it is worth repeating here, because it
-is the first thing this tier found and it is a real defect in the app as it
-stands:
+`e2e/edge.conf` states this in full. It is worth repeating here because the
+reason has changed, and the change is the point.
 
-**A browser cannot call `identity` from this app.** The client bundle does the
-fetching (`src/lib/identity.ts`), `identity` serves no CORS headers, and
-`OPTIONS /v1/session` answers `405`. The preflight fails, the response is
-unreadable, and the sign-in form renders "Something went wrong. Try again." —
-on a stack that came up completely green.
+**It used to be a workaround for a defect in the app.** The client bundle did the
+fetching, `identity` served no CORS headers, and `OPTIONS /v1/session` answered
+`405` — so the preflight failed and the sign-in form rendered "Something went
+wrong. Try again." on a stack that came up completely green. The unit suite
+could not see it: every test injects a stub transport and never opens a socket.
+The harness supplied an nginx route for `/v1/*` because a test suite that
+documents a bug is not a test suite.
 
-The unit suite cannot see it: 377 tests, every one of them injecting a stub
-transport and never opening a socket. The fixes belong in the real repositories
-— a CORS policy in `identity`, or the same-origin BFF route `AGENTS.md` already
-schedules for `parlor` — and until one of them lands the harness supplies the
-second shape itself, because a test suite that documents a bug is not a test
-suite.
+**Now it is only what Compose cannot provide.** `src/app/v1/[...path]/route.ts`
+answers `/v1/*` on the app's own origin and forwards to identity server-side,
+which is the real fix. The `location /v1/` block in `e2e/edge.conf` was
+**deleted**, and that deletion is the assertion: nginx used to answer `/v1/*`
+itself, so leaving it in place would have kept the stack green while the BFF was
+never exercised at all. The stack now measures the product rather than the
+harness's workaround. nginx remains only because a browser still needs one origin
+and Compose gives it two containers.
 
 ### What the specs assert
 
@@ -576,9 +612,14 @@ Deliberately absent, by packet boundary rather than oversight:
   doing both at once makes neither reviewable.
 - Playwright E2E suite (signup, login, MFA, invites, checkout) against the
   compose stack — PLAN.md §3 puts its birth in Phase 2.
-- CORS configuration on identity for a cross-origin browser. The client sends
-  no credentials cross-origin, so identity has to allow the origin before any of
-  this runs against a real service.
+- **CORS on identity, and the finding that it is not needed.** The browser is
+  same-origin now, so the question is closed rather than outstanding: no
+  `Access-Control-*` header was added to identity, and none should be. A
+  permissive policy would let every origin on the internet call identity with a
+  bearer token it stole from anywhere else. If a *different* deployment shape ever
+  needs one — a native client, a customer integrating from their own origin — that
+  is a narrow, allow-listed decision with a reason per origin, and it belongs to
+  identity, not to this app.
 - **A theme toggle.** Dark mode is `prefers-color-scheme` only. A toggle needs a
   persisted choice and a flash-free first paint; the tokens are structured for
   one, and `tokens.css` is where it lands.

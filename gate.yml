@@ -43,7 +43,7 @@ gate:
   # runner with an empty cache and a cold registry connection is minutes. A warm
   # run of this gate — node_modules present, npm cache warm — measured 79s end
   # to end on 2026-09-30 (`real 79.02s`), of which `npm ci` was 11s and vitest
-  # 7.8s and the rest the static checks and their 39-breakage self-test. A
+  # 7.8s and the rest the static checks and their 42-breakage self-test. A
   # budget tight enough to be a bug detector would be a flake generator on the
   # first CI run of the day, and a timeout that fires on a cold cache is
   # `gate.timeout`, which reads as "the gate hung" and is really "the budget
@@ -230,6 +230,45 @@ gate:
     #   * 4 in `src/app/login/page.test.tsx` — the "Forgot your password?"
     #     affordance and the changed-password arrival.
     #
+    # It is 662 today, raised by the BFF packet: 628 -> 662, a +34 in two new
+    # files. Worth saying which, for the same reason as the +5 above — a floor
+    # that goes up with no account of what it bought is a floor nobody trusts:
+    #
+    #   * 31 in `src/lib/upstream.test.ts`, which is the security argument for
+    #     the whole packet: the destination cannot be chosen by the caller (Host,
+    #     X-Forwarded-Host, `?url=`, an absolute URL in a segment), the allow-list
+    #     refuses identity's other eight routes before an address is contacted, a
+    #     wildcard segment is value-matched so traversal is inexpressible, the
+    #     cookie's `__Host-` attributes survive byte for byte with no `Domain`
+    #     added, two `Set-Cookie` headers stay two, no `Access-Control-*` is ever
+    #     emitted, a 401 and a 422 pass through rather than becoming a 200, a
+    #     transport failure names no address, and the body ceiling refuses before
+    #     the read. Four of these were proved able to fail — see the red proofs
+    #     recorded in `upstream.ts`'s header — because a check that has only ever
+    #     been green has verified nothing;
+    #   * 1 in `src/app/v1/[...path]/route.test.ts` for the handler's own
+    #     contract, plus the two build-level bundle assertions that run only when
+    #     `.next/static` exists and which are counted as skipped otherwise. Those
+    #     two are the only place in this repository that can see what `next build`
+    #     emits, and they assert that no `NEXT_PUBLIC_` name and no upstream
+    #     hostname reaches a client chunk.
+    #
+    # NOTHING IN THIS FILE SKIPS, and that is not an accident. The two
+    # build-level cases in `route.test.ts` were first written to run only when
+    # `.next/static` already existed, and this floor is what caught it: with two
+    # skips, vitest prints `Tests  662 passed | 2 skipped (664)`, and the `suite`
+    # proof's negative lookahead — `[ ]+passed(?![ ]*\|)` — refuses exactly that
+    # line. The gate reported `gate.proof-missing` and was RIGHT to: a check that
+    # silently does not run on a fresh clone is a check that has verified nothing
+    # on that machine. The fix was to make the build unconditional rather than to
+    # loosen the pattern, and the cost is one `next build` on a run that did not
+    # need it. `next build` is incremental against an existing `.next`, so a warm
+    # run is seconds.
+    #
+    # That is the rule this repository already had, meeting a packet that tried to
+    # route around it. The `\|` is not a formatting detail in the summary line; it
+    # is the gate asking whether anything was quietly not run.
+    #
     # What this packet did NOT add, on purpose: nothing about TLS, multi-host
     # rolling deploys or a CDN. Those are decisions rather than tests, and a test
     # that asserts a decision is a test that outlives the decision.
@@ -243,11 +282,11 @@ gate:
     # is a thing a human has to remember until MD12's machinery lands).
     - id: suite
       match: '^[ ]*Tests[ ]+([0-9]+)[ ]+passed(?![ ]*\|)'
-      minimum: 628
+      minimum: 662
     # The tally `tests/validate-ci.sh` prints, which is the second half of this
     # gate: the checks that the tree still has the shape CI assumes — one
     # runtime pin, `npm ci` and not `npm install`, the gate command, the
-    # end-to-end tier's shape, and now the deployment story's shape. 39 is this machine's count.
+    # end-to-end tier's shape, and now the deployment story's shape. 41 is this machine's count.
     #
     # NO ESCAPE TOLERANCE HERE, and the difference is measured rather than
     # assumed. This line is a bash `printf` in `tests/validate-ci.sh` (line 1039),
@@ -276,11 +315,11 @@ gate:
     # pretend otherwise.
     - id: ci-shape-checks
       match: '^([0-9]+) passed, [0-9]+ failed, [0-9]+ skipped$'
-      minimum: 39
-    # And the self-test, which is what makes the 39 above load-bearing: 39
+      minimum: 41
+    # And the self-test, which is what makes the 41 above load-bearing: 42
     # throwaway copies of the tree, each broken one way, each asserted to go
-    # red. A gate that runs the 39 checks but silently stopped proving they can
-    # fail would still print `39 passed` — this is the line that says the
+    # red. A gate that runs the 41 checks but silently stopped proving they can
+    # fail would still print `41 passed` — this is the line that says the
     # rubber stamp was pressed.
     #
     # Also a bash `printf` in the same file (line 1030) and also plain by
@@ -291,7 +330,7 @@ gate:
     # colon.
     - id: check-self-test
       match: '^self_test: ([0-9]+) breakages'
-      minimum: 39
+      minimum: 42
   # NOT PROVED, and named here rather than left to be discovered: a proof is a
   # line of output. `484 passed` proves 484 tests ran; it does not prove the
   # tests touched identity, because they do not — the identity and billing

@@ -38,8 +38,9 @@
 #
 #   1. `healthcheck.path: /readyz`, not `/up`.
 #   2. NO `accessories:` BLOCK AT ALL — no postgres, no backup.
-#   3. `builder.args` carries the two service addresses.
-#   4. `env` carries nothing at all, on purpose.
+#   3. `env.clear` carries the two service addresses, at RUN time.
+#   4. `builder.args` IS GONE — the BFF made it unnecessary, and keeping it
+#      would put a service address back in the browser bundle.
 #   5. `builder.cache` is kept, but nothing in CI publishes an image yet.
 #
 # Each one is parlor's own fact and each is argued at the line it is on, so a
@@ -47,37 +48,49 @@
 # differences rather than a fork.
 #
 # ---------------------------------------------------------------------------
-# AND THE ONE THING THAT MAKES A DEPLOY OF THIS FILE NOT YET SERVE A SIGN-IN
+# AND HOW A DEPLOY OF THIS FILE NOW SERVES A SIGN-IN
 # ---------------------------------------------------------------------------
 #
-#   This config is correct in shape and cannot complete a sign-in against a
-#   deployed identity, and the reason is measured rather than suspected.
+#   This section used to say the opposite, and the change is the whole of the
+#   BFF packet. The argument it made was measured, not suspected:
 #
-#   `src/lib/identity.ts` fetches from the BROWSER, so the caller of identity is
-#   a person on `parlor`'s origin. identity serves no CORS headers at all — there
-#   is no `Access-Control-Allow-*` anywhere in `identity/internal/`, and
-#   `OPTIONS /v1/session` answers 405 because the route implements POST and a
-#   preflight is not that. So with `NEXT_PUBLIC_IDENTITY_URL` pointing at
-#   identity's own address, the preflight fails, the response is unreadable, and
-#   `/login` renders "Something went wrong. Try again."
+#   `src/lib/identity.ts` fetched from the BROWSER, at a `NEXT_PUBLIC_IDENTITY_URL`
+#   that `next build` inlined into the client bundle, so the caller of identity
+#   was a person on `parlor`'s origin. identity serves no CORS headers at all —
+#   there is no `Access-Control-Allow-*` anywhere in `identity/internal/` — so
+#   the preflight failed, the response was unreadable, and `/login` rendered
+#   "Something went wrong. Try again." kamal-proxy could not paper over it
+#   because it routes by hostname rather than by path.
 #
-#   This is the first defect the end-to-end tier found, and the unit suite
-#   cannot see it: every test injects a stub transport and opens no socket. The
-#   end-to-end stack works around it with nginx — see `e2e/edge.conf`, which
-#   states the whole argument — and nginx there is NOT a cafaye service, so
-#   nothing in this file can call it.
+#   THE FIX IS `src/app/v1/[...path]/route.ts`. The browser now calls
+#   `/v1/session` on `parlor`'s own origin and that route handler forwards it to
+#   identity from the server. Same-origin needs no CORS header anywhere, which
+#   is why the alternative — permissive CORS on identity — was refused: it would
+#   have let every origin on the internet call identity with a bearer token it
+#   stole from anywhere else, solving a deployment-topology problem by weakening
+#   the one service that does not have the problem. No `Access-Control-*` header
+#   was added to identity, and none is emitted here either.
 #
-#   kamal-proxy cannot do the same job: it routes by hostname, not by path, so
-#   one hostname cannot send `/v1/*` to identity and everything else to parlor.
-#   There are exactly two real fixes and neither is in this repository: identity
-#   grows a CORS policy, or parlor grows a same-origin BFF route in front of
-#   identity — the `guard` packet, which is also where the session token moves
-#   out of `localStorage` (README, "Sessions").
+#   WHAT THAT BUYS THIS FILE, concretely, and it is not only correctness:
 #
-#   Recorded under CHANGELOG "Known gaps" as DECISION NEEDED. It is written down
-#   here rather than left for a launch to discover, because a green deploy that
-#   serves a broken sign-in is the exact failure a deploy story is supposed to
-#   prevent.
+#   * The two addresses moved from `builder.args` to `env.clear`, so they are
+#     read at RUN time. One image now serves every environment. Previously a
+#     wrong or missing build arg produced a build that exits 0 and an app
+#     pointed at `localhost`; a missing env var produces a container that logs
+#     nothing wrong and refuses sign-in, which is a failure an operator can see.
+#   * The browser bundle no longer contains the address of identity at all. A
+#     value the browser can read is a value the browser can change, and for a
+#     forwarder that is the difference between a fixed destination and an
+#     attacker's. `src/app/v1/[...path]/route.test.ts` asserts this against the
+#     BUILT client chunks, not against the source.
+#
+#   The forwarding is not an open proxy, and that is enforced rather than
+#   intended: `src/lib/upstream.ts` holds an allow-list of the twenty-two routes
+#   the two clients call, rebuilds the upstream path from that list rather than
+#   forwarding the caller's bytes, and reads its two destinations from the
+#   environment at request time. identity serves thirty routes; the eight this
+#   app does not call — token introspection, the MFA routes, API keys, OIDC
+#   clients, email changes — are refused before an address is contacted.
 <%
 # WHY ERB, AND WHY ONLY FOR THESE VALUES.
 #
@@ -135,8 +148,9 @@ registry    = ENV.fetch("KIT_REGISTRY", "ghcr.io")
 web_host    = require.call("KIT_WEB_HOST")
 app_domain  = require.call("KIT_APP_DOMAIN")
 
-# parlor's two, and they are here rather than nowhere because of what they ARE,
-# not because there is nowhere else to put them. See `builder.args` below.
+# parlor's two. They are still here rather than nowhere because of what they ARE,
+# and they now land in `env.clear` at RUN time instead of in `builder.args` at
+# build time. See the section header above and `env:` below.
 identity_url = require.call("KIT_IDENTITY_URL")
 billing_url  = require.call("KIT_BILLING_URL")
 %>
@@ -253,41 +267,56 @@ deploy_timeout: 180
 # credential, ever. `secret` is the list of NAMES whose VALUES come from
 # `.kamal/secrets` on the operator's machine.
 #
-# BOTH LISTS ARE EMPTY, AND THAT IS DIFFERENCE 4 OF 5. Read off the code rather
-# than assumed: the only two environment variables this application reads are
-# `NEXT_PUBLIC_IDENTITY_URL` (`src/lib/identity.ts`, `identityBaseUrl()`) and
-# `NEXT_PUBLIC_BILLING_URL` (`src/lib/billing.ts`, `billingBaseUrl()`). There is
-# no third.
+# `clear` CARRIES THE TWO SERVICE ADDRESSES, AND THAT IS DIFFERENCE 3 OF 5. This
+# block was empty, and the paragraph that said why was correct at the time and is
+# now history. Kept, because the reasoning is what makes the new arrangement
+# legible:
 #
-# Those two cannot be set here even in principle, and that is the whole of what
-# "Next is a Node service" means for a deploy config. Next INLINES every
-# `NEXT_PUBLIC_*` into the client bundle at BUILD time: `process.env
-# .NEXT_PUBLIC_IDENTITY_URL` is text-substituted in the emitted JavaScript before
-# the image exists. Setting it at run time — with `env.clear` here, with
-# `docker run -e`, with anything — changes nothing, because by then the string is
-# already inside a bundle in the image. So they belong in `builder.args`, which
-# is difference 3, and listing them here would be a line that reads like it
-# configures the app and configures nothing.
+# The two variables are `IDENTITY_URL` and `BILLING_URL`, read by
+# `src/app/v1/[...path]/route.ts` at request time. They were
+# `NEXT_PUBLIC_IDENTITY_URL` and `NEXT_PUBLIC_BILLING_URL`, read by the two
+# browser clients, and the `NEXT_PUBLIC_` prefix is why they could not be set
+# here: `next build` text-substitutes every `NEXT_PUBLIC_*` into the client bundle
+# BEFORE the image exists, so setting one at run time changes nothing — the string
+# is already inside a file. That is the whole of what "Next is a Node service"
+# means for a deploy config, and it is why they used to have to be `builder.args`.
 #
-# They are also not credentials, so they are not names in `secret`. An address is
-# an address; `docker inspect` prints a build arg in full either way, so moving
-# them to `.kamal/secrets` would cost an operator a copy-paste and buy no
-# privacy.
+# They do not have the prefix any more, and that is the BFF's doing rather than a
+# renaming. The browser no longer knows where identity is: it calls `/v1/session`
+# on this app's origin and `src/app/v1/[...path]/route.ts` decides where that
+# goes, on the server, where the variable is read at request time. So the address
+# is an ordinary environment variable and belongs exactly where an ordinary
+# environment variable belongs.
 #
-# WHAT WOULD GO HERE, and is deliberately absent. `SECRET_KEY_BASE`'s analogue
-# does not exist: this app signs nothing and mints no credential, so there is no
-# master key, no token-signing key and no session secret to rotate. The session
-# token it does hold is identity's, arrives from identity, and lives in
-# `localStorage` — a position README, "Sessions", calls a deliberate temporary
-# one. When the BFF lands and a cookie needs signing, THAT is the packet that
-# adds the name here, and it adds it because a code change made it necessary
-# rather than because a template had a slot for it.
+# THE CONSEQUENCE IS WORTH THE MOVE ON ITS OWN. One image now serves every
+# environment. Before, the build arg made the image environment-specific, and a
+# wrong or missing one produced a build that exits 0 and an app pointed at
+# `localhost` — the failure mode `docker build --build-arg` for an undeclared
+# name is only a WARNING about. Now a missing variable is a container that
+# refuses sign-in and says so, which is a failure an operator can act on.
 #
-# The empty lists are written out rather than the key omitted, because an absent
-# `env:` and an empty one are the same document to kamal and a different question
-# to a reader, and only one of them has an answer recorded next to it.
+# They are not credentials, so they are not names in `secret`. An address is an
+# address; `docker inspect` prints an env var in full either way, so moving them
+# to `.kamal/secrets` would cost an operator a copy-paste and buy no privacy.
+#
+# WHAT WOULD GO IN `secret`, and is deliberately absent. `SECRET_KEY_BASE`'s
+# analogue does not exist: this app signs nothing and mints no credential, so
+# there is no master key, no token-signing key and no session secret to rotate.
+# The session token it does hold is identity's, arrives from identity, and lives
+# in `localStorage` — a position README, "Sessions", calls a deliberate temporary
+# one, and the BFF has now made the stronger position possible without making it
+# necessary. The cookie this app relays is identity's own `__Host-session`,
+# forwarded byte for byte and never re-signed, so there is nothing here to sign
+# and nothing that would be better for being signed. THAT is what retiring the
+# `localStorage` half is for, and it is the guard packet's work.
+#
+# `secret` is written out as an empty list rather than the key omitted, because
+# an absent `env.secret` and an empty one are the same document to kamal and a
+# different question to a reader.
 env:
-  clear: {}
+  clear:
+    IDENTITY_URL: <%= identity_url %>
+    BILLING_URL: <%= billing_url %>
   secret: []
 
 # NO ACCESSORIES BLOCK. NOT OMITTED BY ACCIDENT — READ THIS.
@@ -344,32 +373,28 @@ registry:
 
 builder:
   arch: arm64
-  # THE TWO SERVICE ADDRESSES, AND WHY A NODE/Next DEPLOYMENT CANNOT PUT THEM
-  # ANYWHERE ELSE. Difference 3 of 5, and the one that makes this deploy actually
-  # reach the right services.
+  # NO `args:` BLOCK, AND THAT IS DIFFERENCE 4 OF 5.
   #
-  # `next build` substitutes every `NEXT_PUBLIC_*` reference in the source with
-  # its literal value, so the value has to exist when the image is BUILT or it is
-  # not going to be anywhere: the alternative is a bundle carrying
-  # `undefined`, and an app that quietly talks to `localhost` in production. The
-  # Dockerfile documents the same fact at its own `ARG`, and
-  # `tests/validate-ci.sh` fails the gate if the names in this block and the
-  # `ARG`s in the Dockerfile stop being the same two — because a rename on one
-  # side is invisible on the other: `docker build --build-arg` for an undeclared
-  # name is a WARNING, not an error, so the image builds and ships an app
-  # pointed at a default.
+  # It used to carry the two service addresses, and the comment above it argued
+  # at length why they could not go anywhere else: `next build` substitutes every
+  # `NEXT_PUBLIC_*` into the client bundle, so the value had to exist when the
+  # image was BUILT or the bundle would carry a default and the app would quietly
+  # talk to `localhost` in production.
   #
-  # These are the fleet's OWN defaults in the file, on purpose and against the
-  # obvious instinct to hide them: `DEFAULT_IDENTITY_URL = "http://localhost:8080"`
-  # and `DEFAULT_BILLING_URL = "http://localhost:3000"` (src/lib/identity.ts,
-  # src/lib/billing.ts). A deploy that renders without them produces a working
-  # image with a broken app, and this file says what they are rather than letting
-  # the Dockerfile's `ARG` defaults answer for it. `kamal` redacts build-arg
-  # VALUES in its own output, which costs nothing here: these are addresses, and
-  # this file is not where anyone reads them back.
-  args:
-    NEXT_PUBLIC_IDENTITY_URL: <%= identity_url %>
-    NEXT_PUBLIC_BILLING_URL: <%= billing_url %>
+  # Every claim in that argument was true and none of it applies any more, because
+  # the two variables are no longer `NEXT_PUBLIC_*`. The BFF moved the browser's
+  # traffic behind this app's own origin, so nothing in the bundle needs to know
+  # where identity is, and the addresses are ordinary run-time variables in
+  # `env.clear` — see the paragraph there, which is the longer version of this.
+  #
+  # The argument is kept in this repository rather than deleted because it is the
+  # reason a reviewer should be suspicious if a `NEXT_PUBLIC_*` service address
+  # ever reappears: the failure it describes is silent, and this is the note that
+  # says what it looked like.
+  #
+  # `arch` below is kit's value and the one value here an operator on an amd64
+  # host has to change.
+  #
   # Built and pushed, the server only pulls: building on the host means the
   # build's peak memory competes with the running service, which on a small box is
   # an OOM during a deploy. `arch` is not optional — kamal 2.12.0 refuses the

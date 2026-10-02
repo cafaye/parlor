@@ -1,9 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
-  DEFAULT_BILLING_URL,
+  BILLING_BASE_URL,
   BillingError,
-  billingBaseUrl,
   createBillingClient,
   isCustomer,
   isPlan,
@@ -109,13 +108,11 @@ afterEach(() => {
 });
 
 describe("base url", () => {
-  it("defaults to the compose stack", () => {
-    expect(billingBaseUrl()).toBe(DEFAULT_BILLING_URL);
-  });
-
-  it("reads the environment at call time, and trims trailing slashes", () => {
-    vi.stubEnv("NEXT_PUBLIC_BILLING_URL", "https://billing.example.com/");
-    expect(billingBaseUrl()).toBe("https://billing.example.com");
+  it("is the app's own origin, and carries no address in the bundle", () => {
+    // The empty string is the point rather than a placeholder: a relative URL
+    // is same-origin by construction, and there is no environment variable a
+    // browser could read and change. See `BILLING_BASE_URL`.
+    expect(BILLING_BASE_URL).toBe("");
   });
 
   it("does not double the slash when the base url ends with one", async () => {

@@ -35,38 +35,44 @@ RUN npm ci --include=dev
 FROM base AS builder
 WORKDIR /app
 
-# Next inlines NEXT_PUBLIC_* into the client bundle at BUILD time, so the value
-# has to be here or it is not going to be anywhere: setting it later, in
-# `docker run -e`, changes nothing because the string is already in the
-# JavaScript. Verified by grepping the built chunk for this value.
+# NO BUILD ARGS, AND THAT IS THE BFF.
 #
-#   docker build --build-arg NEXT_PUBLIC_IDENTITY_URL=https://identity.example.com .
+# This stage used to declare two:
 #
-# The default is the compose-stack address, which is what a local build wants.
+#   ARG NEXT_PUBLIC_IDENTITY_URL=http://localhost:8080
+#   ENV NEXT_PUBLIC_IDENTITY_URL=$NEXT_PUBLIC_IDENTITY_URL
+#   ARG NEXT_PUBLIC_BILLING_URL=http://localhost:3000
+#   ENV NEXT_PUBLIC_BILLING_URL=$NEXT_PUBLIC_BILLING_URL
 #
-# BOTH ARGs, AND NOT ONE. `NEXT_PUBLIC_BILLING_URL` was missing until the deploy
-# packet, and the way it was missing is the argument for the check that now holds
-# this file to config/deploy.yml: `docker build --build-arg` for a name this
-# Dockerfile does not declare is a WARNING, not an error. So a caller could pass
-# `--build-arg NEXT_PUBLIC_BILLING_URL=https://billing.example.com`, read the
-# successful exit code, and ship an image whose billing client is the compiled-in
-# default — `http://localhost:3000`, which is this app's own port, so the billing
-# screens would have asked parlor to talk to itself. Nothing about that build
-# looks wrong.
+# with a long argument for why they could not be anything else. The argument was
+# right, and the reason it no longer applies is this file's history in one
+# sentence: `next build` text-substitutes every `NEXT_PUBLIC_*` into the client
+# bundle, so a value set at RUN time is not a later value, it is no value at all,
+# and a build that omitted one shipped an app talking to `localhost` while
+# exiting 0. That failure was silent, which is the part worth keeping.
 #
-# The defaults below are the code's own (`DEFAULT_IDENTITY_URL` in
-# `src/lib/identity.ts`, `DEFAULT_BILLING_URL` in `src/lib/billing.ts`), written
-# out so the file says what an unparameterised build produces.
+# They are gone because the browser no longer needs to know where identity is.
+# `src/app/v1/[...path]/route.ts` answers `/v1/*` on this app's own origin and
+# forwards to identity from the server, where the address is an ordinary variable
+# read at request time. So:
 #
-# WHY THESE CANNOT BE ENV VARS INSTEAD, because Kamal's `env.clear` looks like the
-# natural home for them and is not: Next substitutes `NEXT_PUBLIC_*` at build
-# time, so a run-time value is not a later value, it is no value at all. They
-# arrive as `builder.args` in `config/deploy.yml`; `tests/validate-ci.sh` fails
-# the gate when the names here and the names there stop being the same two.
-ARG NEXT_PUBLIC_IDENTITY_URL=http://localhost:8080
-ENV NEXT_PUBLIC_IDENTITY_URL=$NEXT_PUBLIC_IDENTITY_URL
-ARG NEXT_PUBLIC_BILLING_URL=http://localhost:3000
-ENV NEXT_PUBLIC_BILLING_URL=$NEXT_PUBLIC_BILLING_URL
+#   * `IDENTITY_URL` and `BILLING_URL` are declared in `config/deploy.yml` under
+#     `env.clear` and arrive in the RUNNER stage's environment. No ARG, no ENV,
+#     nothing at build time.
+#   * ONE IMAGE SERVES EVERY ENVIRONMENT. The build is no longer
+#     environment-specific, which is a real improvement and not only a
+#     consequence: a wrong build arg used to produce a working image and a broken
+#     app, and a missing variable now produces a container that refuses sign-in
+#     and says so.
+#   * The client bundle contains no service address at all.
+#     `src/app/v1/[...path]/route.test.ts` asserts that against the BUILT chunks
+#     in `.next/static`, not against this file, because this file is not what the
+#     browser downloads.
+#
+# If a `NEXT_PUBLIC_*` service address ever reappears here, the BFF has been
+# bypassed and every claim above is void: a value the browser can read is a value
+# the browser can change, and for a forwarder that is the difference between a
+# fixed destination and an attacker's.
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .

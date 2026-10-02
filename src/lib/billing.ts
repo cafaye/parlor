@@ -34,9 +34,6 @@
 
 import { isMoney, type Money } from "@/lib/money";
 
-/** Where billing runs when nothing says otherwise: the compose stack. */
-export const DEFAULT_BILLING_URL = "http://localhost:3000";
-
 /** The interval a plan bills on. A one-time plan never recurs. */
 export type Interval = "month" | "year" | "one_time";
 
@@ -169,26 +166,32 @@ export class BillingError extends Error {
   }
 }
 
-/** Reads the service address at call time so the env var is testable. */
-export function billingBaseUrl(): string {
-  const configured = process.env.NEXT_PUBLIC_BILLING_URL?.trim();
-  return configured ? configured.replace(/\/+$/, "") : DEFAULT_BILLING_URL;
-}
+/**
+ * The origin every call in this file is made against.
+ *
+ * The empty string, for the same reason and with the same trade as identity's
+ * (`src/lib/identity.ts`): a relative URL is same-origin by construction, and
+ * billing's address is a server-only variable that is not in this bundle.
+ */
+export const BILLING_BASE_URL = "";
 
 /**
  * The browser transport.
  *
- * `credentials: "omit"`, the same reasoning as identity's: a cross-origin API
- * call whose authority is the header, and an ambient cookie would add a second
- * one that nobody here manages.
+ * `credentials: "same-origin"`, and here the cookies are the point rather than a
+ * side effect. billing authenticates nobody — its contract declares
+ * `security: []` — so the right value is the one that sends nothing and can be
+ * widened deliberately if billing ever grows a session. `"omit"` would also have
+ * been correct; `"same-origin"` is chosen so the two clients state the same
+ * posture, and a reader comparing them is reading one decision rather than two.
  */
 const fetchTransport: BillingTransport = async ({ url, method, headers, body }) =>
-  fetch(url, { method, headers, body, credentials: "omit" });
+  fetch(url, { method, headers, body, credentials: "same-origin" });
 
 export function createBillingClient(
   options: { baseUrl?: string; transport?: BillingTransport } = {},
 ): BillingClient {
-  const base = (options.baseUrl ?? billingBaseUrl()).replace(/\/+$/, "");
+  const base = (options.baseUrl ?? BILLING_BASE_URL).replace(/\/+$/, "");
   const transport = options.transport ?? fetchTransport;
 
   return {

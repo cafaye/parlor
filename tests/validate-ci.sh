@@ -190,6 +190,28 @@ found_fixed() {
   grep -F "$1" || true
 }
 
+# Prints a file with its comments removed, so a check can ask about CODE.
+#
+# Three comment syntaxes, because this walks both TypeScript and the Dockerfile:
+# `/* … */` blocks (the ` * ` continuation lines of a JSDoc header are the reason
+# this exists — a `sed 's://.*::'` leaves them and reports a file that only
+# explains a change as having made it), `//` line comments, and the Dockerfile's
+# own `#` lines.
+#
+# A regex rather than a parser, and honestly so: a `/*` inside a string literal
+# would open a comment that never closes. Nothing in this repository writes one,
+# and the assertion that does not depend on this at all is the one over the BUILT
+# client chunks in `src/app/v1/[...path]/route.test.ts`.
+strip_comments() {
+  node -e '
+    let source = require("fs").readFileSync(0, "utf8");
+    source = source.replace(/\/\*[\s\S]*?\*\//g, "");
+    source = source.replace(/\/\/[^\n]*/g, "");
+    source = source.replace(/^[ \t]*#[^\n]*/gm, "");
+    process.stdout.write(source);
+  '
+}
+
 # --- the workflow exists, and calls kit at the path that resolves -----------
 if [ -f "$WF" ]; then
   ok "ci.yml exists"
@@ -787,18 +809,30 @@ else
   # internally consistent and the PAIR is wrong, which is the case a per-file
   # check cannot see — kit's own `kamal_test.sh` §2 exists for the same shape.
   #
-  # Read GENERICALLY, off the interpolated keys rather than off two hardcoded
-  # names: the day a third build arg arrives, this has already been asked the
-  # right question. And the emptiness is a FAILURE, because a check that greps a
-  # file for a key it did not find is exactly the check that passes on a config
-  # that stopped configuring anything.
+  # Read GENERICALLY, off the interpolated keys rather than off hardcoded names:
+  # the day a third build arg arrives, this has already been asked the right
+  # question.
+  #
+  # SCOPED TO THE `args:` BLOCK SINCE THE BFF, and the scoping is the point. The
+  # regex used to be `'^[[:space:]]+[A-Z][A-Z0-9_]*:[[:space:]]*<%='` over the whole
+  # file, which matched any interpolated environment variable anywhere — correct
+  # while the service addresses were the only interpolated values there were, and
+  # wrong the moment `env.clear` grew any, because a run-time variable is not a
+  # build arg and `docker build --build-arg` for it would be a warning. It failed
+  # on the BFF's own configuration, which is the measure of how much the broad
+  # pattern was carrying an assumption instead of a rule.
+  #
+  # Emptiness is still a FAILURE. A check that greps a file for a key it did not
+  # find is exactly the check that passes on a config that stopped configuring
+  # anything — and the way this stays honest while the BFF means there are no
+  # build args left is C2b below, which asks the positive question instead.
   deploy_args=$(printf '%s\n' "$DEPLOY_CODE" \
+    | awk '/^[[:space:]]*args:[[:space:]]*$/ { in_args = 1; next }
+           /^[^[:space:]]/ { in_args = 0 }
+           in_args' \
     | found '^[[:space:]]+[A-Z][A-Z0-9_]*:[[:space:]]*<%=' \
     | sed 's/^[[:space:]]*//; s/:.*//')
-  if [ -z "$deploy_args" ]; then
-    no "every builder arg in config/deploy.yml is a Dockerfile ARG" \
-      "no interpolated builder arg found; a Next service cannot set NEXT_PUBLIC_* at run time, so there has to be at least one"
-  else
+  if [ -n "$deploy_args" ]; then
     unmatched=""
     for arg in $deploy_args; do
       if [ -z "$(found "^ARG ${arg}=" <"$DOCKERFILE")" ]; then
@@ -811,6 +845,105 @@ else
       no "every builder arg in config/deploy.yml is a Dockerfile ARG" \
         "the Dockerfile declares no ARG for:$unmatched. --build-arg for an undeclared name is a warning, not an error, so the image would build and ship an app on its default address."
     fi
+  else
+    ok "config/deploy.yml declares no build arg, so there is no Dockerfile ARG to disagree with"
+  fi
+
+  # -------------------------------------------------------------------------
+  # C2b. THE SERVICE ADDRESSES ARE RUN-TIME VARIABLES, NOT BUILD ARGS.
+  #
+  # The positive question C2 stopped asking when `builder.args` emptied, and the
+  # one that keeps the BFF from being quietly undone. Its failure mode is the
+  # worst shape a deploy bug has: a `NEXT_PUBLIC_IDENTITY_URL` build arg is
+  # inlined into the client bundle, identity serves no CORS headers, and the
+  # result is a deploy that is green, healthy, and cannot complete a sign-in.
+  # Nothing in `kamal deploy` looks at it.
+  #
+  # So the invariant is asserted in both directions, because either half alone
+  # is satisfied by a config that has simply stopped deploying:
+  #
+  #   * the two addresses are in `env.clear`, interpolated, so they are read at
+  #     run time; and
+  #   * no `NEXT_PUBLIC_*` appears anywhere in the deploy config, the Dockerfile,
+  #     or `src/`, because every one of those would be a browser-readable copy of
+  #     a value the forwarder must own.
+  #
+  # The second is the load-bearing half. `tests/validate-ci.sh` and the vitest
+  # suite both assert it, from different directions: this reads the committed
+  # files, and `src/app/v1/[...path]/route.test.ts` reads the BUILT client chunks.
+  # A source check cannot see what `next build` emits, and a build check does not
+  # run on every commit.
+  # -------------------------------------------------------------------------
+  missing_clear=""
+  for name in IDENTITY_URL BILLING_URL; do
+    if [ -z "$(printf '%s\n' "$DEPLOY_CODE" | found "^[[:space:]]+${name}:[[:space:]]*<%=")" ]; then
+      missing_clear="$missing_clear $name"
+    fi
+  done
+  if [ -n "$missing_clear" ]; then
+    no "the service addresses are run-time env vars in config/deploy.yml" \
+      "env.clear declares no interpolated value for:$missing_clear. The BFF reads them at request time, so a build arg would put a service address back in the client bundle and a deployed sign-in would fail on CORS."
+  else
+    ok "the service addresses are run-time env vars in config/deploy.yml (IDENTITY_URL, BILLING_URL)"
+  fi
+
+  # `NEXT_PUBLIC_` in the files that decide what the browser downloads.
+  #
+  # COMMENTS ARE EXCLUDED, and the reason is the same one the vitest check gives
+  # at `src/app/v1/[...path]/route.test.ts`: this repository explains its own
+  # history in the headers of the files it changes, and a file that says why
+  # `NEXT_PUBLIC_IDENTITY_URL` is gone necessarily spells the name. A check that
+  # banned the word would ban the documentation of the fix along with the fix.
+  #
+  # `sed` removes `//` line comments and the Dockerfile's own `#` comments, which
+  # is enough for every file this walks and is honest about being a strip rather
+  # than a parse: a `NEXT_PUBLIC_` inside a string on a line with a `//` after it
+  # would be missed, and the build-level assertion in the vitest suite is what
+  # actually closes that gap rather than this approximation.
+  public_leaks=""
+  # `src` is resolved against `$ROOT` and NOT against the current directory, and
+  # the self-test is what caught the difference: the script never `cd`s into the
+  # sandbox, so a bare `find src` walked the REAL tree while `$DOCKERFILE` named
+  # the sandbox's — checking two different repositories and reporting the union.
+  # The breakage `a-service-address-back-in-the-bundle` went green through that,
+  # which is the outcome this script exists to make impossible.
+  for file in "$DOCKERFILE" $(find "$ROOT/src" -type f \( -name '*.ts' -o -name '*.tsx' \)); do
+    # The checker names the pattern it is checking for, by construction.
+    case "$file" in
+      *route.test.ts) continue ;;
+    esac
+    # Tested for EMPTINESS, not for exit status. `found` echoes the matches, so a
+    # bare `if found …` is true whenever the helper printed anything — which made
+    # every file in the tree a finding. This is the same trap AGENTS.md records for
+    # `grep -q` inside a pipeline, reached from the other direction.
+    #
+    # BLOCK COMMENTS MATTER HERE, and getting that wrong is what this loop found
+    # the first time round. `sed 's://.*::'` removes a line comment and nothing
+    # else, so the ` * ` continuation lines of a JSDoc header survive it — and
+    # three files whose entire content is an explanation of why the variable is
+    # gone were reported as using it.
+    #
+    # THE STRIP IS IN NODE, and not in `sed`, `perl` or `awk`, because this
+    # script's own header promises it needs "no tool but node and grep". Adding a
+    # fourth interpreter to remove a block comment would break that promise for
+    # every machine that runs the gate, and `perl` in particular is not on a slim
+    # CI image by default. Node is already required three times in this file.
+    #
+    # The strip is a regex, not a parse, and the limitation is the same one the
+    # vitest check records at `src/app/v1/[...path]/route.test.ts`: a `/*` inside
+    # a string would start a comment that does not end. No file this walks has
+    # one, and the check that actually closes the gap is the build-level
+    # assertion over `.next/static`, which reads emitted bytes rather than source.
+    matches=$(strip_comments <"$file" | found 'NEXT_PUBLIC_' || true)
+    if [ -n "$matches" ]; then
+      public_leaks="$public_leaks $file"
+    fi
+  done
+  if [ -z "$public_leaks" ]; then
+    ok "no NEXT_PUBLIC_ variable reaches the browser (Dockerfile, src/)"
+  else
+    no "no NEXT_PUBLIC_ variable reaches the browser (Dockerfile, src/)" \
+      "these files use a NEXT_PUBLIC_ variable in code, which next build inlines into the client bundle:$public_leaks. The BFF moved the browser same-origin; a service address in the bundle is a deployment that cannot sign in, and a forwarder whose destination the browser can read."
   fi
 fi
 
@@ -918,6 +1051,14 @@ self_test() {
     # about what follows.
     cp "$DEPLOY_CONFIG" "$SANDBOX/config/deploy.yml"
     cp "$DOCKERFILE" "$SANDBOX/Dockerfile"
+    # `src/`, because C2b walks it. Without it the sandbox has no client code for
+    # that check to look at, so `find src` finds nothing, the check passes on an
+    # empty tree, and every breakage that puts a service address back in a client
+    # module goes green — a self-test proving the opposite of what it claims.
+    # Copied whole and shallow: the check strips comments and greps, and a
+    # partial copy would make a finding depend on which files were seeded.
+    mkdir -p "$SANDBOX/src"
+    cp -R "$ROOT/src/." "$SANDBOX/src/"
     cp "$DEPLOY_RUNNER" "$SANDBOX/bin/deploy-config"
     chmod +x "$SANDBOX/bin/deploy-config"
     # The end-to-end tier's files, for the same reason the other four are here:
@@ -995,7 +1136,10 @@ self_test() {
     "an-unpinned-image|sed -i '' 's|image: nginx:1.27.4-alpine|image: nginx:latest|' '$SANDBOX/e2e/docker-compose.yml'" \
     "no-deploy-config|rm -f '$SANDBOX/config/deploy.yml'" \
     "an-accessory-in-the-deploy-config|printf '\naccessories:\n  postgres:\n    image: postgres:17-alpine\n' >>'$SANDBOX/config/deploy.yml'" \
-    "a-builder-arg-without-a-dockerfile-arg|sed -i '' 's|^    NEXT_PUBLIC_BILLING_URL: |    NEXT_PUBLIC_CDN_URL: |' '$SANDBOX/config/deploy.yml'" \
+    "a-builder-arg-without-a-dockerfile-arg|echo '  args:' >>'$SANDBOX/config/deploy.yml' && echo '    NEXT_PUBLIC_CDN_URL: <%= cdn_url %>' >>'$SANDBOX/config/deploy.yml'" \
+    "a-service-address-out-of-env-clear|sed -i '' 's|^    IDENTITY_URL: <%= identity_url %>||' '$SANDBOX/config/deploy.yml'" \
+    "a-service-address-back-in-the-bundle|echo 'const url = process.env.NEXT_PUBLIC_IDENTITY_URL;' >>'$SANDBOX/src/lib/identity.ts'" \
+    "a-service-address-back-in-the-dockerfile|echo 'ENV NEXT_PUBLIC_IDENTITY_URL=https://identity.example.com' >>'$SANDBOX/Dockerfile'" \
     "an-unpinned-node-base|sed -i '' 's|^FROM node:22.22.2-slim AS runner|FROM node:22-slim AS runner|' '$SANDBOX/Dockerfile'" \
     "the-deploy-tier-is-not-executable|chmod -x '$SANDBOX/bin/deploy-config'"
   do
