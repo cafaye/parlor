@@ -18,7 +18,24 @@
 
 name: parlor
 
-description: The cafaye web app: App Router shell, health surfaces, and the screens built against identity's and billing's live contracts.
+# QUOTED, AND THE QUOTES ARE LOAD-BEARING.
+#
+# The apostrophes are not the reason and the length is not the reason. The
+# reason is the colon after "web app": an unquoted YAML scalar may contain a
+# colon only when no space follows it, and "app:" is followed by a space, so
+# YAML reads the remainder as a nested mapping and the document stops there.
+#
+#   $ caf dev --dry-run
+#   caf: caf dev: INVALID cafaye.yml: invalid YAML: [21:14] mapping value is not
+#   allowed in this context
+#
+# This is the TEMPLATE, which makes it worse than a single broken service: every
+# repository generated from this file inherits the same manifest no cafaye tool
+# can read, and the whole point of the template is that the next service starts
+# from something that works. It survived because `tests/validate-ci.sh` reads
+# this file with `sed` line matching rather than a parser, so every one of its
+# checks can pass on a document that does not parse.
+description: "The cafaye web app: App Router shell, health surfaces, and the screens built against identity's and billing's live contracts."
 
 language: typescript
 

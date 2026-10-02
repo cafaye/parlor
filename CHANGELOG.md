@@ -339,6 +339,38 @@ All notable changes to parlor are recorded here. The format follows
 
 ### Fixed
 
+- **This template's `cafaye.yml` was not a YAML document, so no cafaye command
+  could read it — and every repository generated from this file inherited that.**
+  `description:` held an unquoted colon followed by a space ("The cafaye web
+  app: App Router shell"), which YAML reads as a nested mapping, and the document
+  stops there:
+
+      $ caf dev --dry-run
+      caf: caf dev: INVALID cafaye.yml: invalid YAML: [21:14] mapping value is
+      not allowed in this context
+
+  In a template this is worse than in a service. The whole point of the template
+  is that the next repository starts from something that works, and this one
+  shipped a manifest `caf dev`, `caf contract`, `caf deploy` and `caf env` all
+  refused to open.
+
+  It survived because **nothing in CI parses the manifest as YAML**. Every check
+  in `tests/validate-ci.sh` reads the file through `manifest_declares`, which is
+  `sed` matching `^name:` — a line pattern, not a parser — so a document that
+  does not parse passes every check it has. This repository was 40 passed,
+  0 failed against a manifest no tool could open.
+
+  The value is quoted, one check now parses the file, and that check is proven
+  able to go red: the self-test breakage `an-unquoted-colon-in-the-manifest`
+  reproduces this exact defect in the sandbox and fails. It is deliberately
+  narrow — an unquoted scalar containing `": "` or ending in `":"` — because a
+  check claiming to validate YAML without a YAML parser would be the same
+  false-green in a new place.
+
+  The same fix went into `site` in the same window (`cafaye/site@0aa7494`).
+  Both were unquoted sentences written by a person editing prose, which is the
+  argument for the check rather than for the quoting.
+
 - **`Callout` was unreachable from a Server Component, and the only reason the
   build was green was that no Server Component had asked for it yet.**
   `ConfirmDialog` and `Callout` shared `src/components/ui/feedback.tsx`, and the
