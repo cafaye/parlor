@@ -36,3 +36,35 @@ run = "./bin/deploy-config"
 [tasks.dev]
 description = "Next dev server"
 run = "npm run dev"
+
+[tasks.stack]
+# The whole local stack: parlor + identity + postgres + redis, brought up by
+# `caf dev` from `caf.dev.json`.
+#
+# `-registry caf.dev.json` is not optional. caf ships no catalog and says why in
+# its own package doc — "an image reference guessed by a CLI is a reference that
+# pulls the wrong thing" — so without this flag `caf dev` refuses the required
+# `identity` dependency and no stack starts at all.
+#
+# `-port 3000` publishes this service on the host, and the reason is in the
+# manifest rather than in taste. `cafaye.yml` declares no `exposes.api` (see the
+# comment there: this app ships no OpenAPI document, and inventing one would be
+# a second copy of the router), so `caf dev` cannot tell that a Next.js app
+# serves HTTP and leaves its host port unpublished. Without `-port`, caf prints
+# "parlor is up on no published port" — which is true, and useless, because the
+# browser cannot reach it. The container port is not this flag's business: caf
+# derives that from `language`, and only rewrites the host end.
+#
+# NOT the same thing as `mise run dev` (a bare Next server with no identity
+# behind it, so every auth route 502s) or `./bin/e2e` (the tier that proves
+# parlor and identity work together against real containers, on a throwaway
+# stack of its own).
+#
+# WHAT THIS TASK DOES NOT DO: it does not migrate. Migrations are a deploy step
+# in every cafaye service, by policy, so nothing in this stack migrates on boot.
+# Against the database caf provisions, a first `/register` therefore returns
+# `500 relation "users" does not exist` while `/readyz` reports healthy — both
+# are correct, and the fix is to run identity's migrations as their own step.
+# `./bin/e2e` runs them and is the tier that proves the integration.
+description = "The whole local stack via caf dev (parlor + identity + postgres + redis)"
+run = "caf dev -registry caf.dev.json -port 3000"
