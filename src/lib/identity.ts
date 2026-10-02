@@ -24,14 +24,34 @@
  *
  * 2. The transport is a parameter, not `fetch`. Every caller in this repo
  *    injects one — a stub in tests, the real one in the browser — so a test
- *    can never reach the network by accident, and a future BFF proxy is a
+ *    can never reach the network by accident, and the BFF proxy is a
  *    different transport rather than a rewrite of every screen.
+ *
+ * 3. The base URL is the app's OWN ORIGIN, and it is a constant rather than a
+ *    variable. The browser used to call identity directly at
+ *    `NEXT_PUBLIC_IDENTITY_URL`, which `next build` inlines into the client
+ *    bundle — and identity serves no CORS headers, so a deployed sign-in could
+ *    not complete. `src/app/v1/[...path]/route.ts` now forwards the same paths
+ *    to identity from the server, and every URL in this file is relative to this
+ *    origin. The address of identity is a server-only variable
+ *    (`process.env.IDENTITY_URL`) and is not in this bundle at all: a value the
+ *    browser can read is a value the browser can change, and for a forwarder
+ *    that is the difference between a fixed destination and an attacker's.
  */
 
 import { MAX_NAME_LENGTH, type Role } from "@/lib/roles";
 
-/** Where identity runs when nothing says otherwise: the compose stack. */
-export const DEFAULT_IDENTITY_URL = "http://localhost:8080";
+/**
+ * The origin every call in this file is made against.
+ *
+ * The empty string, deliberately: a relative URL resolved by `fetch` against the
+ * document is same-origin by construction, and there is nothing in the bundle
+ * that could say otherwise. The previous value was a compile-time constant read
+ * from the environment, which is a place a deployment mistake becomes a runtime
+ * failure nobody can see — a wrong build arg produces a page that loads, builds
+ * and renders its generic error rather than a build error.
+ */
+export const IDENTITY_BASE_URL = "";
 
 /**
  * Client-side mirror of `users.MinPasswordLength` in the identity service.
@@ -300,33 +320,39 @@ export class IdentityError extends Error {
   }
 }
 
-/** Reads the service address at call time so the env var is testable. */
-export function identityBaseUrl(): string {
-  const configured = process.env.NEXT_PUBLIC_IDENTITY_URL?.trim();
-  return configured ? configured.replace(/\/+$/, "") : DEFAULT_IDENTITY_URL;
-}
-
 /**
  * The browser transport.
  *
- * `credentials: "omit"` on purpose: this is a cross-origin API call whose
- * authority is the bearer token in the header, and an ambient cookie would add
- * a second one that nobody here is managing. Identity does set a session
- * cookie for same-origin callers; the BFF packet that moves parlor behind one
- * origin is where that becomes the browser's job.
+ * `credentials: "same-origin"`, and the value is the whole content of the
+ * change. It was `"omit"` because the call was cross-origin: a cookie set by
+ * another origin is unreachable from here, and an ambient one nobody manages is
+ * a second credential with no owner. Same-origin removes both reasons — the
+ * browser now owns the cookie, and identity's `__Host-session` travels with
+ * every request, which is what makes it a credential rather than a decoration.
+ *
+ * `"same-origin"` rather than `"include"` is deliberate. `include` would also
+ * send the cookie to a cross-origin destination, and the one property this
+ * arrangement is built on is that the browser never talks to another origin
+ * again. If a future change reintroduced a cross-origin call, `same-origin`
+ * would drop the cookie there — the failure would be a 401, which is visible.
+ *
+ * The bearer token is still sent, and `identity` still prefers it
+ * (`presentedToken` reads the header before the cookie). Both credentials are
+ * live; see README, "Sessions", for why the `localStorage` half is still here
+ * and which packet retires it.
  */
 const fetchTransport: Transport = async ({ url, method, headers, body }) =>
   fetch(url, {
     method,
     headers,
     body,
-    credentials: "omit",
+    credentials: "same-origin",
   });
 
 export function createIdentityClient(
   options: { baseUrl?: string; transport?: Transport } = {},
 ): IdentityClient {
-  const base = (options.baseUrl ?? identityBaseUrl()).replace(/\/+$/, "");
+  const base = (options.baseUrl ?? IDENTITY_BASE_URL).replace(/\/+$/, "");
   const transport = options.transport ?? fetchTransport;
 
   return {

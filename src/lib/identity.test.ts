@@ -1,12 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
-  DEFAULT_IDENTITY_URL,
+  IDENTITY_BASE_URL,
   MIN_PASSWORD_LENGTH,
   IdentityError,
   createIdentityClient,
   fieldErrorMessage,
-  identityBaseUrl,
   type Transport,
   type TransportRequest,
 } from "./identity";
@@ -96,28 +95,25 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  delete process.env.NEXT_PUBLIC_IDENTITY_URL;
 });
 
 describe("base url", () => {
-  it("defaults to the local identity service", () => {
-    expect(DEFAULT_IDENTITY_URL).toBe("http://localhost:8080");
+  it("is the app's own origin, and carries no address in the bundle", () => {
+    // The empty string is the point rather than a placeholder: a relative URL
+    // is same-origin by construction, and there is no environment variable a
+    // browser could read and change. `NEXT_PUBLIC_IDENTITY_URL` was inlined
+    // into the client bundle at build time, which is what made a deployed
+    // sign-in a cross-origin call identity refused to answer.
+    expect(IDENTITY_BASE_URL).toBe("");
   });
 
-  it("falls back to the default when the env var is unset", () => {
-    expect(identityBaseUrl()).toBe(DEFAULT_IDENTITY_URL);
-  });
+  it("builds every path relative to that origin", async () => {
+    const { transport, calls } = stubTransport(() => json(200, { id: "usr_1", email: CREDENTIALS.email }));
+    const client = createIdentityClient({ transport });
 
-  it("falls back to the default when the env var is blank", () => {
-    process.env.NEXT_PUBLIC_IDENTITY_URL = "   ";
+    await client.me("tok");
 
-    expect(identityBaseUrl()).toBe(DEFAULT_IDENTITY_URL);
-  });
-
-  it("uses NEXT_PUBLIC_IDENTITY_URL when it is set", () => {
-    process.env.NEXT_PUBLIC_IDENTITY_URL = "https://identity.cafaye.com";
-
-    expect(identityBaseUrl()).toBe("https://identity.cafaye.com");
+    expect(calls[0].url).toBe("/v1/me");
   });
 });
 

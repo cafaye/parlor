@@ -188,7 +188,7 @@ build() {
   log "building images (budget ${BUILD_TIMEOUT}s; a cold run builds three toolchains)"
   log "  identity  <- ../identity"
   log "  guard     <- ../guard"
-  log "  parlor    <- . (NEXT_PUBLIC_IDENTITY_URL is a build arg: Next inlines it)"
+  log "  parlor    <- . (no build args: the BFF reads IDENTITY_URL at run time)"
   log "  edge      <- nginx, a pinned image: see e2e/edge.conf for why it exists"
   local started elapsed status
   started=$(date +%s)

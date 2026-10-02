@@ -13,13 +13,15 @@
  * produced a version of this file that asserted things that are true for the
  * wrong reasons:
  *
- *   * **parlor does not call guard.** `parlor`'s browser client calls identity
- *     directly (`src/lib/identity.ts`, base URL from `NEXT_PUBLIC_IDENTITY_URL`),
- *     and guard's BFF surface answers `/auth/register`, `/auth/login`,
+ *   * **parlor does not call guard.** `parlor`'s own forwarder
+ *     (`src/app/v1/[...path]/route.ts`) sends the browser's calls to identity and
+ *     billing, and guard's BFF surface answers `/auth/register`, `/auth/login`,
  *     `/auth/logout` and `/auth/me` — four different paths with a cookie and no
  *     token in the body. There is no configuration in which one is a drop-in for
  *     the other, so there is no page in this app whose traffic passes through
- *     the gateway.
+ *     the gateway. (parlor's forwarder is same-origin and narrow; guard's is a
+ *     gateway with JWT verification and rate limits. Same word, different
+ *     service.)
  *   * **The session token cannot reach guard's `/v1/*`.** Those routes want an
  *     RS256 JWT verified against identity's JWKS. What the sign-in form gets is
  *     identity's opaque session token. There is no exchange for it: minting a

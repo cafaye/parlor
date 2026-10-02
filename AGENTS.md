@@ -132,9 +132,9 @@ in the repository. The format, the checker and the reasoning are `core`'s —
   fresh clone needs the registry once, and no Node is vendored. Both are
   enumerated with a `satisfy` command and what "unmet" looks like. A
   requirement nobody can demonstrate is worse than no requirement.
-- **The three `proof` floors are decrease-detectors, not budgets:** 377 vitest
-  tests, 35 `validate-ci.sh` checks, 34 self-test breakages. Adding a test means
-  raising `minimum: 377` in `gate.yml` in the same commit. `core` has
+- **The three `proof` floors are decrease-detectors, not budgets:** 662 vitest
+  tests, 41 `validate-ci.sh` checks, 42 self-test breakages. Adding a test means
+  raising `minimum: 662` in `gate.yml` in the same commit. `core` has
   `test_the_gate_floor_is_not_below_the_suite_core_claims_to_have` to force
   that; **this repository has no equivalent**, so it is a thing a human has to
   remember.
@@ -232,8 +232,13 @@ House rule (PLAN.md §3): write the test, watch it fail, then implement.
 `POST /v1/users`, `POST /v1/session`, `DELETE /v1/session`, `GET /v1/me`, the two
 password-reset routes under `/v1/password-resets` and the three verification
 routes under `/v1/email-verification(s)` (see "Recovery" and "Verification" below),
-and the ten tenancy routes under `/v1/accounts` and `/v1/invitations`. Base URL
-from `NEXT_PUBLIC_IDENTITY_URL` (default `http://localhost:8080`).
+and the ten tenancy routes under `/v1/accounts` and `/v1/invitations`. **The base
+URL is `""`** — same-origin. Every call goes to this app's own `/v1/*`, and
+`src/app/v1/[...path]/route.ts` forwards it to identity from the server. The
+service address is `IDENTITY_URL`, a server-only variable, and is **not in the
+client bundle**; do not reintroduce a `NEXT_PUBLIC_` prefix on it, because
+`next build` inlines that prefix and a value the browser can read is a value the
+browser can change.
 
 - **The tenancy shapes are transcribed from the service's handler, not from its
   OpenAPI document** — `identity/internal/httpapi/accounts.go`, because
@@ -278,8 +283,13 @@ from `NEXT_PUBLIC_IDENTITY_URL` (default `http://localhost:8080`).
 - **A guard against a double submit is a `useRef`, not `pending`.** The disabled
   button is a frame too late; a closure read of `pending` is stale in exactly
   the window where the second click lands.
-- The token in `localStorage` is a deliberate, temporary, weaker position — the
-  BFF packet moves it into an `HttpOnly` cookie. See README, "Sessions".
+- **The token in `localStorage` is still the credential this app exercises.** The
+  BFF made the `HttpOnly` cookie real — the transport is now
+  `credentials: "same-origin"` and `__Host-session` travels both ways — but
+  identity prefers the `Authorization` header over the cookie, so both are live
+  and the header is what is being used. Retiring the token is the guard packet's
+  work, and until it lands an XSS on this origin still reads it. See README,
+  "Sessions".
 
 ## Recovery
 
@@ -471,21 +481,82 @@ file says all five in its own header. The three worth carrying in your head:
   `kamal config` exits 0 and kamal's own proxy validator accepts a path the app
   does not serve, and every rollout is then torn back after `deploy_timeout` on a
   release that is otherwise fine.
-- **`NEXT_PUBLIC_*` is build-time and can never be runtime env.** Next
-  substitutes it into the client bundle, so a deploy config that put those two
-  addresses in `env.clear` would configure nothing. They are `builder.args`,
-  fed by two extra required variables (`KIT_IDENTITY_URL`, `KIT_BILLING_URL`) on
-  top of the five kit requires, and `tests/validate-ci.sh` fails the gate when a
-  builder arg and a Dockerfile `ARG` stop being the same name — because
-  `docker build --build-arg` for an undeclared name is a warning, not an error.
+- **`NEXT_PUBLIC_*` is build-time, and there are now no service addresses in
+  it.** Next substitutes that prefix into the client bundle, which is why the two
+  addresses used to be `builder.args` and could not be `env.clear` at all. The
+  BFF removed the reason for the prefix: the browser no longer needs to know
+  where the services are, so `IDENTITY_URL` and `BILLING_URL` are ordinary
+  run-time variables in `env.clear`, fed by two extra required variables
+  (`KIT_IDENTITY_URL`, `KIT_BILLING_URL`) on top of the five kit requires.
+  **One image now serves every environment**, which is a real gain and not only a
+  consequence — a missing build arg used to produce a working image and a broken
+  app, because `docker build --build-arg` for an undeclared name is a warning, not
+  an error. `tests/validate-ci.sh` now fails the gate on a `NEXT_PUBLIC_` name in
+  the Dockerfile or in `src/`, and `src/app/v1/[...path]/route.test.ts` asserts
+  against the **built** client chunks that no service address is in them.
 - **No accessories, no `DATABASE_URL`, no `config/kamal-backup.yml`.** parlor's
   state is identity's and billing's, over HTTP. The absence is argued in
   `config/deploy.yml` where the template would have put the postgres block,
   because an absence with no reason reads as an oversight and the next re-copy of
-  the template quietly fills it back in. **A deploy of that config still cannot
-  complete a sign-in** — the browser calls identity cross-origin and identity
-  serves no CORS headers, and kamal-proxy routes by hostname rather than by path,
-  so it cannot be papered over. CHANGELOG "Known gaps", DECISION NEEDED.
+  the template quietly fills it back in.
+- **A deploy of that config now completes a sign-in.** This used to be the first
+  thing under "known gaps". `src/app/v1/[...path]/route.ts` answers `/v1/*` on
+  this app's origin and forwards server-side, so the browser is same-origin and no
+  CORS header is needed anywhere. No `Access-Control-*` header was added to
+  identity to achieve it, and `src/lib/upstream.ts`'s header says why that was
+  the shortcut not taken.
+
+## The forwarder is not an open proxy
+
+`src/lib/upstream.ts` forwards a browser's `/v1/*` to identity or billing. It is
+the one place in this app that sends a request somewhere a caller named, so its
+properties are the security properties of the whole deployment. Read the header
+of that file before changing anything in it.
+
+- **One configured destination, read on the server.** The two addresses are
+  constructor parameters, from `process.env` at request time. There is no code
+  path that reads a destination from a header, a query string, a path segment or
+  a body. `Host`, `X-Forwarded-Host` and `?url=` are all ignored, and there are
+  tests that assert each of them by name.
+- **An allow-list, and the upstream path is REBUILT from it.** Twenty-two routes,
+  transcribed from the two clients. identity serves thirty; token introspection,
+  the MFA routes, API keys, OIDC clients, email changes and `/v1/probe/{id}` are
+  refused **before an address is contacted**. Because the path is rebuilt from
+  the table rather than forwarded as received, traversal, an absolute URL in a
+  segment and a doubled slash are not filtered — they are not expressible.
+- **Wildcard segments are value-matched.** `:accountId` and `:userId` must be
+  uuids. The router percent-decodes each segment before the handler sees it, so
+  `accounts/%2e%2e%2f%2e%2e` arrives as one segment reading `../../`; a check
+  that only counted positions would splice it into the upstream URL.
+- **Header allow-lists in both directions, never deny-lists.** A header this
+  file does not name cannot be a smuggling channel.
+- **`Set-Cookie` goes through `getSetCookie()`, never `get()`.** The second
+  returns values joined with ", ", which lands inside one cookie's `Expires` and
+  destroys both. The 202 MFA branch is the case that proves it matters.
+- **The cookie's attributes are never rewritten.** `__Host-` is a contract the
+  *browser* enforces: `Secure`, `Path=/`, and no `Domain`. Adding a `Domain` to
+  "make it work" is exactly what makes the browser reject the cookie, and
+  dropping the prefix would trade an enforced guarantee for a convention.
+  `SameSite=Lax` is what makes this CSRF-safe, and it works because the topology
+  is same-origin rather than because this app sets anything.
+- **The `__Host-` cookie needs HTTPS.** `Secure` means the browser stores it only
+  on an HTTPS origin. `proxy.ssl: true` gives production that; a plain-HTTP
+  deployment would silently lose the cookie, and the symptom is a session that
+  does not survive a reload rather than an error.
+- **Upstream failures stay failures.** Status and body pass through, so a 401
+  cannot render as a success. A transport failure answers 502 with a fixed body:
+  a fetch error message is `connect ECONNREFUSED 10.0.3.7:8080`, which is the
+  fleet's internal topology.
+- **`OPTIONS` is not exported and no `Access-Control-*` header is ever emitted.**
+  A same-origin request sends no preflight, so this endpoint is not a CORS
+  bypass, and there is a test that reads every response header name to prove it.
+
+`upstream.test.ts` has a section that calls every method on both clients and
+asks the table about each URL, so a route added to a client and not to the table
+is a red suite. **The red proofs have been run**: letting `X-Forwarded-Host`
+choose the destination, dropping the segment value checks, forwarding any
+`/v1/*` path, and collapsing upstream errors into a 200 each turn named tests
+red. A check that has only ever been green has verified nothing.
 
 ## Layout
 
@@ -495,13 +566,16 @@ src/app/            routes: page, login/, register/, forgot-password/,
                     accounts/, accounts/[accountId]/,
                     invitations/[token]/, billing/plans/, billing/customers/,
                     healthz/, readyz/,
+                    v1/[...path]/ — the BFF: the one origin, forwarding to
+                    identity or billing from the server,
                     providers.tsx — the client provider stack, mounted by layout
 config/deploy.yml   the Kamal configuration, copied from kit's template with
                     five differences. NO accessories key: parlor keeps no
                     database, and the reason is written where the template
-                    would have put the postgres block. `builder.args` carries the
-                    two `NEXT_PUBLIC_*` addresses because next inlines them at
-                    BUILD time, so they can never be runtime env
+                    would have put the postgres block. `env.clear` carries the
+                    two service addresses at RUN time; there are no
+                    `builder.args` at all, because a `NEXT_PUBLIC_*` address
+                    would be inlined into the browser bundle
 bin/deploy-config   the tier that runs the real kamal binary against the
                     rendered config. NOT in bin/prime — kamal and ruby are on
                     neither a CI runner nor a node-only checkout. Three-valued
@@ -512,6 +586,8 @@ e2e/                the whole-stack end-to-end tier: the compose topology, the
 src/lib/            identity.ts (identity contract), roles.ts (role vocabulary),
                     accounts.ts (tenancy queries), credentials.ts (what to check
                     before asking the service), money.ts, billing.ts,
+                    upstream.ts (the forwarder's allow-list and the only code that
+                    names a service address at run time),
                     billing-context.tsx, token-store.ts, auth.tsx (session)
 src/components/ui/  primitives: one per file, re-exported from index.ts
 src/components/shell/  session-aware chrome (header)

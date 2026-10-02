@@ -149,6 +149,109 @@ All notable changes to parlor are recorded here. The format follows
   correct. `./bin/e2e` runs the migrations and is the tier that proves the
   integration end to end.
 
+- **One origin: a browser on a deployed parlor can complete a sign-in, and the
+  fix is in the product rather than in a proxy setting.** The chain was verified,
+  not inferred. `src/lib/identity.ts` fetched from the BROWSER at
+  `NEXT_PUBLIC_IDENTITY_URL`, a value `next build` inlines into the client
+  bundle, so the caller of identity was a person on parlor's origin; `identity`
+  serves no `Access-Control-*` header anywhere in `identity/internal/`; and
+  `OPTIONS /v1/session` answers 405 because the route implements POST and a
+  preflight is not that. So the preflight failed, the response was unreadable,
+  and `/login` rendered "Something went wrong. Try again." on a stack that came
+  up green. kamal-proxy could not paper over it: it routes by HOSTNAME rather
+  than by path, so one hostname cannot send `/v1/*` to identity and everything
+  else to parlor.
+
+  - **`src/app/v1/[...path]/route.ts` is the one origin.** The browser now calls
+    `/v1/session` on parlor's own origin and the handler forwards it to identity
+    from the server. Same-origin needs no CORS header anywhere, which is the
+    whole of what makes a sign-in possible. `export const dynamic =
+    "force-dynamic"` is load-bearing and is asserted: without it Next treats a
+    `GET` handler with no dynamic input as a static route and answers it from a
+    file written at BUILD time, which would be a `/v1/me` frozen to whoever was
+    signed in when the image was built and served to everybody.
+  - **A route handler, not a `next.config.ts` rewrite**, and the reason is worth
+    recording because the rewrite is four lines. A rewrite is a string
+    substitution the framework performs before this app sees the request: it
+    cannot refuse a path (so `source: "/v1/:path*"` forwards identity's
+    introspection, MFA, API-key and OIDC-client routes too), it cannot choose
+    between two upstreams on the same prefix, and it cannot bound a body or drop
+    an unlisted header. The allow-list has to be code with tests on it.
+  - **`src/lib/upstream.ts` is the forwarder, and its header is the security
+    argument.** One configured destination read on the server at request time
+    (never from a header, a query string, a path segment or a body); an
+    allow-list of the twenty-two routes the two clients call, with identity's
+    other eight refused BEFORE an address is contacted; the upstream path
+    REBUILT from that table rather than forwarded as received, so traversal, an
+    absolute URL in a segment and a doubled slash are not filtered but
+    inexpressible; wildcard segments value-matched (a `:accountId` must be a
+    uuid, because the router percent-decodes `accounts/%2e%2e%2f%2e%2e` into a
+    single `../../` segment); header allow-lists in both directions rather than
+    deny-lists; a fixed-body 502 that never echoes `ECONNREFUSED 10.0.3.7:8080`;
+    and upstream statuses and bodies passed through, so a 401 cannot render as a
+    success. `upstream.test.ts` calls every method on both clients and asks the
+    table about each URL, so a route added to a client and not to the table is a
+    red suite. **Four red proofs were run and each named tests red**: letting
+    `X-Forwarded-Host` choose the destination, dropping the segment value checks,
+    forwarding any `/v1/*` path, and collapsing upstream errors into a generic
+    200.
+  - **The session cookie is real, and its attributes are stated rather than
+    assumed.** `identity` sets `__Host-session` — `Secure`, `HttpOnly`,
+    `SameSite=Lax`, `Path=/`, no `Domain` — and the `__Host-` prefix is a
+    contract the BROWSER enforces. The transport moved from `credentials:
+    "omit"` to `"same-origin"`, and the forwarder carries `Set-Cookie` back and
+    `Cookie` forward **byte for byte, never rewritten**: adding a `Domain` to
+    "make it work" is exactly what makes a browser reject the whole cookie, and
+    dropping the prefix would trade an enforced guarantee for a convention.
+    `getSetCookie()` is used rather than `get()`, because the latter returns
+    values joined with ", ", which lands inside one cookie's `Expires` and
+    destroys both — identity's 202 MFA branch is the case that proves it
+    matters. `SameSite=Lax` is what makes this CSRF-safe and it works because
+    the topology is same-origin, not because this app sets anything.
+  - **`NEXT_PUBLIC_IDENTITY_URL` and `NEXT_PUBLIC_BILLING_URL` are gone, and
+    they could not be replaced by the same names.** The two addresses are
+    `IDENTITY_URL` and `BILLING_URL`, read on the server at request time, and
+    `config/deploy.yml` moved them from `builder.args` to `env.clear`. **One
+    image now serves every environment** — a real gain and not only a
+    consequence, because a missing build arg used to produce a build that exits
+    0 and an app pointed at `localhost`. `src/app/v1/[...path]/route.test.ts`
+    asserts against the BUILT client chunks in `.next/static` that no
+    `NEXT_PUBLIC_` name and no upstream hostname is in them; a source check
+    cannot see what `next build` emits. `tests/validate-ci.sh` fails the gate on
+    a `NEXT_PUBLIC_` name in the Dockerfile or in `src/`, and the self-test
+    breaks the tree three new ways to prove it can fail.
+  - **No CORS header was added to `identity` to achieve any of this**, and the
+    argument is in `src/lib/upstream.ts`: `Access-Control-Allow-Origin: *` would
+    have made the browser call work in about four lines, and would also have
+    let every origin on the internet call identity with a bearer token it stole
+    from anywhere else — solving a deployment-topology problem by weakening the
+    one service that does not have the problem. The same reasoning is why
+    `OPTIONS` is not exported and the forwarder emits no `Access-Control-*`
+    header at all; a test reads every response header name to prove it. **If a
+    different deployment shape ever needs a policy — a native client, a customer
+    integrating from their own origin — that is a narrow, allow-listed decision
+    with a reason per origin, and it belongs to identity.**
+  - **`e2e/edge.conf`'s `location /v1/` block was DELETED.** nginx used to
+    answer `/v1/*` itself, which is why the stack was green while the browser
+    could not sign in. Leaving it would have kept the suite passing while the
+    BFF was never exercised at all, so its absence is now the assertion. The
+    `parlor` container's only identity address is `http://identity:8080` — a
+    compose-network name a browser cannot resolve — so a browser still calling
+    identity directly would fail this stack.
+  - **Billing goes through the same forwarder**, which is why `BILLING_URL` is
+    a run-time variable too. It had the identical defect: a `NEXT_PUBLIC_`
+    address inlined into the bundle, a cross-origin browser call, and no CORS
+    headers on billing either. Leaving it would have meant a half-fixed origin
+    and the same `NEXT_PUBLIC_*` trap still armed.
+  - **What did NOT change, deliberately:** the hand-written tenancy client in
+    `src/lib/identity.ts`, the session token in `localStorage`, and anything in
+    `identity`. The tenancy transcription is `guard`'s to retire once identity's
+    OpenAPI document describes the surface; the three steps and the outstanding
+    DECISION on the error envelope are written down under "Known gaps". The token
+    is the guard packet's work too — the cookie now works, and identity prefers
+    the bearer header, so both are live and the `HttpOnly` half does not yet
+    protect anyone.
+
 - **A deploy story: `config/deploy.yml`, the tier that proves it, and a health
   gate the app is proven to serve.** Every other service in the fleet deploys and
   this one could not — there was no config to deploy from, no accessory story,
@@ -175,9 +278,20 @@ All notable changes to parlor are recorded here. The format follows
     `Kamal::Configuration#to_h` does not carry `proxy` or `env` at all. Breaking
     the path to `/up` was watched turning three of the four red.
   - **No `accessories:` block at all** — no postgres, no backup. See below.
-  - **`builder.args` carries `NEXT_PUBLIC_IDENTITY_URL` and
+  - ~~**`builder.args` carries `NEXT_PUBLIC_IDENTITY_URL` and
     `NEXT_PUBLIC_BILLING_URL`,** and the two new required operator variables
     `KIT_IDENTITY_URL` and `KIT_BILLING_URL` feed them. This is the difference
+    the Node/Next shape forces and the one that would otherwise have shipped a
+    **SUPERSEDED BY THE BFF PACKET ABOVE.** The two operator variables stay and
+    still feed the two addresses, but they now land in `env.clear` at RUN time
+    and `builder.args` is gone: `next build` inlines a `NEXT_PUBLIC_*` name into
+    the client bundle, and the browser no longer needs to know where the services
+    are. One image serves every environment. The argument the original entry made
+    — that a service address cannot be a run-time variable, because the prefix
+    inlines it — was correct and no longer applies; the same reasoning is kept in
+    `Dockerfile` and `config/deploy.yml` so a reviewer is suspicious if a
+    `NEXT_PUBLIC_*` address ever comes back. The original text follows.
+    This is the difference
     the Node/Next shape forces and the one that would otherwise have shipped a
     broken image: `next build` substitutes every `NEXT_PUBLIC_*` into the client
     bundle, so a service address set at run time is not a later value, it is no
@@ -990,33 +1104,68 @@ recorded so it is not rediscovered from a UI symptom.
   went wrong. Try again." — on a stack that came up completely green and whose
   `/readyz` said `ok` on every service.
 
-  377 unit tests cannot see it, and the reason is structural: every one of them
-  injects a stub transport and never opens a socket, so the browser's
-  same-origin policy is never in the path.
+  377 unit tests could not see it, and the reason was structural: every one of
+  them injects a stub transport and never opens a socket, so the browser's
+  same-origin policy was never in the path.
 
-  Two fixes, both in other repositories, neither landed:
-  `identity` could grow a CORS policy for the origins it is embedded in, or
-  `parlor` could grow the same-origin BFF route `AGENTS.md` already schedules —
-  the packet that also moves the session token out of `localStorage`. The
-  end-to-end harness supplies the second shape with an nginx in front of the
-  app and identity's `/v1` (`e2e/edge.conf`), because a tier that documents a
-  bug instead of asserting it is not a tier. **DECISION NEEDED: which of the two
-  owns it, and what the CORS allowlist is if it is the first.** Until one lands,
-  this is a one-line change to `e2e/docker-compose.yml` away from being a real
-  deployment failure rather than a test-harness note.
+  **RESOLVED by the BFF packet, in this repository, on the second of the two
+  options.** `src/app/v1/[...path]/route.ts` answers `/v1/*` on this app's own
+  origin and forwards to identity from the server, so the browser is same-origin
+  and no CORS header is needed anywhere. `identity` was not touched: no
+  `Access-Control-*` header was added, and the argument for refusing that
+  shortcut is in `src/lib/upstream.ts` — it would have let every origin on the
+  internet call identity with a bearer token it stole from anywhere else,
+  solving a deployment-topology problem by weakening the one service that does
+  not have the problem. The end-to-end harness's `location /v1/` block in
+  `e2e/edge.conf` was DELETED rather than left in place, because nginx
+  answering `/v1/*` itself would have kept the stack green while the BFF was
+  never exercised.
 
-- **A deploy of `config/deploy.yml` cannot complete a sign-in, and kamal-proxy
-  cannot be the thing that fixes it.** This is the CORS gap above seen from the
-  deployment side, and it is recorded separately because the deploy packet added
-  a fact the harness could not: **kamal-proxy routes by hostname, not by path.**
-  So a single `proxy.hosts` entry cannot send `/v1/*` to identity and everything
-  else to parlor, which means the end-to-end stack's nginx is not a convenience
-  there — it is the only shape in that harness that a deployment cannot copy.
-  The two remaining fixes are unchanged and both still live elsewhere: identity
-  grows a CORS policy, or parlor grows the same-origin BFF route that `guard`
-  provides. **DECISION NEEDED, and it is now the largest item on this list,
-  because a deploy config is the thing that makes a broken sign-in reachable by
-  somebody who is not running a test.**
+  **What is left, and it is narrower than the entry above made it sound.** Two
+  things, neither a CORS policy:
+
+  - **`__Host-session` needs an HTTPS origin, and the symptom is silence.** The
+    cookie is `Secure`, so a browser stores it only over HTTPS. kamal-proxy
+    terminates TLS with `ssl: true` and the app origin is HTTPS, so production
+    holds. A plain-HTTP deployment loses the cookie with no error anywhere, and
+    the only symptom is a session that does not survive a reload.
+  - **The session token is still in `localStorage`.** The cookie is live — the
+    transport is `credentials: "same-origin"` and the header travels both ways —
+    but the client keeps sending the bearer token too, and `presentedToken`
+    prefers the header, so the `HttpOnly` half does not yet protect anyone.
+    Retiring the token is `guard`'s work.
+
+- **What it will take to delete the hand-written tenancy client** (recorded here
+  because the packet was told not to replace it). `src/lib/identity.ts`
+  transcribes ten tenancy operations from identity's Go handlers because the
+  generated SDK cannot do them. Three things, in order:
+
+  1. **identity publishes the tenancy surface in its OpenAPI document.** The
+     handler is the wire today (`identity/openapi/v1.yaml` describes none of the
+     ten routes), and a document has to exist before a generator can read it.
+     identity-28 is doing this.
+  2. **A generated client has to cover the whole surface, not most of it.** The
+     transcription exists because the SDK covers four session routes and not the
+     accounts, invitations, members or recovery surface. A partial migration
+     leaves two clients and two error types, which is worse than one.
+  3. **The error envelope has to be settled.** `src/lib/identity.ts` reads both
+     RFC 9457 problem+json and the identity-02 `{error:{…}}` shape and produces
+     one `IdentityError` from either. A generated client will pick one, and if
+     the service still disagrees, the `IdentityError` every screen catches is
+     the thing that has to be re-pointed. **DECISION NEEDED: which envelope is
+     the contract.**
+
+  None of that is this repository's to do, and doing it here would conflict with
+  identity-28 in flight.
+
+- **A deploy of `config/deploy.yml` cannot complete a sign-in** — **RESOLVED**,
+  and it is the entry above seen from the deployment side. The deploy packet had
+  added a fact the harness could not: **kamal-proxy routes by hostname, not by
+  path**, so a single `proxy.hosts` entry cannot send `/v1/*` to identity and
+  everything else to parlor. That is why the fix could not be a proxy setting
+  and had to be a route handler in the product. It is now one, the deploy config
+  carries the two addresses as run-time env vars, and the same image serves every
+  environment.
 
 - **No CI job builds or pushes the image, so `kamal deploy` builds on the host.**
   Measured by reading `.github/workflows/ci.yml`: three jobs — kit's `node` job,

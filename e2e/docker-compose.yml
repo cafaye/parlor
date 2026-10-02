@@ -290,17 +290,20 @@ services:
     networks: [platform]
 
   # ------------------------------------------------------------------- parlor
-  # The service under test. Two build-time facts make this the interesting one:
+  # The service under test, and the one whose shape this packet changed.
   #
-  #   * `NEXT_PUBLIC_IDENTITY_URL` is inlined into the client bundle at BUILD
-  #     time, so it is a build arg and not an environment variable. Setting it
-  #     with `docker run -e` would change nothing, because the string is already
-  #     in the JavaScript by then.
-  #   * Its value is the EDGE's origin, not identity's, and the reason is
-  #     measured rather than stylistic: identity serves no CORS headers, so a
-  #     browser on a different origin cannot read its answers at all. The full
-  #     argument, and the two fixes that belong in the real repositories, are in
-  #     e2e/edge.conf.
+  # There are NO BUILD ARGS, and their absence is the BFF. The image used to be
+  # built with `--build-arg NEXT_PUBLIC_IDENTITY_URL=…` pointing at the EDGE's
+  # origin, because `next build` inlines `NEXT_PUBLIC_*` into the client bundle
+  # and the browser needed to be told where identity was. The browser does not
+  # any more: `src/app/v1/[...path]/route.ts` answers `/v1/*` on this app's own
+  # origin and forwards to identity from the server.
+  #
+  # So the address is a plain run-time environment variable, set below, and it is
+  # the address a SERVER should use — `http://identity:8080`, the compose-network
+  # name, which the browser could never resolve. That is the proof the harness is
+  # measuring: if the sign-in path still went through the browser to a public
+  # origin, this stack would fail, and it does not.
   #
   # Published on 16003 as well as proxied, so the harness can prove the app is
   # up *as a process* separately from the edge being able to reach it. Two
@@ -309,12 +312,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      args:
-        NEXT_PUBLIC_IDENTITY_URL: "${E2E_NEXT_PUBLIC_IDENTITY_URL:-http://127.0.0.1:16000}"
     image: cafaye/e2e-parlor:local
     environment:
       PORT: "3000"
       HOSTNAME: "0.0.0.0"
+      # Server-side only. Never `NEXT_PUBLIC_*`: that prefix inlines the value
+      # into the browser bundle, which is precisely what this packet removed.
+      IDENTITY_URL: "http://identity:8080"
+      BILLING_URL: "http://billing:3000"
     ports:
       - "${E2E_PARLOR_PORT:-16003}:3000"
     depends_on:

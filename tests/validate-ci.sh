@@ -142,6 +142,70 @@ pin_in_workflow() {
   sed -n "s/.*\"node\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" "$WF" | head -1
 }
 
+# Does cafaye.yml PARSE? Not "does it declare what we expect" — every check in
+# this file reads the manifest with `sed` line matching, and a document that is
+# not valid YAML still matches every line pattern they use. So all of them can
+# pass on a manifest no cafaye tool can open.
+#
+# This is not hypothetical. parlor-25 removed the quotes from `description`,
+# which makes the value `The cafaye web app: App Router shell...`. An unquoted
+# YAML scalar may contain a colon only when no space follows it, so YAML reads
+# the remainder as a nested mapping and stops there:
+#
+#   $ caf dev --dry-run
+#   caf: caf dev: INVALID cafaye.yml: invalid YAML: [21:14] mapping value is not
+#   allowed in this context
+#
+# and every other check in this file stayed green. A check that reports on a
+# subject it never actually read is the vacuous pass this gate exists to
+# prevent, so the read itself has to be a check.
+#
+# The AUTHORITY is `caf`, not a YAML library: caf is the tool that has to open
+# this file, so asking caf is the check that cannot drift from the requirement.
+# A hand-rolled parse answers a slightly different question -- "is this valid
+# YAML" rather than "can the consumer read this" -- and the gap between those
+# two is where a manifest that parses but that caf rejects would live.
+#
+# No node module is used, deliberately. This repository declares no YAML parser
+# as a direct dependency, so `require("yaml")` resolves only by accident of
+# some transitive install and would turn this check into a silent skip on a
+# machine with a different tree -- the exact shape of vacuous pass this gate
+# exists to prevent. A check that needs a dependency to prove anything must
+# declare that dependency, and adding one to prove a file parses is not worth
+# the lockfile.
+#
+# `cd "$ROOT"` is load-bearing and not tidiness. caf resolves cafaye.yml from
+# the CURRENT DIRECTORY -- run it from elsewhere and it reports "no manifest: no
+# cafaye.yml in ." -- and this script never changes directory, so without the cd
+# it inspects whatever directory the caller happened to be in. The first version
+# of this check had no cd and PASSED on a manifest caf had just refused, which
+# is how a check written to catch this bug ended up not catching it.
+manifest_parses() {
+  if ! command -v caf >/dev/null 2>&1; then
+    echo "caf not on PATH; nothing on this machine can be asked whether it reads the manifest"
+    return 2
+  fi
+  local out
+  out="$(cd "$ROOT" && caf dev --dry-run 2>&1)" || true
+  case "$out" in
+    *"INVALID cafaye.yml"*)
+      printf '%s\n' "$out" | head -1
+      return 1
+      ;;
+  esac
+  return 0
+}
+
+manifest_parses_rc=0
+manifest_err="$(manifest_parses)" || manifest_parses_rc=$?
+case "$manifest_parses_rc" in
+  0) ok "cafaye.yml is a document caf can open (asked caf, not line-matched)" ;;
+  2) skip "cafaye.yml is a document caf can open" \
+        "${manifest_err:-caf is not on PATH; nothing here can read the manifest}" ;;
+  *) no "cafaye.yml is a document caf can open (asked caf, not line-matched)" \
+        "${manifest_err:-caf refused it without saying why}" ;;
+esac
+
 # Whether cafaye.yml declares `key` as a real key, printing "yes" or nothing.
 #
 # Comments are stripped first, and that is not tidiness. This manifest now
@@ -188,6 +252,28 @@ found() {
 
 found_fixed() {
   grep -F "$1" || true
+}
+
+# Prints a file with its comments removed, so a check can ask about CODE.
+#
+# Three comment syntaxes, because this walks both TypeScript and the Dockerfile:
+# `/* … */` blocks (the ` * ` continuation lines of a JSDoc header are the reason
+# this exists — a `sed 's://.*::'` leaves them and reports a file that only
+# explains a change as having made it), `//` line comments, and the Dockerfile's
+# own `#` lines.
+#
+# A regex rather than a parser, and honestly so: a `/*` inside a string literal
+# would open a comment that never closes. Nothing in this repository writes one,
+# and the assertion that does not depend on this at all is the one over the BUILT
+# client chunks in `src/app/v1/[...path]/route.test.ts`.
+strip_comments() {
+  node -e '
+    let source = require("fs").readFileSync(0, "utf8");
+    source = source.replace(/\/\*[\s\S]*?\*\//g, "");
+    source = source.replace(/\/\/[^\n]*/g, "");
+    source = source.replace(/^[ \t]*#[^\n]*/gm, "");
+    process.stdout.write(source);
+  '
 }
 
 # --- the workflow exists, and calls kit at the path that resolves -----------
@@ -311,62 +397,6 @@ fi
 # that is green on a file the toolchain cannot read is not slow, it is
 # measuring the wrong thing.
 #
-# WHY THE PARSER IS A DEPENDENCY AND NOT A THIRD IMPLEMENTATION: `sed`, `grep`
-# and `awk` cannot parse YAML, and hand-rolling a "does this look like valid
-# YAML" heuristic is precisely the false-green this check exists to remove. Node
-# is already a declared, pinned dependency of this repository and the manifest
-# is read by this same script on every commit, so `node -e` costs nothing and
-# is honest about what it knows.
-#
-# WHY NOT `caf contract` OR THE CORE HARNESS, which both read this file: the
-# first needs a `caf` binary and the second needs a sibling `core` checkout, and
-# `bin/prime` must stay offline and self-contained. Same reason the
-# contract-checker note appears at the top of `cafaye.yml` itself.
-#
-# WHAT IT DOES NOT DO: validate against core's schema. That is the harness's job
-# and it is still not wired into this gate. This asks a strictly smaller
-# question — is this a YAML document at all — and a check that cannot be
-# satisfied by a well-formed document nobody wants is a check that gets deleted.
-manifest_parses_as_yaml() {
-  node -e '
-    const fs = require("node:fs");
-    // No YAML library: this repository has no runtime dependency that parses
-    // one, and adding one to a gate is a poor trade for a file this size. So
-    // this asks the narrow question that a line-pattern check cannot: is there
-    // a construct that makes the document stop early?
-    //
-    // The specific failure it looks for is a scalar line carrying a colon
-    // followed by a space, after the key colon. That is the defect that shipped,
-    // and it is detectable without a parser because YAML requires such a value
-    // to be quoted.
-    const lines = fs.readFileSync(process.argv[1], "utf8").split("\n");
-    const offenders = [];
-    lines.forEach((line, index) => {
-      const code = line.replace(/\/\/.*$/, "");
-      const match = code.match(/^([A-Za-z_][\w.-]*):[ \t]+(.+)$/);
-      if (!match) return;
-      const value = match[2];
-      if (/^["'\'']/.test(value)) return;
-      if (/: /.test(value) || value.trimEnd().endsWith(":")) {
-        offenders.push(`${index + 1}: ${match[1]}`);
-      }
-    });
-    if (offenders.length > 0) {
-      console.error(
-        "unquoted scalar containing \": \" or ending in \":\" — YAML reads the rest as a nested " +
-          "mapping:\\n  " + offenders.join("\\n  "),
-      );
-      process.exit(1);
-    }
-  ' "$MANIFEST" 2>&1
-}
-
-if manifest_parses_as_yaml; then
-  ok "cafaye.yml is a YAML document every cafaye command can read"
-else
-  no "cafaye.yml is a YAML document every cafaye command can read" \
-    "$(manifest_parses_as_yaml)"
-fi
 
 # The package manager is the one fact whose check had to MOVE rather than
 # invert. package.json records `packageManager: npm@10.9.7` and nothing checked
@@ -869,18 +899,30 @@ else
   # internally consistent and the PAIR is wrong, which is the case a per-file
   # check cannot see — kit's own `kamal_test.sh` §2 exists for the same shape.
   #
-  # Read GENERICALLY, off the interpolated keys rather than off two hardcoded
-  # names: the day a third build arg arrives, this has already been asked the
-  # right question. And the emptiness is a FAILURE, because a check that greps a
-  # file for a key it did not find is exactly the check that passes on a config
-  # that stopped configuring anything.
+  # Read GENERICALLY, off the interpolated keys rather than off hardcoded names:
+  # the day a third build arg arrives, this has already been asked the right
+  # question.
+  #
+  # SCOPED TO THE `args:` BLOCK SINCE THE BFF, and the scoping is the point. The
+  # regex used to be `'^[[:space:]]+[A-Z][A-Z0-9_]*:[[:space:]]*<%='` over the whole
+  # file, which matched any interpolated environment variable anywhere — correct
+  # while the service addresses were the only interpolated values there were, and
+  # wrong the moment `env.clear` grew any, because a run-time variable is not a
+  # build arg and `docker build --build-arg` for it would be a warning. It failed
+  # on the BFF's own configuration, which is the measure of how much the broad
+  # pattern was carrying an assumption instead of a rule.
+  #
+  # Emptiness is still a FAILURE. A check that greps a file for a key it did not
+  # find is exactly the check that passes on a config that stopped configuring
+  # anything — and the way this stays honest while the BFF means there are no
+  # build args left is C2b below, which asks the positive question instead.
   deploy_args=$(printf '%s\n' "$DEPLOY_CODE" \
+    | awk '/^[[:space:]]*args:[[:space:]]*$/ { in_args = 1; next }
+           /^[^[:space:]]/ { in_args = 0 }
+           in_args' \
     | found '^[[:space:]]+[A-Z][A-Z0-9_]*:[[:space:]]*<%=' \
     | sed 's/^[[:space:]]*//; s/:.*//')
-  if [ -z "$deploy_args" ]; then
-    no "every builder arg in config/deploy.yml is a Dockerfile ARG" \
-      "no interpolated builder arg found; a Next service cannot set NEXT_PUBLIC_* at run time, so there has to be at least one"
-  else
+  if [ -n "$deploy_args" ]; then
     unmatched=""
     for arg in $deploy_args; do
       if [ -z "$(found "^ARG ${arg}=" <"$DOCKERFILE")" ]; then
@@ -893,6 +935,105 @@ else
       no "every builder arg in config/deploy.yml is a Dockerfile ARG" \
         "the Dockerfile declares no ARG for:$unmatched. --build-arg for an undeclared name is a warning, not an error, so the image would build and ship an app on its default address."
     fi
+  else
+    ok "config/deploy.yml declares no build arg, so there is no Dockerfile ARG to disagree with"
+  fi
+
+  # -------------------------------------------------------------------------
+  # C2b. THE SERVICE ADDRESSES ARE RUN-TIME VARIABLES, NOT BUILD ARGS.
+  #
+  # The positive question C2 stopped asking when `builder.args` emptied, and the
+  # one that keeps the BFF from being quietly undone. Its failure mode is the
+  # worst shape a deploy bug has: a `NEXT_PUBLIC_IDENTITY_URL` build arg is
+  # inlined into the client bundle, identity serves no CORS headers, and the
+  # result is a deploy that is green, healthy, and cannot complete a sign-in.
+  # Nothing in `kamal deploy` looks at it.
+  #
+  # So the invariant is asserted in both directions, because either half alone
+  # is satisfied by a config that has simply stopped deploying:
+  #
+  #   * the two addresses are in `env.clear`, interpolated, so they are read at
+  #     run time; and
+  #   * no `NEXT_PUBLIC_*` appears anywhere in the deploy config, the Dockerfile,
+  #     or `src/`, because every one of those would be a browser-readable copy of
+  #     a value the forwarder must own.
+  #
+  # The second is the load-bearing half. `tests/validate-ci.sh` and the vitest
+  # suite both assert it, from different directions: this reads the committed
+  # files, and `src/app/v1/[...path]/route.test.ts` reads the BUILT client chunks.
+  # A source check cannot see what `next build` emits, and a build check does not
+  # run on every commit.
+  # -------------------------------------------------------------------------
+  missing_clear=""
+  for name in IDENTITY_URL BILLING_URL; do
+    if [ -z "$(printf '%s\n' "$DEPLOY_CODE" | found "^[[:space:]]+${name}:[[:space:]]*<%=")" ]; then
+      missing_clear="$missing_clear $name"
+    fi
+  done
+  if [ -n "$missing_clear" ]; then
+    no "the service addresses are run-time env vars in config/deploy.yml" \
+      "env.clear declares no interpolated value for:$missing_clear. The BFF reads them at request time, so a build arg would put a service address back in the client bundle and a deployed sign-in would fail on CORS."
+  else
+    ok "the service addresses are run-time env vars in config/deploy.yml (IDENTITY_URL, BILLING_URL)"
+  fi
+
+  # `NEXT_PUBLIC_` in the files that decide what the browser downloads.
+  #
+  # COMMENTS ARE EXCLUDED, and the reason is the same one the vitest check gives
+  # at `src/app/v1/[...path]/route.test.ts`: this repository explains its own
+  # history in the headers of the files it changes, and a file that says why
+  # `NEXT_PUBLIC_IDENTITY_URL` is gone necessarily spells the name. A check that
+  # banned the word would ban the documentation of the fix along with the fix.
+  #
+  # `sed` removes `//` line comments and the Dockerfile's own `#` comments, which
+  # is enough for every file this walks and is honest about being a strip rather
+  # than a parse: a `NEXT_PUBLIC_` inside a string on a line with a `//` after it
+  # would be missed, and the build-level assertion in the vitest suite is what
+  # actually closes that gap rather than this approximation.
+  public_leaks=""
+  # `src` is resolved against `$ROOT` and NOT against the current directory, and
+  # the self-test is what caught the difference: the script never `cd`s into the
+  # sandbox, so a bare `find src` walked the REAL tree while `$DOCKERFILE` named
+  # the sandbox's — checking two different repositories and reporting the union.
+  # The breakage `a-service-address-back-in-the-bundle` went green through that,
+  # which is the outcome this script exists to make impossible.
+  for file in "$DOCKERFILE" $(find "$ROOT/src" -type f \( -name '*.ts' -o -name '*.tsx' \)); do
+    # The checker names the pattern it is checking for, by construction.
+    case "$file" in
+      *route.test.ts) continue ;;
+    esac
+    # Tested for EMPTINESS, not for exit status. `found` echoes the matches, so a
+    # bare `if found …` is true whenever the helper printed anything — which made
+    # every file in the tree a finding. This is the same trap AGENTS.md records for
+    # `grep -q` inside a pipeline, reached from the other direction.
+    #
+    # BLOCK COMMENTS MATTER HERE, and getting that wrong is what this loop found
+    # the first time round. `sed 's://.*::'` removes a line comment and nothing
+    # else, so the ` * ` continuation lines of a JSDoc header survive it — and
+    # three files whose entire content is an explanation of why the variable is
+    # gone were reported as using it.
+    #
+    # THE STRIP IS IN NODE, and not in `sed`, `perl` or `awk`, because this
+    # script's own header promises it needs "no tool but node and grep". Adding a
+    # fourth interpreter to remove a block comment would break that promise for
+    # every machine that runs the gate, and `perl` in particular is not on a slim
+    # CI image by default. Node is already required three times in this file.
+    #
+    # The strip is a regex, not a parse, and the limitation is the same one the
+    # vitest check records at `src/app/v1/[...path]/route.test.ts`: a `/*` inside
+    # a string would start a comment that does not end. No file this walks has
+    # one, and the check that actually closes the gap is the build-level
+    # assertion over `.next/static`, which reads emitted bytes rather than source.
+    matches=$(strip_comments <"$file" | found 'NEXT_PUBLIC_' || true)
+    if [ -n "$matches" ]; then
+      public_leaks="$public_leaks $file"
+    fi
+  done
+  if [ -z "$public_leaks" ]; then
+    ok "no NEXT_PUBLIC_ variable reaches the browser (Dockerfile, src/)"
+  else
+    no "no NEXT_PUBLIC_ variable reaches the browser (Dockerfile, src/)" \
+      "these files use a NEXT_PUBLIC_ variable in code, which next build inlines into the client bundle:$public_leaks. The BFF moved the browser same-origin; a service address in the bundle is a deployment that cannot sign in, and a forwarder whose destination the browser can read."
   fi
 fi
 
@@ -1170,6 +1311,14 @@ self_test() {
     # about what follows.
     cp "$DEPLOY_CONFIG" "$SANDBOX/config/deploy.yml"
     cp "$DOCKERFILE" "$SANDBOX/Dockerfile"
+    # `src/`, because C2b walks it. Without it the sandbox has no client code for
+    # that check to look at, so `find src` finds nothing, the check passes on an
+    # empty tree, and every breakage that puts a service address back in a client
+    # module goes green — a self-test proving the opposite of what it claims.
+    # Copied whole and shallow: the check strips comments and greps, and a
+    # partial copy would make a finding depend on which files were seeded.
+    mkdir -p "$SANDBOX/src"
+    cp -R "$ROOT/src/." "$SANDBOX/src/"
     cp "$DEPLOY_RUNNER" "$SANDBOX/bin/deploy-config"
     chmod +x "$SANDBOX/bin/deploy-config"
     # The end-to-end tier's files, for the same reason the other four are here:
@@ -1249,7 +1398,10 @@ self_test() {
     "an-unpinned-image|sed -i '' 's|image: nginx:1.27.4-alpine|image: nginx:latest|' '$SANDBOX/e2e/docker-compose.yml'" \
     "no-deploy-config|rm -f '$SANDBOX/config/deploy.yml'" \
     "an-accessory-in-the-deploy-config|printf '\naccessories:\n  postgres:\n    image: postgres:17-alpine\n' >>'$SANDBOX/config/deploy.yml'" \
-    "a-builder-arg-without-a-dockerfile-arg|sed -i '' 's|^    NEXT_PUBLIC_BILLING_URL: |    NEXT_PUBLIC_CDN_URL: |' '$SANDBOX/config/deploy.yml'" \
+    "a-builder-arg-without-a-dockerfile-arg|echo '  args:' >>'$SANDBOX/config/deploy.yml' && echo '    NEXT_PUBLIC_CDN_URL: <%= cdn_url %>' >>'$SANDBOX/config/deploy.yml'" \
+    "a-service-address-out-of-env-clear|sed -i '' 's|^    IDENTITY_URL: <%= identity_url %>||' '$SANDBOX/config/deploy.yml'" \
+    "a-service-address-back-in-the-bundle|echo 'const url = process.env.NEXT_PUBLIC_IDENTITY_URL;' >>'$SANDBOX/src/lib/identity.ts'" \
+    "a-service-address-back-in-the-dockerfile|echo 'ENV NEXT_PUBLIC_IDENTITY_URL=https://identity.example.com' >>'$SANDBOX/Dockerfile'" \
     "an-unpinned-node-base|sed -i '' 's|^FROM node:22.22.2-slim AS runner|FROM node:22-slim AS runner|' '$SANDBOX/Dockerfile'" \
     "the-deploy-tier-is-not-executable|chmod -x '$SANDBOX/bin/deploy-config'" \
     "no-service-catalog|rm -f '$SANDBOX/caf.dev.json'" \

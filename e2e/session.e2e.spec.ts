@@ -11,10 +11,13 @@
  *
  *   * three processes that were built from three different checkouts are talking
  *     to each other over real HTTP, on ports nothing else on the machine owns;
- *   * the `NEXT_PUBLIC_IDENTITY_URL` build argument actually reached the client
- *     bundle — it is inlined by `next build`, so a dropped build arg produces a
- *     page that cannot authenticate rather than a build error, and nothing else
- *     in the tree would notice;
+ *   * the sign-in path works with the browser on ONE origin. This is the headline
+ *     claim, and it is new: `src/app/v1/[...path]/route.ts` answers `/v1/*` on
+ *     parlor's own origin and forwards to identity from the server. The `identity`
+ *     service in this stack is reachable only as `http://identity:8080` — a name
+ *     the compose network resolves and a browser cannot — and the only address
+ *     in the parlor container is that one, in `IDENTITY_URL`. A browser that
+ *     still called identity directly would fail here, which is the point;
  *   * identity's migrations ran against a real Postgres and its argon2id
  *     password hashing, its session rows and its `/v1/me` all work over a
  *     socket;
@@ -28,8 +31,8 @@
  * heading. There is not one `expect(response.status()).toBe(200)` in this file,
  * and that is the point of the tier. A test that asserts an API returned 200
  * while the page shows an error has tested nothing — and this stack has at
- * least three ways to be 200-and-broken: a wrong `NEXT_PUBLIC_IDENTITY_URL`
- * (every request fails in the browser, so the *service* never sees a 200), a
+ * least three ways to be 200-and-broken: an `IDENTITY_URL` that resolves nowhere
+ * (every request fails in the app, so the *service* never sees a 200), a
  * session token that does not survive the page transition, and a `GET /v1/me`
  * that succeeds while the header renders the signed-out state.
  *

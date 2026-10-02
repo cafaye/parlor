@@ -218,26 +218,41 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 6. THE BUILD ARGS AND THE DOCKERFILE AGREE. The cross-file contract that only
-#    the pair can see, and the one whose failure is invisible: `docker build
-#    --build-arg` for a name the Dockerfile does not declare is a WARNING, so the
-#    image builds, the build exits 0, and the app ships with the compiled-in
-#    localhost default.
+# 6. THE SERVICE ADDRESSES ARE RUN-TIME ENV VARS, AND NO BUILD ARG CARRIES ONE.
+#    This replaced a check that asked whether `builder.args` and the Dockerfile's
+#    `ARG`s agreed, which was the right question while a `NEXT_PUBLIC_*` service
+#    address had to be inlined at build time. The BFF made the build arg
+#    unnecessary and keeping the old check would have demanded that a service
+#    address be put BACK into the browser bundle.
 #
-#    Read with grep rather than a YAML parse because the ERB on the left makes
-#    the file unparseable until it is rendered, and `builder.args` values are
-#    `<%= … %>` in the committed file.
+#    What is asserted now, on the RENDERED file because that is the document kamal
+#    acts on:
+#
+#      * each address is in `env.clear`, so it is read at run time by
+#        `src/app/v1/[...path]/route.ts` and one image serves every environment;
+#      * no `NEXT_PUBLIC_` name appears in `builder.args` at all — a `NEXT_PUBLIC_`
+#        in the client bundle is a value the browser can read AND change, and for
+#        a forwarder that is the difference between a fixed destination and an
+#        attacker's.
+#
+#    Read with grep rather than a YAML parse because the ERB on the left makes the
+#    file unparseable until it is rendered.
 # ---------------------------------------------------------------------------
-for name in NEXT_PUBLIC_IDENTITY_URL NEXT_PUBLIC_BILLING_URL; do
-  if grep -qE "^[[:space:]]+${name}: " "$RENDERED" && grep -qE "^ARG ${name}=" "$DOCKERFILE"; then
-    ok "builder.args and the Dockerfile agree on ${name}"
+for name in IDENTITY_URL BILLING_URL; do
+  if grep -qE "^[[:space:]]+${name}:[[:space:]]*\S" "$RENDERED"; then
+    ok "config/deploy.yml sets ${name} as a run-time env var"
   else
-    no "builder.args and the Dockerfile agree on ${name}" \
-      "$(grep -qE "^[[:space:]]+${name}: " "$RENDERED" \
-        && echo 'the Dockerfile declares no matching ARG' \
-        || echo 'config/deploy.yml sets no such builder arg')"
+    no "config/deploy.yml sets ${name} as a run-time env var" \
+      "the rendered config declares no ${name} value. The BFF reads it at request time, so a build arg would put a service address back in the client bundle and a deployed sign-in would fail on CORS."
   fi
 done
+
+if grep -A8 '^[[:space:]]*args:' "$RENDERED" | grep -qE 'NEXT_PUBLIC_'; then
+  no "no builder arg is a NEXT_PUBLIC_ variable" \
+    "builder.args carries a NEXT_PUBLIC_ name, which next build inlines into the client bundle"
+else
+  ok "no builder arg is a NEXT_PUBLIC_ variable (one image serves every environment)"
+fi
 
 # ---------------------------------------------------------------------------
 # 7. NO SECRET VALUE IN THE RENDERED CONFIG. The rendered file is an ordinary
