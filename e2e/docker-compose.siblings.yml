@@ -1,0 +1,85 @@
+---
+# THE ESCAPE HATCH, and it is off by default.
+#
+#   E2E_BUILD_SIBLINGS=1 ./bin/e2e
+#
+# This file adds the `build:` stanzas back for identity and guard. With it
+# layered over e2e/docker-compose.yml, the two siblings are rebuilt from
+# `../identity` and `../guard` and the tier runs against the developer's working
+# trees instead of the published `:e2e` artifacts.
+#
+# ---------------------------------------------------------------------------
+# WHY IT IS ONE FILE AND ONE FLAG
+# ---------------------------------------------------------------------------
+# The alternative shapes were considered and each is worse:
+#
+#   * Leave the `build:` in the main file and delete it at run time. Then the
+#     default document is the hatch and the override is the contract, which
+#     inverts the thing worth protecting.
+#   * Make the flag decide inside the compose file, with a `build:` behind a
+#     variable. Compose cannot express "this key exists only if a variable is
+#     set", and a build context that is an empty string is a worse failure than
+#     a missing one.
+#   * Keep both defaults and let the developer choose. Two defaults means the
+#     trustworthy one is chosen about half the time, and the half that picks
+#     the other one gets a green suite that proves nothing about the artifact.
+#
+# So: the default consumes artifacts, the hatch is one documented command, and
+# the flag is named after what it does.
+#
+# ---------------------------------------------------------------------------
+# WHY THE LOCAL `image:` IS THE SAME TAG
+# ---------------------------------------------------------------------------
+# Both this file and the main one say `cafaye/identity:e2e`; only the prefix
+# differs. That is deliberate and it is the reason this file is small.
+#
+# Compose merges a service's `image:` — last file wins — so if this file named a
+# different tag, `E2E_BUILD_SIBLINGS=1` would produce a stack whose service
+# resolution differs from the default stack, and every port, environment and
+# health check would then be a second topology that had to be kept in step.
+# Keeping the tag identical means the hatch changes what the tag RESOLVES TO
+# (a local build instead of a registry pull) and nothing about which service
+# the suite talks to. `bin/e2e-stack` also stops pulling in this mode, so the
+# hatch does not race the registry for the same tag.
+#
+# A consequence worth stating rather than leaving to be discovered: running the
+# hatch overwrites the local `cafaye/identity:e2e` image that the registry path
+# would otherwise use, so a subsequent default run on the same machine may
+# start the sibling build instead of pulling. `bin/e2e-stack publish-siblings`
+# is what puts the registry tag back in charge, and it is one command. This is
+# a local tag on a developer's machine, not a published artifact, so it costs a
+# rebuild rather than anything anyone else can see.
+#
+# ---------------------------------------------------------------------------
+# WHY THE BUILD ARGS ARE RESTATED EXACTLY
+# ---------------------------------------------------------------------------
+# `SERVICE_NAME: identity` and `BUN_VERSION: 1.3.12` are the values the main
+# file used, copied here at the moment they were removed. They are build inputs,
+# not run-time configuration, which is precisely why they cannot be inherited
+# from the environment the way `E2E_*` variables are — and precisely why a
+# silent default would be wrong: a hatch that built identity's image without
+# `SERVICE_NAME` would produce an image that no deploy path has ever produced.
+# If a sibling's Dockerfile gains a build arg, update this file in the same
+# commit that changes the sibling's expectations, and the way to notice is the
+# sibling's own CI, not this harness.
+#
+# There is no `---` in the middle of this file on purpose, having been there
+# first: a second document marker makes compose read this as a two-document YAML
+# stream and fail with "top-level object must be a mapping", which names nothing
+# about the `---`. The marker at the top of the file is the only one.
+services:
+  identity:
+    build:
+      context: ../identity
+      dockerfile: Dockerfile
+      args:
+        SERVICE_NAME: identity
+    image: "cafaye/identity:e2e"
+
+  guard:
+    build:
+      context: ../guard
+      dockerfile: Dockerfile
+      args:
+        BUN_VERSION: "1.3.12"
+    image: "cafaye/guard:e2e"

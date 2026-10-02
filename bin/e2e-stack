@@ -1,16 +1,38 @@
 #!/usr/bin/env bash
 # The whole-stack lifecycle for the end-to-end suite: build, up, wait, down.
 #
-#   bin/e2e-stack build     build every image in the stack from its checkout
-#   bin/e2e-stack up        build, migrate, start, and wait for /readyz
-#   bin/e2e-stack wait      wait for /readyz on an already-running stack
+#   bin/e2e-stack build              build the image this tier tests
+#   bin/e2e-stack publish-siblings   build identity + guard once, push to the registry
+#   bin/e2e-stack up                 build, publish/pull siblings, migrate, start, wait
+#   bin/e2e-stack wait               wait for /readyz on an already-running stack
 #   bin/e2e-stack host-port <service>   the published host port, on stdout
-#   bin/e2e-stack logs      print the stack's logs
-#   bin/e2e-stack ps        what is running
-#   bin/e2e-stack down      stop it and delete its volumes
+#   bin/e2e-stack logs               print the stack's logs
+#   bin/e2e-stack ps                 what is running
+#   bin/e2e-stack down               stop it and delete its volumes
 #
 # `bin/e2e` drives this; a developer can drive it directly when a test failed
 # and the stack is still up, which is the point of leaving it up on failure.
+#
+# ---------------------------------------------------------------------------
+# WHERE THE SIBLING IMAGES COME FROM — read this before "simplifying" a build
+# ---------------------------------------------------------------------------
+# This repository builds exactly one image: `parlor`'s, the service under test.
+# `identity` and `guard` are CONSUMED as published artifacts by tag, out of the
+# registry e2e/docker-compose.yml declares. That is the change this script was
+# rewritten for, and the rule that follows from it is the one that is easy to
+# break by accident:
+#
+#   * a `docker compose build` with no arguments now builds ONE image, not three.
+#     That is not a bug and not a missing loop. Rebuilding the siblings here is
+#     what made this tier able to pass while testing an image nothing else in
+#     the fleet had ever run.
+#   * `E2E_BUILD_SIBLINGS=1` is the ONE documented way back to a working-tree
+#     build, and it layers e2e/docker-compose.siblings.yml rather than
+#     re-adding the stanzas to the main file. See that file for why it is one
+#     flag and not two defaults.
+#   * The sibling checkouts are therefore REQUIRED only in that mode. The
+#     preflight used to fail without them unconditionally, which was correct
+#     while every image was built here and is wrong now.
 #
 # ---------------------------------------------------------------------------
 # THE FOUR RULES THIS SCRIPT EXISTS TO ENFORCE
@@ -53,7 +75,37 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 COMPOSE_FILE="$ROOT/e2e/docker-compose.yml"
+# The hatch. Layered ONLY when E2E_BUILD_SIBLINGS is 1 — it is an array rather
+# than an extra `--file` that is always passed, because a file that is always
+# layered is a second default and the whole point is that there is one.
+SIBLINGS_OVERRIDE="$ROOT/e2e/docker-compose.siblings.yml"
 PROJECT="${E2E_STACK_NAME:-parlor-e2e}"
+
+# The two services this tier consumes rather than builds, and the tag prefix
+# they share. Listed once because three places need the same list and a list
+# that can drift is a list where a service silently stops being published.
+SIBLING_SERVICES=(identity guard)
+SIBLING_TAG_PREFIX="${SIBLING_TAG_PREFIX:-cafaye}"
+SIBLING_TAG_SUFFIX=e2e
+
+# The registry the siblings are published to and pulled from. The default is
+# the loopback address the compose file's `registry` service publishes to; point
+# E2E_REGISTRY at anything else and the whole document follows it, because no
+# other file in this tier names the registry.
+REGISTRY="${E2E_REGISTRY:-localhost:16010}"
+
+# One flag, read once, and validated once. Anything but 0/1 is a typo rather
+# than a setting, and `E2E_BUILD_SIBLINGS=yes` silently meaning "off" is exactly
+# the kind of quiet default this change exists to remove.
+BUILD_SIBLINGS=0
+case "${E2E_BUILD_SIBLINGS:-0}" in
+  1) BUILD_SIBLINGS=1 ;;
+  0|"") ;;
+  *) printf '[e2e] FAIL: E2E_BUILD_SIBLINGS is "%s"; it is 1 (build the siblings from their checkouts) or 0 (pull the published artifacts), and nothing else.\n' "${E2E_BUILD_SIBLINGS:-}" >&2; exit 1 ;;
+esac
+
+# The sibling image tag for a service, on stdout and nothing else.
+sibling_tag() { printf '%s/%s:%s' "$SIBLING_TAG_PREFIX" "$1" "$SIBLING_TAG_SUFFIX"; }
 
 # Budgets. Every one is overridable because a cold run on a laptop and a warm
 # run on a CI runner differ by an order of magnitude, and a hard-coded budget
@@ -100,11 +152,33 @@ need() {
 # the repository" and the build fails with a path error rather than a reason.
 # With it, `../identity` is the sibling checkout, which is what the file says it
 # is and what the preflight below checks for.
+#
+# THE FILE LIST IS CONDITIONAL and that is the only thing compose_files is for.
+# Compose reads `--file` in order and later files win, so layering
+# `docker-compose.siblings.yml` last is what puts the `build:` stanzas back.
+# The alternative — passing it always and making the override a no-op when the
+# flag is off — was rejected: a hatch that is always loaded is a second
+# default, and two defaults is the failure mode this whole change is about.
+#
+# One argument per line on stdout, and both call sites read it with a `while
+# read` loop rather than word-splitting a string, because a path with a space
+# in it must not become two arguments. Neither path can contain one today (both
+# are under $ROOT, which is derived from BASH_SOURCE) and the loop costs three
+# lines, which is cheaper than the day it does.
+compose_files() {
+  printf -- '--file\n%s\n' "$COMPOSE_FILE"
+  if [ "$BUILD_SIBLINGS" -eq 1 ]; then
+    printf -- '--file\n%s\n' "$SIBLINGS_OVERRIDE"
+  fi
+}
+
 compose() {
+  local -a cf=()
+  while IFS= read -r line; do cf+=("$line"); done < <(compose_files)
   docker compose \
     --project-name "$PROJECT" \
     --project-directory "$ROOT" \
-    --file "$COMPOSE_FILE" \
+    "${cf[@]}" \
     "$@"
 }
 
@@ -115,10 +189,12 @@ compose() {
 compose_timed() {
   local budget=$1
   shift
+  local -a cf=()
+  while IFS= read -r line; do cf+=("$line"); done < <(compose_files)
   timeout "$budget" docker compose \
     --project-name "$PROJECT" \
     --project-directory "$ROOT" \
-    --file "$COMPOSE_FILE" \
+    "${cf[@]}" \
     "$@"
 }
 
@@ -150,8 +226,23 @@ preflight() {
   need goose "Install it the way ../identity documents: mise, or 'go install github.com/pressly/goose/v3/cmd/goose@<pinned version>'."
 
   [ -f "$COMPOSE_FILE" ] || die "no compose file at $COMPOSE_FILE"
-  [ -d "$ROOT/../identity" ] || die "no sibling checkout at ../identity; the stack builds its image from there."
-  [ -d "$ROOT/../guard" ] || die "no sibling checkout at ../guard; the stack builds its image from there."
+
+  # The sibling checkouts are required ONLY in the hatch. While every image was
+  # built from a sibling checkout they were unconditionally required, and that
+  # check was correct; now the default path pulls published artifacts and a
+  # machine with no sibling checkout is a perfectly ordinary one. Failing here
+  # unconditionally would have made the default path unusable for exactly the
+  # people who are not changing a sibling.
+  if [ "$BUILD_SIBLINGS" -eq 1 ]; then
+    [ -f "$SIBLINGS_OVERRIDE" ] \
+      || die "E2E_BUILD_SIBLINGS=1 but there is no override file at $SIBLINGS_OVERRIDE"
+    local sibling
+    for sibling in "${SIBLING_SERVICES[@]}"; do
+      [ -f "$ROOT/../$sibling/Dockerfile" ] \
+        || die "E2E_BUILD_SIBLINGS=1 but there is no ../$sibling/Dockerfile. The hatch builds that image from its checkout; without it run the default path instead (unset E2E_BUILD_SIBLINGS), which pulls the published artifact."
+    done
+    log "sibling build mode: identity and guard will be built from their checkouts"
+  fi
 }
 
 # --- the host port a service publishes --------------------------------------
@@ -182,13 +273,139 @@ host_port() {
   printf '%s' "$published"
 }
 
+# --- the registry ------------------------------------------------------------
+# `docker compose up` resolves and pulls every `image:` in the document BEFORE
+# it creates a single container, so a stack that pulls `identity` and `guard`
+# out of a registry that this same compose file is responsible for starting
+# cannot start at all. Compose cannot express "start this one first, then pull
+# those", so this is a separate step and it has to run first. There is no clever
+# alternative: `depends_on` is not consulted during the pull phase, and
+# setting `pull_policy: build` on the siblings would put the `build:` back that
+# this change removed.
+ensure_registry() {
+  log "starting the registry the sibling artifacts are pulled from ($REGISTRY)"
+  local started elapsed status
+  started=$(date +%s)
+  set +e
+  compose_timed 120 up -d --wait registry
+  status=$?
+  set -e
+  elapsed=$(elapsed_since "$started")
+  if [ "$status" -ne 0 ]; then
+    printf '[e2e] FAIL: the registry did not come up in %ss (exit %s)\n' "$elapsed" "$status" >&2
+    printf '[e2e] identity and guard are pulled from it, so nothing else in this stack can start.\n' >&2
+    printf '[e2e] if %s is meant to be a registry that already runs, unset it and let this stack own one.\n' "$REGISTRY" >&2
+    compose logs --no-color --tail 50 registry 2>&1 | sed 's/^/[e2e] /' >&2 || true
+    exit 1
+  fi
+  log "registry up in ${elapsed}s"
+}
+
+# --- publish the sibling artifacts -------------------------------------------
+# THE UPSTREAM BUILD, and it is the step that makes "build once" mean something.
+# It builds identity and guard from their checkouts, tags them, and pushes them
+# to the registry. It is NOT called by `up` on the default path — that is the
+# entire difference between this and the old behaviour — so a developer runs it
+# when a sibling has moved and CI runs it once per run instead of three times
+# inside compose.
+#
+# `docker build` rather than `compose build`, on purpose: `compose build` only
+# builds services that have a `build:` stanza, and the default document no
+# longer has one for the siblings. Building them from here keeps the tag name in
+# exactly one place (sibling_tag) rather than in a compose file that is not
+# supposed to name them.
+#
+# The tag is pushed under BOTH names: the registry-qualified one the compose
+# file pulls, and the bare one a developer's `docker images` will show. The
+# second is cosmetic and is why it is noted here — it is the name the hatch
+# overwrites locally, which is the interaction e2e/docker-compose.siblings.yml
+# documents.
+publish_siblings() {
+  preflight
+  ensure_registry
+  local service context tag started elapsed status
+  for service in "${SIBLING_SERVICES[@]}"; do
+    context="$ROOT/../$service"
+    tag="$(sibling_tag "$service")"
+    log "building $service from $context"
+    started=$(date +%s)
+    set +e
+    # The build args are the siblings' own, and they are NOT inherited from the
+    # override file because the override is not layered in this mode: this
+    # command publishes what the checkout produces, which is the point of it.
+    # `--build-arg` for an undeclared name is a warning rather than an error, so
+    # a missing arg here produces an image that no deploy path has produced and
+    # a green log. The sibling's Dockerfile is the place that fails loudly.
+    case "$service" in
+      identity)
+        timeout "$BUILD_TIMEOUT" docker build \
+          --build-arg SERVICE_NAME=identity \
+          --tag "cafaye/identity:$SIBLING_TAG_SUFFIX" \
+          --tag "$REGISTRY/$tag" \
+          "$context"
+        ;;
+      guard)
+        timeout "$BUILD_TIMEOUT" docker build \
+          --build-arg BUN_VERSION=1.3.12 \
+          --tag "cafaye/guard:$SIBLING_TAG_SUFFIX" \
+          --tag "$REGISTRY/$tag" \
+          "$context"
+        ;;
+      *)
+        printf '[e2e] FAIL: no build recipe for sibling %s\n' "$service" >&2
+        exit 1
+        ;;
+    esac
+    status=$?
+    set -e
+    elapsed=$(elapsed_since "$started")
+    if [ "$status" -ne 0 ]; then
+      printf '[e2e] FAIL: building %s failed after %ss (exit %s)\n' "$service" "$elapsed" "$status" >&2
+      exit 1
+    fi
+    log "  $service built in ${elapsed}s"
+  done
+
+  for service in "${SIBLING_SERVICES[@]}"; do
+    tag="$(sibling_tag "$service")"
+    log "pushing $REGISTRY/$tag"
+    set +e
+    timeout 300 docker push "$REGISTRY/$tag"
+    status=$?
+    set -e
+    if [ "$status" -ne 0 ]; then
+      printf '[e2e] FAIL: pushing %s failed (exit %s). The tag is built but not published, and the default path pulls by tag.\n' "$REGISTRY/$tag" "$status" >&2
+      exit 1
+    fi
+  done
+
+  # The digest is what makes a run attributable to an artifact, so it is printed
+  # and not merely implied. A reader who wants to know what this tier tested
+  # six weeks from now is reading this line.
+  local digest
+  for service in "${SIBLING_SERVICES[@]}"; do
+    tag="$(sibling_tag "$service")"
+    digest=$(docker image inspect --format '{{index .RepoDigests 0}}' "$REGISTRY/$tag" 2>/dev/null || echo "(no repo digest)")
+    log "  published $service -> $REGISTRY/$tag  $digest"
+  done
+}
+
 # --- build ------------------------------------------------------------------
+# ONE image. This used to be three, and the reduction is the change rather than
+# a side effect of it: the sibling images are consumed from the registry (or
+# built from their checkouts by publish_siblings / the hatch), and only the
+# service under test is rebuilt from this working tree.
 build() {
   preflight
-  log "building images (budget ${BUILD_TIMEOUT}s; a cold run builds three toolchains)"
-  log "  identity  <- ../identity"
-  log "  guard     <- ../guard"
-  log "  parlor    <- . (no build args: the BFF reads IDENTITY_URL at run time)"
+  if [ "$BUILD_SIBLINGS" -eq 1 ]; then
+    log "building images (budget ${BUILD_TIMEOUT}s) — sibling build mode"
+    log "  identity  <- ../identity, built into cafaye/identity:e2e (NOT pushed)"
+    log "  guard     <- ../guard, built into cafaye/guard:e2e (NOT pushed)"
+  else
+    log "building images (budget ${BUILD_TIMEOUT}s)"
+    log "  parlor    <- . (no build args: the BFF reads IDENTITY_URL at run time)"
+    log "  identity, guard, postgres, redis, nginx and registry: pulled, not built"
+  fi
   log "  edge      <- nginx, a pinned image: see e2e/edge.conf for why it exists"
   local started elapsed status
   started=$(date +%s)
@@ -210,9 +427,106 @@ build() {
   log "images built in ${elapsed}s"
 }
 
+# --- make the sibling artifacts available -------------------------------------
+# The resolver, and the order is the whole design:
+#
+#   1. hatch mode (`E2E_BUILD_SIBLINGS=1`): build() has already produced the two
+#      images under their local tags. Nothing to resolve and nothing to pull —
+#      and specifically nothing to pull, because pulling the registry tag here
+#      would overwrite the working-tree build the developer just asked for.
+#   2. the tag is already in the registry: pull nothing. This is the steady
+#      state and it is the fast path.
+#   3. the tag is in neither place but the checkouts exist: publish once. This
+#      is the seeding step on a fresh machine, and it is announced in the log
+#      rather than done silently, because "built from my checkout" is a
+#      materially different claim from "pulled the published artifact" and a
+#      reader of a green e2e run is entitled to know which one they got.
+#   4. neither: fail, loudly, naming the command that fixes it.
+#
+# Step 3 is the only place the default path builds a sibling, and it is
+# reachable only when the artifact does not already exist — which is the honest
+# reading of "build once upstream": somebody has to build it the first time, and
+# the difference is that it is then a named, published tag rather than an
+# anonymous local one.
+ensure_sibling_artifacts() {
+  if [ "$BUILD_SIBLINGS" -eq 1 ]; then
+    log "sibling artifacts: built from the working tree by the hatch, nothing to pull"
+    return 0
+  fi
+
+  local service tag present=0 missing=""
+  for service in "${SIBLING_SERVICES[@]}"; do
+    tag="$REGISTRY/$(sibling_tag "$service")"
+    if compose_timed 60 image inspect "$tag" >/dev/null 2>&1 \
+      || [ -n "$(docker image ls -q "$tag" 2>/dev/null || true)" ]; then
+      present=$((present + 1))
+    else
+      missing="$missing $service"
+    fi
+  done
+
+  if [ -z "$missing" ]; then
+    log "sibling artifacts: $present/${#SIBLING_SERVICES[@]} already published at $REGISTRY, nothing to pull"
+    return 0
+  fi
+
+  # Not published. Before reaching for the checkouts, ask the registry directly:
+  # a tag can exist in the registry without being in the local image store, and
+  # that is the ordinary case on a second machine rather than an edge case.
+  local pulled=""
+  set +e
+  for service in $missing; do
+    tag="$REGISTRY/$(sibling_tag "$service")"
+    log "pulling $tag"
+    if timeout 300 docker pull "$tag" >/dev/null 2>&1; then
+      pulled="$pulled $service"
+    else
+      printf '[e2e]   %s is not in %s\n' "$tag" "$REGISTRY" >&2
+    fi
+  done
+  set -e
+
+  still_missing=""
+  for service in "${SIBLING_SERVICES[@]}"; do
+    case " $pulled " in *" $service "*) ;; *) still_missing="$still_missing $service" ;; esac
+  done
+  [ -z "$still_missing" ] && { log "sibling artifacts: pulled from $REGISTRY"; return 0; }
+
+  # Still missing. A checkout is the only thing left that can produce one.
+  local sibling
+  have_all_checkouts=1
+  for sibling in "${SIBLING_SERVICES[@]}"; do
+    [ -f "$ROOT/../$sibling/Dockerfile" ] || have_all_checkouts=0
+  done
+
+  if [ "$have_all_checkouts" -eq 1 ]; then
+    log "not published at $REGISTRY and the sibling checkouts are here; publishing once"
+    printf '[e2e] NOTE: these two images are being built from ../identity and ../guard,\n' >&2
+    printf '[e2e]       so this run tests YOUR working trees, not a published artifact.\n' >&2
+    printf '[e2e]       After ./bin/e2e-stack publish-siblings the registry tag is the one used.\n' >&2
+    publish_siblings
+    return 0
+  fi
+
+  printf '[e2e] FAIL: no %s artifact for %s\n' "$(sibling_tag "$service")" "$missing" >&2
+  printf '[e2e] The default path consumes identity and guard as published images, and neither\n' >&2
+  printf '[e2e] the registry nor a sibling checkout has one. Either:\n' >&2
+  printf '[e2e]   ./bin/e2e-stack publish-siblings   (with ../identity and ../guard checked out)\n' >&2
+  printf '[e2e]   E2E_BUILD_SIBLINGS=1 ./bin/e2e       (build the working trees instead)\n' >&2
+  printf '[e2e]   E2E_REGISTRY=<host:port> ...        (if a persistent registry should serve this)\n' >&2
+  exit 1
+}
+
 # --- up ---------------------------------------------------------------------
 up() {
   preflight
+  # The registry comes first, always, and not because it is a dependency of the
+  # build: `docker compose up` pulls every `image:` before it creates a single
+  # container, so a stack that pulls identity and guard out of the registry it
+  # is about to start cannot start. This is the first step for that reason and
+  # for no other.
+  ensure_registry
+  ensure_sibling_artifacts
   build
 
   log "starting the stack in project $PROJECT"
@@ -374,6 +688,7 @@ down() {
 
 case "${1:-}" in
   build) build ;;
+  publish-siblings) publish_siblings ;;
   up) up ;;
   wait) preflight; wait_ready ;;
   # The published host port for a service, on stdout and nothing else. A second
@@ -387,9 +702,13 @@ case "${1:-}" in
   *)
     # The usage is the header comment, and only the header comment: printing
     # more than that answers a question nobody asked, and the line range is the
-    # only thing keeping the two in step. `sed -n '2,12p'` is the block from the
-    # title through the last subcommand, which is where a reader stops reading.
-    sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    # only thing keeping the two in step. `sed -n '4,11p'` is the block from the
+    # first subcommand through the last, which is where a reader stops reading.
+    # The range is a contract with the block above: move a subcommand and this
+    # prints a usage that does not list it, which is the failure it is for. It
+    # was wrong by one line when this was written (3,13p, which printed a blank
+    # line and cut off `down`) and is asserted by the sibling tier's checks.
+    sed -n '4,11p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
     exit 2
     ;;
 esac

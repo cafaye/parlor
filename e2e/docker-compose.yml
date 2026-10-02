@@ -24,17 +24,35 @@
 #       below. The alternative — invoking `caf dev` and then hand-patching its
 #       output — was rejected, and the reason is in the report: `caf dev`
 #       resolves dependencies to *published images*, and this harness has to
-#       build every one of them from the sibling checkout, and it has to pin a
+#       consume siblings by tag rather than rebuild them, and it has to pin a
 #       port block nothing else on the machine uses.
 #
 # The three differences from what `caf dev` would render, and why each is here
 # rather than a caf feature request:
 #
-#   1. Sibling build contexts. `caf dev` builds the project service and pulls
-#      its dependencies. The E2E path crosses three services, so all three are
-#      built here from `../identity`, `../guard` and `.`. An image built from
-#      this workspace is the only thing that tests the *current* checkout of a
-#      sibling rather than whatever tag is on a registry.
+#   1. NO SIBLING BUILD CONTEXTS — this file changed, and the change is the
+#      point of the whole contract below. `caf dev` builds the project service
+#      and pulls its dependencies; so does this file, for `parlor`. But
+#      `identity` and `guard` carry an `image:` and NO `build:`, so this tier
+#      consumes them as published artifacts rather than rebuilding them from
+#      `../identity` and `../guard` on every run.
+#
+#      WHY, because "it is faster" is not the reason and the measured numbers
+#      say so: a warm full build here is 13.81s and invalidating identity costs
+#      20.40s (logs/parlor-registry-e2e-01/README.md, measured). The old
+#      `build:` stanzas did not cost minutes. What they cost was that
+#      `cafaye/e2e-identity:local` was built from whatever happened to be in
+#      the sibling checkout at the instant the suite ran, pushed nowhere, and
+#      nameable by nothing outside that docker daemon — so the verification
+#      tier could not be shown to test the artifact the fleet deploys, because
+#      it tested a different one by construction. "Build once, deploy once, use
+#      everywhere" is only true if the verification tier consumes the same
+#      artifact, and this is the file that decides whether it does.
+#
+#      The escape hatch is explicit and off by default: `E2E_BUILD_SIBLINGS=1`
+#      layers e2e/docker-compose.siblings.yml, which puts the `build:` stanzas
+#      back, for a developer whose sibling change is not merged yet. One
+#      documented path, not two defaults.
 #   2. A port block nothing else uses. See PORTS below.
 #   3. A migration step. Migrations are a deploy step in every service, by
 #      policy, so nothing here migrates on boot. `bin/e2e` runs `goose` from the
@@ -116,9 +134,11 @@ name: ${E2E_STACK_NAME:-parlor-e2e}
 
 networks:
   platform:
-    # Not `internal: true`: the image builds in this stack need the registry, and
+    # Not `internal: true`: the image pulls in this stack need the registry, and
     # a compose network with no egress cannot pull. The stack publishes to the
-    # host loopback and nowhere else, which is the posture that matters.
+    # host loopback and nowhere else, which is the posture that matters. This
+    # reason got STRONGER in the registry change: `identity` and `guard` are
+    # pulled, not built, so every run of this tier now depends on that egress.
     driver: bridge
 
 volumes:
@@ -126,6 +146,74 @@ volumes:
   guard-redis-data:
 
 services:
+  # ----------------------------------------------------------------- registry
+  # WHERE THE SIBLING ARTIFACTS COME FROM, and the first service in the file
+  # for a reason that is mechanical rather than editorial: `docker compose up`
+  # resolves and pulls every `image:` in the document BEFORE it creates any
+  # container, so a stack that pulls `identity` and `guard` from a registry
+  # that this same compose file is about to start cannot start at all. Compose
+  # has no way to express "start this one first, then pull those", so
+  # `bin/e2e-stack` brings this service up as its own step before anything else
+  # resolves. That ordering lives in the script; the fact that it has to is
+  # documented here.
+  #
+  # IT IS NOT FLEET INFRASTRUCTURE AND IT DOES NOT PERSIST. It is `registry:2`
+  # with no volume and no configuration, publishing to 16010, and it holds
+  # nothing that outlives `./bin/e2e-stack down`. The tags it serves are
+  # `:e2e`-scoped for exactly this reason: the registry is shared infrastructure
+  # on a developer's machine and a stack that could overwrite a tag another
+  # consumer pins would be a worse bug than a slow one. Never `:latest`.
+  #
+  # WHY IT IS HERE RATHER THAN ASSUMED: nothing was running on this machine when
+  # this was written. The brief expected an existing local registry and there
+  # was none — no `registry:2` container, and nothing answering `/v2/` on the
+  # usual ports (5000 is macOS AirPlay Receiver, which answers 403 and is not a
+  # registry). Kamal's `kamal-local-registry` on this machine is a BUILDER, not
+  # a registry: `docker buildx ls` lists the buildkit container and there is no
+  # registry server behind it. So the default path is made self-contained
+  # rather than assumed, and `E2E_REGISTRY` is the one variable that repoints
+  # the whole document at a registry that does persist:
+  #
+  #     E2E_REGISTRY=registry.internal:5000 ./bin/e2e
+  #
+  # Nothing else in this file names the registry, so that is the whole change.
+  registry:
+    image: registry:2
+    environment:
+      # No auth, and deliberately: this binds to 127.0.0.1 and holds throwaway
+      # build output for one test run. A registry that needs credentials to be
+      # usable by the thing that publishes to it has made the e2e tier depend on
+      # a secret, and this tier's own doctrine (no secrets in a fixture) is
+      # better served by not inventing one.
+      REGISTRY_STORAGE_DELETE_ENABLED: "true"
+    ports:
+      # The bare `${E2E_REGISTRY_PORT:-16010}` shape and not `127.0.0.1:...`,
+      # because every other published port in this file is the bare shape and
+      # tests/validate-ci.sh enforces exactly that. The consequence is stated
+      # rather than discovered: this binds all interfaces, not loopback.
+      #
+      # That is a real posture cost and it is accepted deliberately, on the
+      # grounds that (a) it makes the registry indistinguishable in kind from
+      # the postgres and redis this same stack already publishes on all
+      # interfaces, so it adds no new class of exposure to this document, and
+      # (b) what it serves is two throwaway build artifacts with no
+      # credentials, deleted by `down -v`. A registry that published a
+      # credential would need loopback binding more than this one does, and the
+      # day this registry starts holding anything real the binding is the first
+      # thing that has to change.
+      - "${E2E_REGISTRY_PORT:-16010}:5000"
+    healthcheck:
+      # `/v2/` is the registry's own API root and it answers 200 once the
+      # storage driver is up. registry:2 carries a shell and wget (verified), so
+      # unlike identity this healthcheck can actually run inside its container —
+      # which matters here because it is the gate on every image pull below.
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:5000/v2/"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 2s
+    networks: [platform]
+
   # ---------------------------------------------------------------- postgres
   # identity's own database. One container, one database: the platform is
   # database-per-service and a service that reaches into another's database is a
@@ -180,13 +268,22 @@ services:
   # The fix belongs in identity's own Dockerfile (a `HEALTHCHECK` needs a probe
   # binary in the image, or a base that has one) and is DECISION NEEDED for the
   # manager. This repository may not modify a sibling.
+  #
+  # AN `image:` AND NO `build:`, and that absence is the contract. The image is
+  # pulled by tag from the registry above, so this tier runs the artifact named
+  # `cafaye/identity:e2e` rather than a rebuild of whatever is in `../identity`
+  # right now. Read the "NO SIBLING BUILD CONTEXTS" block at the top of this
+  # file before changing it: the tag is not a cache, it is the claim that this
+  # suite tested a specific published artifact.
+  #
+  # Developing against an unmerged sibling change is `E2E_BUILD_SIBLINGS=1`,
+  # which layers e2e/docker-compose.siblings.yml. That file carries the
+  # `build:` stanza and the matching local `image:` — the same tag, so the
+  # override changes what the tag RESOLVES TO rather than which service the
+  # suite talks to, and a hatch that renamed the image would be a second
+  # topology instead of an escape from this one.
   identity:
-    build:
-      context: ../identity
-      dockerfile: Dockerfile
-      args:
-        SERVICE_NAME: identity
-    image: cafaye/e2e-identity:local
+    image: "${E2E_REGISTRY:-localhost:16010}/cafaye/identity:e2e"
     environment:
       PORT: "8080"
       LOG_LEVEL: debug
@@ -232,13 +329,10 @@ services:
     networks: [platform]
 
   # -------------------------------------------------------------------- guard
+  # The same contract as identity, for the same reason and through the same
+  # override: an `image:` pulled by tag, no `build:` of its own.
   guard:
-    build:
-      context: ../guard
-      dockerfile: Dockerfile
-      args:
-        BUN_VERSION: "1.3.12"
-    image: cafaye/e2e-guard:local
+    image: "${E2E_REGISTRY:-localhost:16010}/cafaye/guard:e2e"
     environment:
       PORT: "8080"
       NODE_ENV: production
@@ -291,6 +385,15 @@ services:
 
   # ------------------------------------------------------------------- parlor
   # The service under test, and the one whose shape this packet changed.
+  #
+  # IT STILL HAS A `build:`. Every sibling lost its build stanza and this one
+  # kept it, and the asymmetry is the whole point rather than an oversight: the
+  # point of a test tier is to test the thing being changed, so this image is
+  # rebuilt from the working tree on every run. Its siblings are consumed,
+  # because rebuilding them was what made this tier test something other than
+  # the deployed artifact. If a future packet moves parlor to a tag too, the
+  # honest reason has to be "a tag is now published for this repository", not
+  # "it saves twenty seconds".
   #
   # There are NO BUILD ARGS, and their absence is the BFF. The image used to be
   # built with `--build-arg NEXT_PUBLIC_IDENTITY_URL=…` pointing at the EDGE's
@@ -352,10 +455,20 @@ services:
     image: nginx:1.27.4-alpine
     volumes:
       # Relative to the *project directory*, which bin/e2e-stack pins to the
-      # repository root so that `../identity` means the sibling checkout. Hence
-      # `./e2e/edge.conf` and not `./edge.conf` — getting that wrong produces
-      # "not a directory: Are you trying to mount a directory onto a file",
-      # which is a real message from this run rather than a hypothetical.
+      # repository root. Hence `./e2e/edge.conf` and not `./edge.conf` —
+      # getting that wrong produces "not a directory: Are you trying to mount a
+      # directory onto a file", which is a real message from this run rather
+      # than a hypothetical.
+      #
+      # The `../identity` / `../guard` build contexts that used to sit beside
+      # this comment are gone from the default document, so the project
+      # directory no longer has to be the repository root for THEM — it still
+      # is, because bin/e2e-stack pins it that way and the sibling override
+      # resolves its contexts against it. What that means for a reader now:
+      # this file's volume paths are anchored at the repository root, and the
+      # sibling build contexts in e2e/docker-compose.siblings.yml are anchored
+      # at the same place.
+      #
       # The leading `./` is load-bearing for a second reason: without it Compose
       # reads a bare relative path as the NAME of a named volume and refuses
       # with "refers to undefined volume", which is also a real message from here.
