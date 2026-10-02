@@ -474,6 +474,26 @@ ensure_sibling_artifacts() {
   # `docker image inspect`, which would reintroduce the identical defect under a
   # different spelling.
   #
+  # `--insecure` is NOT optional and its absence is a bug this file shipped for
+  # one run and then fixed, so the reason is written down rather than left as a
+  # flag somebody would delete as redundant. This registry is plain HTTP on
+  # localhost:16010, and without `--insecure` `docker manifest inspect` exits 1
+  # with "no such manifest" for a tag the registry is serving with a 200. It
+  # fails toward NOT PUBLISHED, so the symptom is the fast path never being
+  # taken: every run announces a pull, and the "published, nothing to pull"
+  # line this branch exists to print is unreachable. Measured on a registry
+  # holding both artifacts:
+  #
+  #   docker manifest inspect              localhost:16010/...:e2e  -> exit 1
+  #   docker manifest inspect --insecure   localhost:16010/...:e2e  -> exit 0
+  #   curl -o /dev/null -w %{http_code}     .../manifests/e2e       -> 200
+  #
+  # That is the third time in this repository that a probe was believed because
+  # it returned something, rather than checked against the thing it claims to
+  # measure. The `--insecure` registry and a manifest fetch that both say "no"
+  # while the registry says "yes" is the failure mode; a probe that cannot fail
+  # on a populated registry is not a probe.
+  #
   # A cached artifact is not thereby a published one. The two are separate
   # facts and each one, when false, means the artifact has to be pulled:
   #
@@ -489,7 +509,7 @@ ensure_sibling_artifacts() {
   local service tag present=0 missing="" unpublished=""
   for service in "${SIBLING_SERVICES[@]}"; do
     tag="$REGISTRY/$(sibling_tag "$service")"
-    if timeout 60 docker manifest inspect "$tag" >/dev/null 2>&1; then
+    if timeout 60 docker manifest inspect --insecure "$tag" >/dev/null 2>&1; then
       present=$((present + 1))
       # Published is not cached. Compose will not use what is not here, so this
       # has to be a pull even though the registry has answered.
@@ -516,8 +536,8 @@ ensure_sibling_artifacts() {
       log "sibling artifacts: $present/${#SIBLING_SERVICES[@]} published at $REGISTRY, verified over the network, nothing to pull"
       for service in "${SIBLING_SERVICES[@]}"; do
         tag="$REGISTRY/$(sibling_tag "$service")"
-        log "  $service -> $(timeout 60 docker manifest inspect --verbose "$tag" 2>/dev/null \
-          | sed -n 's/.*"Digest": *"\(sha256:[0-9a-f]*\)".*/\1/p' | head -1)"
+        log "  $service -> $(timeout 60 docker manifest inspect --insecure --verbose "$tag" 2>/dev/null \
+          | sed -n 's/.*"digest": *"\(sha256:[0-9a-f]*\)".*/\1/p' | head -1)"
       done
       return 0
     fi

@@ -1,0 +1,24 @@
+### publish, then keep the registry alive to reach the steady state ###
+[e2e] registry up in 6s
+[e2e]   published identity -> localhost:16010/cafaye/identity:e2e  localhost:16010/cafaye/identity@sha256:3d1c274bffc7300611ccf31d1c089263f407deff0fba0f5ca3acc28caae2086a
+[e2e]   published guard -> localhost:16010/cafaye/guard:e2e  localhost:16010/cafaye/guard@sha256:4cf42f061f0f555b9ddec7a88138e2bf5ea743b401b03f029468f25846507b38
+
+catalog: {"repositories":["cafaye/guard","cafaye/identity"]}
+
+### e2e-stack up — the steady-state branch (published AND cached) ###
+[e2e] starting the registry the sibling artifacts are pulled from (localhost:16010)
+[e2e] pulling localhost:16010/cafaye/identity:e2e
+[e2e] pulling localhost:16010/cafaye/guard:e2e
+[e2e] sibling artifacts: pulled from localhost:16010
+[e2e] migrations applied in 1s
+[e2e]   identity ready after 0s (1 polls) — http://127.0.0.1:16080/readyz
+[e2e]   guard ready after 0s (1 polls) — http://127.0.0.1:16081/readyz
+[e2e]   parlor ready after 0s (1 polls) — http://127.0.0.1:16003/readyz
+[e2e]   edge ready after 0s (1 polls) — http://127.0.0.1:16000/readyz
+[e2e] the whole stack is ready
+
+### the suite against that stack ###
+  23 passed (9.5s)
+[e2e] the tier ran: 23 passed, 0 failed, 0 skipped, 0 retried
+[e2e] end-to-end tier finished in 12s
+TIER_EXIT=0
