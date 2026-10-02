@@ -1,0 +1,42 @@
+=== BEFORE: what ONE run of bin/e2e-stack build costs ===
+2026-10-02T20:50:31Z
+
+### A. full bin/e2e-stack build, nothing changed (all three images)
+#20 CACHED
+#21 CACHED
+#29 CACHED
+#30 CACHED
+#31 CACHED
+#32 CACHED
+#38 CACHED
+#39 CACHED
+#40 CACHED
+#41 CACHED
+#42 CACHED
+#43 CACHED
+#46 CACHED
+ Image cafaye/e2e-guard:local Built 
+ Image cafaye/e2e-identity:local Built 
+ Image cafaye/e2e-parlor:local Built 
+[e2e] images built in 14s
+real 13.81
+user 0.32
+sys 0.27
+
+### B. simulate the one-line change: touch identity's source, rebuild
+[e2e] building images (budget 1800s; a cold run builds three toolchains)
+[e2e]   identity  <- ../identity
+[e2e]   guard     <- ../guard
+[e2e]   parlor    <- . (no build args: the BFF reads IDENTITY_URL at run time)
+[e2e]   edge      <- nginx, a pinned image: see e2e/edge.conf for why it exists
+ Image cafaye/e2e-identity:local Built 
+ Image cafaye/e2e-parlor:local Built 
+ Image cafaye/e2e-guard:local Built 
+[e2e] images built in 20s
+real 20.40
+
+### C. image IDs after
+cafaye/e2e-parlor:local  caf7461ce53f  314MB
+cafaye/e2e-guard:local  32c1530edb19  202MB
+cafaye/e2e-identity:local  94015e86b7bc  21.8MB
+cafaye/e2e-site:local  f12aef481f93  313MB

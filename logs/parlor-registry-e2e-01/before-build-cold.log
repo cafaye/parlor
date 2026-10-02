@@ -1,0 +1,24 @@
+=== BEFORE: COLD builds (--no-cache), the number a fresh machine pays ===
+2026-10-02T20:48:49Z
+
+=== identity --no-cache ===
+#17 resolving provenance for metadata file
+#17 DONE 0.0s
+ Image cafaye/e2e-identity:local Built 
+real 45.10
+user 0.25
+sys 0.24
+
+=== guard --no-cache ===
+#16 resolving provenance for metadata file
+#16 DONE 0.0s
+ Image cafaye/e2e-guard:local Built 
+real 4.33
+user 0.17
+sys 0.13
+
+=== resulting image IDs ===
+cafaye/e2e-guard:local	32c1530edb19	202MB
+cafaye/e2e-identity:local	94015e86b7bc	21.8MB
+cafaye/e2e-parlor:local	69a6779c7319	314MB
+cafaye/e2e-site:local	f12aef481f93	313MB

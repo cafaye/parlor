@@ -1,0 +1,43 @@
+=== BEFORE: guard build (warm cache) ===
+
+#11 [runtime 4/5] COPY --chown=bun:bun package.json ./
+#11 CACHED
+
+#12 [prod-deps 2/4] WORKDIR /app
+#12 CACHED
+
+#13 [runtime 3/5] COPY --from=prod-deps --chown=bun:bun /app/node_modules ./node_modules
+#13 CACHED
+
+#14 [runtime 5/5] COPY --chown=bun:bun src ./src
+#14 CACHED
+
+#15 exporting to image
+#15 exporting layers done
+#15 writing image sha256:c057c1041e0fb53511872962a6916617cdcd13e193fee743873477e66f9df6c8 done
+#15 naming to docker.io/cafaye/e2e-guard:local done
+#15 DONE 0.0s
+
+#16 resolving provenance for metadata file
+#16 DONE 0.0s
+ Image cafaye/e2e-guard:local Built 
+real 4.40
+user 0.19
+sys 0.15
+
+=== BEFORE: parlor build (warm cache) ===
+#17 DONE 0.1s
+
+#18 exporting to image
+#18 exporting layers
+#18 exporting layers 0.2s done
+#18 writing image sha256:69a6779c7319418d20f3dbcec2923b78695829fd4c45f870fc7819be938b3846 done
+#18 naming to docker.io/cafaye/e2e-parlor:local done
+#18 DONE 0.3s
+
+#19 resolving provenance for metadata file
+#19 DONE 0.0s
+ Image cafaye/e2e-parlor:local Built 
+real 15.89
+user 0.22
+sys 0.18
