@@ -8,6 +8,104 @@ All notable changes to parlor are recorded here. The format follows
 
 ### Added
 
+- **A deploy story: `config/deploy.yml`, the tier that proves it, and a health
+  gate the app is proven to serve.** Every other service in the fleet deploys and
+  this one could not — there was no config to deploy from, no accessory story,
+  and nothing `kamal` could act on. `config/deploy.yml` is a copy of
+  `templates/kamal/deploy.yml.erb` from `cafaye/kit` at kit commit `b9d8a30`
+  (measured with `git log -1 -- templates/kamal/deploy.yml.erb`, not the tip), and
+  it differs from it in exactly five places, each argued at the line it is on and
+  listed in the file's header so a diff against the template shows five
+  differences rather than a fork:
+
+  - **`healthcheck.path: /readyz`, not kit's `/up`.** The App Router serves
+    exactly two paths at the root — `src/app/healthz/route.ts` and
+    `src/app/readyz/route.ts` — so `/up` is a 404 on every request kamal-proxy
+    makes, the container never becomes healthy, and every rollout is torn back
+    after `deploy_timeout` on a release that is otherwise fine. identity and
+    courier had already answered this the same way, so the fleet is now uniform;
+    the interesting half is not that kit's default is wrong but that a Node app
+    picks its own probe and has to serve it. **It is proven to serve it.**
+    `src/app/readyz/route.test.ts` gained four cases that read the path out of
+    `config/deploy.yml` and assert this app answers 200 there. Nothing upstream
+    can do that, and the reason was measured rather than assumed: on kamal 2.12.0
+    `kamal config` exits 0 with `path: /up` set, kamal's own
+    `Kamal::Configuration::Proxy` validator accepts it too, and
+    `Kamal::Configuration#to_h` does not carry `proxy` or `env` at all. Breaking
+    the path to `/up` was watched turning three of the four red.
+  - **No `accessories:` block at all** — no postgres, no backup. See below.
+  - **`builder.args` carries `NEXT_PUBLIC_IDENTITY_URL` and
+    `NEXT_PUBLIC_BILLING_URL`,** and the two new required operator variables
+    `KIT_IDENTITY_URL` and `KIT_BILLING_URL` feed them. This is the difference
+    the Node/Next shape forces and the one that would otherwise have shipped a
+    broken image: `next build` substitutes every `NEXT_PUBLIC_*` into the client
+    bundle, so a service address set at run time is not a later value, it is no
+    value at all. Kamal's `env.clear` looks like the natural home for them and is
+    not, and saying so in the file is more useful than saying so in a comment
+    somewhere else.
+  - **`env.clear` and `env.secret` are both empty, written out rather than
+    omitted,** because the only two variables this app reads are the two build
+    args above, neither of which is a credential. An absent `env:` and an empty
+    one are the same document to kamal and a different question to a reader.
+  - **`KAMAL_REGISTRY_PASSWORD` appears once, in `registry.password`,** not also
+    in `env.secret` as kit's template has it. The application container has no
+    use for a push credential, and `docker inspect` prints it to anybody who can
+    read the host.
+
+- **`bin/deploy-config`, a tier that runs the REAL binaries against the rendered
+  config.** A YAML parse says nothing useful about this file, and the properties
+  that break it are invisible to one: a doubled registry host is valid YAML and
+  `kamal config` exits 0 on it, a missing `builder.arch` is valid YAML and kamal
+  refuses the config, and a healthcheck path naming a route nothing serves is
+  valid YAML and valid kamal. So the file is rendered and handed to `kamal`
+  2.12.0 and to kamal's own `Kamal::Configuration::Proxy` validator, and three
+  defects are PLANTED and asserted to go red. It proves each of the seven
+  required variables — the five kit requires plus this service's two — fails the
+  render by name.
+
+  It is **not** in `bin/prime`, because `kamal` and `ruby` are on neither a CI
+  runner nor a node-only checkout, and a check that skips itself in CI is a green
+  badge over a proof nobody took. It has a three-valued exit instead: `0` proven,
+  `1` a property failed, `2` the binaries are absent and nothing was proven. `2`
+  is deliberately not `0`.
+
+- **Four shape checks in `tests/validate-ci.sh`, with four more breakages in its
+  self-test** — 35 to 39 checks, 34 to 39 breakages. They need no binaries: the
+  deploy config exists and declares no database; every interpolated builder arg
+  has a matching `ARG` in the Dockerfile (a cross-file contract whose failure is
+  invisible, because `docker build --build-arg` for an undeclared name is a
+  warning, not an error); every `FROM node:` carries the `engines.node` pin; and
+  the tier above is executable.
+
+### Changed
+
+- **The Dockerfile's runner stage is pinned.** `FROM node:22-slim` became
+  `FROM node:22.22.2-slim`, so the image is *built* on the pin and *runs* on it.
+  The file's own header has claimed "One pin, four mirrors, and the image is the
+  fourth — see tests/validate-ci.sh" while `tests/validate-ci.sh` checked three of
+  the four; measured with `docker manifest inspect node:22-slim`, the floating tag
+  resolves a moving multi-arch index. For a service with no database the runtime
+  it executes on is most of what it is, and no deploy config can fix an image that
+  boots a different Node than `bin/prime` verified. The claim is now a check.
+- **`docker build` is no longer broken, so the CI comment saying it is has
+  gone.** `ci.yml` carried "it is currently broken for an unrelated reason (its
+  deps stage inherits `NODE_ENV=production`, so `npm ci` there installs no
+  devDependencies and Turbopack cannot resolve `@tailwindcss/postcss`)" plus a
+  DECISION NEEDED. Measured on this branch: `docker build -t parlor .` exits 0
+  and produces a runnable standalone image, because the deps stage runs
+  `npm ci --include=dev`. The `build` job's assertion that `.next/standalone/
+  server.js` exists stays — it was never redundant — but it is no longer the only
+  thing between a green job and an image that cannot start.
+- **`NEXT_PUBLIC_BILLING_URL` is a declared build arg.** It was missing, and the
+  way it was missing is the argument for the new check: `docker build
+  --build-arg` for an undeclared name is a warning, so a caller could pass
+  `--build-arg NEXT_PUBLIC_BILLING_URL=https://billing.example.com`, read the
+  successful exit code, and ship an image whose billing client is
+  `DEFAULT_BILLING_URL` — `http://localhost:3000`, which is this app's own port,
+  so the billing screens would have asked parlor to talk to itself.
+- **`mise run deploy:config`** exists for the tier above. Not part of the gate, for
+  the reason the tier is not.
+
 - **The email-verification surface: `/verify-email`, `/verify-email/confirm`, the
   post-signup state, and the affordance on the sign-in screen.** identity's Mailer
   sends verification mail for real and `POST /v1/users` does not — its contract says
@@ -666,6 +764,44 @@ recorded so it is not rediscovered from a UI symptom.
   owns it, and what the CORS allowlist is if it is the first.** Until one lands,
   this is a one-line change to `e2e/docker-compose.yml` away from being a real
   deployment failure rather than a test-harness note.
+
+- **A deploy of `config/deploy.yml` cannot complete a sign-in, and kamal-proxy
+  cannot be the thing that fixes it.** This is the CORS gap above seen from the
+  deployment side, and it is recorded separately because the deploy packet added
+  a fact the harness could not: **kamal-proxy routes by hostname, not by path.**
+  So a single `proxy.hosts` entry cannot send `/v1/*` to identity and everything
+  else to parlor, which means the end-to-end stack's nginx is not a convenience
+  there — it is the only shape in that harness that a deployment cannot copy.
+  The two remaining fixes are unchanged and both still live elsewhere: identity
+  grows a CORS policy, or parlor grows the same-origin BFF route that `guard`
+  provides. **DECISION NEEDED, and it is now the largest item on this list,
+  because a deploy config is the thing that makes a broken sign-in reachable by
+  somebody who is not running a test.**
+
+- **No CI job builds or pushes the image, so `kamal deploy` builds on the host.**
+  Measured by reading `.github/workflows/ci.yml`: three jobs — kit's `node` job,
+  `./bin/prime`, and typecheck + `next build` — and none runs `docker build`,
+  `docker push` or `kamal build`. The only place this image is built is
+  `e2e/docker-compose.yml`, which tags it `cafaye/e2e-parlor:local` and pushes
+  it nowhere. The consequence is that kit's `builder` block, whose stated reason
+  for existing is that building on the host competes with the running service
+  for memory, is currently the wrong shape for this repository: on a fresh host
+  `kamal deploy` will run the build there. The registry cache below it still
+  helps. **DECISION NEEDED.** The fix is a CI job that authenticates to `ghcr.io`
+  with a credential nobody in this repository holds, and it is deliberately not
+  written here: a publish job against a secret that cannot be verified from this
+  tree would make every badge in CI conditional on something outside it.
+
+- **`/readyz` checks nothing, so the rollout gate is currently a liveness gate
+  wearing a readiness label.** `src/app/readyz/route.ts` answers `deps: "none"`,
+  which is honest — parlor's server-side dependencies are its own disk and the
+  Node runtime, and identity and billing are called from the *browser*, not from
+  this process, so there is nothing for it to sweep. `AGENTS.md` already records
+  that a real dependency check is its own packet, on the grounds that a slow
+  identity must not necessarily mean "not ready", and that is a decision rather
+  than a default. What this packet does is make the consequence explicit: the
+  path is right and the meaning is not there yet, so a deploy of parlor today
+  proves that a container boots and not that it can reach anything.
 
 - **`identity/openapi/v1.yaml` does not describe the tenancy surface.** The
   document was last changed before the packet that added the implementation was

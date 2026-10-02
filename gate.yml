@@ -43,7 +43,7 @@ gate:
   # runner with an empty cache and a cold registry connection is minutes. A warm
   # run of this gate — node_modules present, npm cache warm — measured 79s end
   # to end on 2026-09-30 (`real 79.02s`), of which `npm ci` was 11s and vitest
-  # 7.8s and the rest the static checks and their 34-breakage self-test. A
+  # 7.8s and the rest the static checks and their 39-breakage self-test. A
   # budget tight enough to be a bug detector would be a flake generator on the
   # first CI run of the day, and a timeout that fires on a cold cache is
   # `gate.timeout`, which reads as "the gate hung" and is really "the budget
@@ -193,10 +193,23 @@ gate:
     #                             change in the summary's tail is not a red
     #                             gate; only the `|` is load-bearing.
     #
-    # 484 was what the suite had on 2026-10-01, before this packet.
-    # 554 is what the suite has today, re-measured on this tree on 2026-10-02
-    # (`npm test` -> `Tests  554 passed (554)`, 24 files). It was 484 before the
-    # password-reset packet, which added 70:
+    # 554 is what the suite had on 2026-10-02, before the verification packet
+    # raised it to 623. It is 628 today, re-measured on this tree on 2026-10-02
+    # (`npm test` -> `Tests  628 passed (628)`, 26 files). The +5 is the deploy
+    # packet's, and it is worth saying which five, because a floor that goes up
+    # with no account of what it bought is a floor nobody trusts:
+    #
+    #   * 5 in `src/app/readyz/route.test.ts`, appended to the four cases that
+    #     already tested the route — a probe is code, not config, and these are
+    #     the assertions that read `config/deploy.yml` and check the path its
+    #     healthcheck gates the rollout on is a path THIS APP SERVES. Nothing
+    #     upstream can see that: measured on kamal 2.12.0 while writing the file,
+    #     `kamal config` exits 0 with `path: /up` and kamal's own
+    #     `Kamal::Configuration::Proxy` validator accepts it too. Broken to `/up`,
+    #     three of the five go red; broken to `/healthz`, two of them do.
+    #
+    # The rest of the history, for the record: 484 was the count on 2026-10-01,
+    # and the password-reset packet took it to 554 by adding 70:
     #
     #   * 20 in `src/app/forgot-password/page.test.tsx` — the enumeration
     #     property from both sides, the 503 sentence, the 422 on the address
@@ -208,7 +221,7 @@ gate:
     #   * 11 in `src/lib/identity.test.ts` — the two recovery calls' request
     #     shapes, the constant 202 body, the no-bearer-token rule on both, the
     #     404, the 422, the 503;
-    #   * 17 in `src/lib/credentials.test.ts`, a file this packet created. It
+    #   * 17 in `src/lib/credentials.test.ts`, a file that packet created. It
     #     covers the registration and sign-in rules that were previously only
     #     reached through the forms, plus the two new validators. The file is new
     #     because the password floor now applies in one place and NOT the other,
@@ -216,6 +229,10 @@ gate:
     #     assertions buried in two screen suites;
     #   * 4 in `src/app/login/page.test.tsx` — the "Forgot your password?"
     #     affordance and the changed-password arrival.
+    #
+    # What this packet did NOT add, on purpose: nothing about TLS, multi-host
+    # rolling deploys or a CDN. Those are decisions rather than tests, and a test
+    # that asserts a decision is a test that outlives the decision.
     #
     # A floor is a decrease-detector and not a budget: a suite that quietly lost
     # forty tests cannot report itself as passing. It is the only place in
@@ -226,14 +243,14 @@ gate:
     # is a thing a human has to remember until MD12's machinery lands).
     - id: suite
       match: '^[ ]*Tests[ ]+([0-9]+)[ ]+passed(?![ ]*\|)'
-      minimum: 623
+      minimum: 628
     # The tally `tests/validate-ci.sh` prints, which is the second half of this
     # gate: the checks that the tree still has the shape CI assumes — one
     # runtime pin, `npm ci` and not `npm install`, the gate command, the
-    # end-to-end tier's shape. 35 is this machine's count.
+    # end-to-end tier's shape, and now the deployment story's shape. 39 is this machine's count.
     #
     # NO ESCAPE TOLERANCE HERE, and the difference is measured rather than
-    # assumed. This line is a bash `printf` in `tests/validate-ci.sh` (line 825),
+    # assumed. This line is a bash `printf` in `tests/validate-ci.sh` (line 1039),
     # and that file contains no byte that can start an ANSI escape and no call
     # to `tput` — `grep -c $'\x1b' tests/validate-ci.sh` is 0. It cannot
     # colourise, so a pattern that tolerated colour here would be matching
@@ -249,9 +266,9 @@ gate:
     #
     # The pattern counts CHECKS PASSED and reads the skipped count as a number
     # it deliberately does not floor, because it is not a constant: shellcheck
-    # is installed on this machine (so the line reads `35 passed, 0 failed, 0
+    # is installed on this machine (so the line reads `39 passed, 0 failed, 0
     # skipped`) and is not installed on every machine (so it would read
-    # `35 passed, 0 failed, 1 skipped`). A floor on the total would be a
+    # `39 passed, 0 failed, 1 skipped`). A floor on the total would be a
     # different number in the two places, which is the "green badge means
     # different things on different machines" defect in miniature. The skip is
     # still visible in the line, and `bin/prime` prints it, so a reader can see
@@ -259,14 +276,14 @@ gate:
     # pretend otherwise.
     - id: ci-shape-checks
       match: '^([0-9]+) passed, [0-9]+ failed, [0-9]+ skipped$'
-      minimum: 35
-    # And the self-test, which is what makes the 35 above load-bearing: 34
+      minimum: 39
+    # And the self-test, which is what makes the 39 above load-bearing: 39
     # throwaway copies of the tree, each broken one way, each asserted to go
-    # red. A gate that runs the 35 checks but silently stopped proving they can
-    # fail would still print `35 passed` — this is the line that says the
+    # red. A gate that runs the 39 checks but silently stopped proving they can
+    # fail would still print `39 passed` — this is the line that says the
     # rubber stamp was pressed.
     #
-    # Also a bash `printf` in the same file (line 816) and also plain by
+    # Also a bash `printf` in the same file (line 1030) and also plain by
     # construction, for the same measured reason. `^self_test:` is anchored
     # hard enough that nothing else in a vitest or npm log can be mistaken for
     # it; the earlier `self_test:` lines this script prints on a failure do not
@@ -274,7 +291,7 @@ gate:
     # colon.
     - id: check-self-test
       match: '^self_test: ([0-9]+) breakages'
-      minimum: 34
+      minimum: 39
   # NOT PROVED, and named here rather than left to be discovered: a proof is a
   # line of output. `484 passed` proves 484 tests ran; it does not prove the
   # tests touched identity, because they do not — the identity and billing

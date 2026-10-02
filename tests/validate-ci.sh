@@ -20,7 +20,7 @@
 # and a partial parse is a worse reader than a grep that says what it wants.
 #
 #   bash tests/validate-ci.sh              the checks
-#   bash tests/validate-ci.sh --self-test  prove they can fail (16 breakages,
+#   bash tests/validate-ci.sh --self-test  prove they can fail (39 breakages,
 #                                         plus the opposite case)
 #
 # `--self-test` is part of the gate, not an extra. A check nobody has watched
@@ -69,6 +69,14 @@ E2E_PORT_LAST=16099
 # a collision with somebody else's stack on the same machine is the collision
 # the packet for this file names first.
 E2E_RESERVED_PORTS="3000 5432 5437 6379 8080 8888 15000 15500 15600 15700 15800 15900 15901 15902 55432"
+# The deployment story's own files. They are read by the same checks as the rest
+# of CI because a claim CI makes about a deploy is a claim about the shape of the
+# tree, and these three files can be perfectly well formed and still deploy
+# nothing: a `config/deploy.yml` that names an accessory, a Dockerfile that
+# takes a build arg nobody sets, or a verification script nobody may execute.
+DEPLOY_CONFIG="$ROOT/config/deploy.yml"
+DOCKERFILE="$ROOT/Dockerfile"
+DEPLOY_RUNNER="$ROOT/bin/deploy-config"
 
 pass=0
 fail=0
@@ -729,6 +737,135 @@ if [ -f "$E2E_COMPOSE" ]; then
   fi
 fi
 
+# --- the deployment story, in the four shapes CI assumes --------------------
+# These four checks are about the SHAPE, and every one of them needs no kamal,
+# no docker and no network — which is why they are here rather than only in
+# `bin/deploy-config`. That script is the one that runs the real binaries, and it
+# is a separate tier because neither kamal nor ruby is on a CI runner; a
+# deployment property that only the tier with the real binaries can see would be
+# a property nobody checked on a pull request.
+#
+# What is deliberately NOT here: the healthcheck path. `src/app/readyz/
+# route.test.ts` owns that one, because the property is not "the file says
+# /readyz" — it is "the path the rollout gate uses is a path this application
+# serves", and only the test can see both halves. A check here would be a weaker
+# version of the same assertion with a second place to update.
+
+# C1. The deploy config exists and keeps no database. The absence of a postgres
+#     accessory is a DECISION (parlor's state is identity's, and nothing in this
+#     repository writes to a datastore), and a decision nobody can check becomes
+#     an omission the next template re-copy silently fills. Same for
+#     `config/kamal-backup.yml`: there is no backup accessory to mount it, so a
+#     committed one would be a document no process opens. The check is on the
+#     COMMENT-STRIPPED file, because this configuration explains the decision at
+#     length and names DATABASE_URL while doing it — a reader that matched the
+#     prose would report a database in a file that has none.
+if [ ! -f "$DEPLOY_CONFIG" ]; then
+  no "config/deploy.yml exists and declares no database" \
+    "$DEPLOY_CONFIG is missing; the other three deploy checks read it"
+  no "every builder arg in config/deploy.yml is a Dockerfile ARG" \
+    "skipped: $DEPLOY_CONFIG is missing"
+else
+  DEPLOY_CODE=$(code_lines "$DEPLOY_CONFIG")
+  if [ -n "$(printf '%s\n' "$DEPLOY_CODE" | found '^accessories:')" ] \
+    || [ -n "$(printf '%s\n' "$DEPLOY_CODE" | found '(DATABASE_URL|DATABASE_PASSWORD|POSTGRES_PASSWORD|RESTIC_|AWS_SECRET_ACCESS_KEY)')" ] \
+    || [ -f "$ROOT/config/kamal-backup.yml" ]; then
+    no "config/deploy.yml exists and declares no database" \
+      "an accessories block, a database credential, or a config/kamal-backup.yml with nothing to mount it into; parlor keeps no state of its own and the decision is written in config/deploy.yml"
+  else
+    ok "config/deploy.yml exists and declares no database"
+  fi
+
+  # C2. The cross-file contract, and the one whose failure is invisible.
+  #
+  # `next build` substitutes every `NEXT_PUBLIC_*` at BUILD time, so a service
+  # address cannot be set at run time at all — which is why the deploy config
+  # passes it as a build arg. The trap is the join: `docker build --build-arg`
+  # for a name the Dockerfile does not declare is a WARNING, so renaming a key on
+  # one side leaves the other side's `ARG` untouched, the build exits 0, and the
+  # image ships an app pointed at the compiled-in localhost default. Each file is
+  # internally consistent and the PAIR is wrong, which is the case a per-file
+  # check cannot see — kit's own `kamal_test.sh` §2 exists for the same shape.
+  #
+  # Read GENERICALLY, off the interpolated keys rather than off two hardcoded
+  # names: the day a third build arg arrives, this has already been asked the
+  # right question. And the emptiness is a FAILURE, because a check that greps a
+  # file for a key it did not find is exactly the check that passes on a config
+  # that stopped configuring anything.
+  deploy_args=$(printf '%s\n' "$DEPLOY_CODE" \
+    | found '^[[:space:]]+[A-Z][A-Z0-9_]*:[[:space:]]*<%=' \
+    | sed 's/^[[:space:]]*//; s/:.*//')
+  if [ -z "$deploy_args" ]; then
+    no "every builder arg in config/deploy.yml is a Dockerfile ARG" \
+      "no interpolated builder arg found; a Next service cannot set NEXT_PUBLIC_* at run time, so there has to be at least one"
+  else
+    unmatched=""
+    for arg in $deploy_args; do
+      if [ -z "$(found "^ARG ${arg}=" <"$DOCKERFILE")" ]; then
+        unmatched="$unmatched $arg"
+      fi
+    done
+    if [ -z "$unmatched" ]; then
+      ok "every builder arg in config/deploy.yml is a Dockerfile ARG (${deploy_args//$'\n'/, })"
+    else
+      no "every builder arg in config/deploy.yml is a Dockerfile ARG" \
+        "the Dockerfile declares no ARG for:$unmatched. --build-arg for an undeclared name is a warning, not an error, so the image would build and ship an app on its default address."
+    fi
+  fi
+fi
+
+# C3. Every node base image in the Dockerfile carries the pin.
+#
+# The Dockerfile's own header claims "One pin, four mirrors, and the image is the
+# fourth — see tests/validate-ci.sh", and until now this script checked three of
+# the four: package.json, mise.toml and ci.yml. The fourth drifted silently. The
+# builder stage said `node:22.22.2-slim` and the runner stage said
+# `node:22-slim`, so an image BUILT on the pin RAN on whatever the floating tag
+# resolved to that week — measured with `docker manifest inspect node:22-slim`,
+# which resolves a moving multi-arch index. For a service with no database the
+# runtime it executes on is most of what it is, and no deploy config can fix an
+# image that boots a different Node than `bin/prime` verified. So the claim in
+# the header is now a check, which is the only thing that makes it one.
+#
+# `while read` rather than a `for` over `$(...)`: a `FROM` line carries a stage
+# name (`AS builder`) and word splitting would test half a line.
+floating=""
+# `found` reads STDIN and takes no file argument — the second version of this
+# check passed the Dockerfile as one, grep read the script's own stdin, found
+# nothing, and reported the pin holding over a file it had never opened. Every
+# read of a FILE below redirects it, and the line count is in the message so an
+# empty read cannot report the same line as a correct one.
+node_bases=$(found '^FROM node:' <"$DOCKERFILE")
+while IFS= read -r from_line; do
+  [ -n "$from_line" ] || continue
+  case "$from_line" in
+    *":$PIN"*) ;;
+    *) floating="$floating|$from_line" ;;
+  esac
+done <<EOF
+$node_bases
+EOF
+if [ -z "$node_bases" ]; then
+  no "every node base image in the Dockerfile carries the pin ($PIN)" \
+    "no 'FROM node:' line at all; the image would not build, which is a different failure and not a pass"
+elif [ -z "$floating" ]; then
+  ok "every node base image in the Dockerfile carries the pin ($PIN, $(printf '%s\n' "$node_bases" | grep -c .) lines)"
+else
+  no "every node base image in the Dockerfile carries the pin ($PIN)" \
+    "these FROM lines do not name $PIN:${floating//|/, }"
+fi
+
+# C4. The tier that runs the real binaries may be executed. One line, and the
+#     reason it is here and not in `bin/prime` is in the script's own header:
+#     kamal and ruby are not on a CI runner, so this is a separate tier with a
+#     three-valued exit rather than a skip hidden inside the gate.
+if [ -x "$DEPLOY_RUNNER" ]; then
+  ok "bin/deploy-config is executable"
+else
+  no "bin/deploy-config is executable" \
+    "$DEPLOY_RUNNER is the only thing that runs kamal against config/deploy.yml, and it cannot be run"
+fi
+
 # --- optional: shellcheck --------------------------------------------------
 # Reported either way. A skip is never hidden, and it is never the difference
 # between this gate and a green build — every check above is dependency-free.
@@ -744,7 +881,7 @@ else
 fi
 
 # --- prove the checks can fail --------------------------------------------
-# Thirty-three breakages of a throwaway copy of every file these checks read,
+# Thirty-nine breakages of a throwaway copy of every file these checks read,
 # each asserted to send this gate red. A check that has only ever been seen
 # green is a check nobody has watched fail, and this is the difference between
 # a gate and a rubber stamp (PLAN.md §1: a skipped test proves nothing; a check
@@ -767,7 +904,7 @@ self_test() {
   # breakages under test.
   seed_sandbox() {
     rm -rf "${SANDBOX:?:?}"/*
-    mkdir -p "$SANDBOX/tests" "$SANDBOX/.github/workflows" "$SANDBOX/bin" "$SANDBOX/e2e"
+    mkdir -p "$SANDBOX/tests" "$SANDBOX/.github/workflows" "$SANDBOX/bin" "$SANDBOX/e2e" "$SANDBOX/config"
     cp "$ROOT/tests/validate-ci.sh" "$SANDBOX/tests/validate-ci.sh"
     cp "$PRIME" "$SANDBOX/bin/prime"
     cp "$PKG" "$SANDBOX/package.json"
@@ -775,6 +912,14 @@ self_test() {
     cp "$MANIFEST" "$SANDBOX/cafaye.yml"
     cp "$ROOT/$LOCKFILE" "$SANDBOX/$LOCKFILE"
     cp "$WF" "$SANDBOX/.github/workflows/ci.yml"
+    # The deployment story's three files, for the same reason the rest are here:
+    # a sandbox without them is red for a reason that has nothing to do with the
+    # breakage under test, and a self-test whose baseline is red proves nothing
+    # about what follows.
+    cp "$DEPLOY_CONFIG" "$SANDBOX/config/deploy.yml"
+    cp "$DOCKERFILE" "$SANDBOX/Dockerfile"
+    cp "$DEPLOY_RUNNER" "$SANDBOX/bin/deploy-config"
+    chmod +x "$SANDBOX/bin/deploy-config"
     # The end-to-end tier's files, for the same reason the other four are here:
     # a sandbox without them is red for a reason that has nothing to do with the
     # breakage under test, and a self-test whose baseline is red proves nothing
@@ -803,6 +948,16 @@ self_test() {
   echo "  ok   the pristine copy passes"
 
   # Each breakage is a name and the sed that breaks it.
+  #
+  # The five deploy breakages carry a comment here rather than inline, because a
+  # comment cannot live inside a backslash-continued list — it ends the line and
+  # the list stops being a list. The first version of the accessory breakage had
+  # no leading `\n`, and `printf 'accessories:…'` appended straight onto the last
+  # line of a file with no trailing newline, producing
+  # `options: mode=max,image-manifest=true,oci-mediatypes=trueaccessories:`. The
+  # planted key never began a line, the check correctly did not see it, and the
+  # control reported a check that could not fail. A control that plants into the
+  # end of a line plants nothing.
   for proof in \
     "rm-workflow|rm -f '$SANDBOX/.github/workflows/ci.yml'" \
     "dead-uses-path|sed -i '' 's|\.github/workflows/ci\.reusable|workflows/ci.reusable|' '$SANDBOX/.github/workflows/ci.yml'" \
@@ -837,7 +992,12 @@ self_test() {
     "a-literal-port-in-the-stack|sed -i '' 's|E2E_EDGE_PORT:-16000|16000|' '$SANDBOX/e2e/docker-compose.yml'" \
     "playwright-points-at-another-stack|sed -i '' 's|\"E2E_PARLOR_PORT\", \"16003\"|\"E2E_PARLOR_PORT\", \"3000\"|' '$SANDBOX/playwright.config.ts'" \
     "a-service-with-no-health-and-no-finding|printf '  bogus-service:\n    image: busybox:1.36.1\n' >>'$SANDBOX/e2e/docker-compose.yml'" \
-    "an-unpinned-image|sed -i '' 's|image: nginx:1.27.4-alpine|image: nginx:latest|' '$SANDBOX/e2e/docker-compose.yml'"
+    "an-unpinned-image|sed -i '' 's|image: nginx:1.27.4-alpine|image: nginx:latest|' '$SANDBOX/e2e/docker-compose.yml'" \
+    "no-deploy-config|rm -f '$SANDBOX/config/deploy.yml'" \
+    "an-accessory-in-the-deploy-config|printf '\naccessories:\n  postgres:\n    image: postgres:17-alpine\n' >>'$SANDBOX/config/deploy.yml'" \
+    "a-builder-arg-without-a-dockerfile-arg|sed -i '' 's|^    NEXT_PUBLIC_BILLING_URL: |    NEXT_PUBLIC_CDN_URL: |' '$SANDBOX/config/deploy.yml'" \
+    "an-unpinned-node-base|sed -i '' 's|^FROM node:22.22.2-slim AS runner|FROM node:22-slim AS runner|' '$SANDBOX/Dockerfile'" \
+    "the-deploy-tier-is-not-executable|chmod -x '$SANDBOX/bin/deploy-config'"
   do
     name=${proof%%|*}
     breakage=${proof#*|}

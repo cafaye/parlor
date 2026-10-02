@@ -137,15 +137,18 @@ jobs:
         run: npm run build
       # The Dockerfile ships `.next/standalone` and `.next/static` and runs
       # `node server.js` out of the first. A build that exits 0 without
-      # producing them is a green job over a broken image. This is not
+      # producing them is a green job over a broken image, and this is not
       # belt-and-braces on the build's exit code: `next build` does not fail
-      # when the standalone output is missing, and `docker build` cannot be
-      # relied on to notice either — it is currently broken for an unrelated
-      # reason (its deps stage inherits NODE_ENV=production, so `npm ci` there
-      # installs no devDependencies and Turbopack cannot resolve
-      # @tailwindcss/postcss). Tracked as a DECISION NEEDED in the parlor-04
-      # report; until the container is fixed, this assertion is the only thing
-      # standing between a green job and an image that cannot start.
+      # when the standalone output is missing.
+      #
+      # It used to carry a longer paragraph saying `docker build` was itself
+      # broken — the deps stage inherited `NODE_ENV=production`, so `npm ci` there
+      # installed no devDependencies and Turbopack could not resolve
+      # `@tailwindcss/postcss` — and tracked that as a DECISION NEEDED. Measured on
+      # this branch, `docker build -t parlor .` exits 0 and produces a runnable
+      # standalone image, because the deps stage runs `npm ci --include=dev`. So
+      # the defect is fixed and the DECISION is closed. The assertion stays: it
+      # was never redundant, and `next build` still exits 0 without the output.
       - name: the output the Dockerfile ships exists
         run: |
           set -euo pipefail

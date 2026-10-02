@@ -24,6 +24,15 @@ run = ["npm run lint", "npm run typecheck"]
 description = "Fresh checkout: install the lockfile, then prove the tests pass"
 run = "./bin/prime"
 
+[tasks."deploy:config"]
+# A TIER, not part of the gate, for the same reason `e2e:*` is not: it needs
+# `kamal` and `ruby`, and `bin/prime` has to run on a CI runner that has
+# neither. The script exits 0 when it proved something, 1 when a property
+# failed, and 2 when the binaries are absent and it proved nothing — a third
+# value on purpose, so "I could not check" can never read as "I checked".
+description = "Render config/deploy.yml and run the real kamal binary against it"
+run = "./bin/deploy-config"
+
 [tasks.dev]
 description = "Next dev server"
 run = "npm run dev"
