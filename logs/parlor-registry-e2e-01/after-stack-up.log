@@ -1,0 +1,401 @@
+=== AFTER: bin/e2e-stack up, full bring-up under the registry contract ===
+2026-10-02T20:59:12Z
+
+[e2e] starting the registry the sibling artifacts are pulled from (localhost:16010)
+ Network parlor-e2e_platform Creating 
+ Network parlor-e2e_platform Created 
+ Container parlor-e2e-registry-1 Creating 
+ Container parlor-e2e-registry-1 Created 
+ Container parlor-e2e-registry-1 Starting 
+ Container parlor-e2e-registry-1 Started 
+ Container parlor-e2e-registry-1 Waiting 
+ Container parlor-e2e-registry-1 Healthy 
+[e2e] registry up in 6s
+[e2e] pulling localhost:16010/cafaye/identity:e2e
+[e2e]   localhost:16010/cafaye/identity:e2e is not in localhost:16010
+[e2e] pulling localhost:16010/cafaye/guard:e2e
+[e2e]   localhost:16010/cafaye/guard:e2e is not in localhost:16010
+[e2e] not published at localhost:16010 and the sibling checkouts are here; publishing once
+[e2e] NOTE: these two images are being built from ../identity and ../guard,
+[e2e]       so this run tests YOUR working trees, not a published artifact.
+[e2e]       After ./bin/e2e-stack publish-siblings the registry tag is the one used.
+[e2e] starting the registry the sibling artifacts are pulled from (localhost:16010)
+ Container parlor-e2e-registry-1 Running 
+ Container parlor-e2e-registry-1 Waiting 
+ Container parlor-e2e-registry-1 Healthy 
+[e2e] registry up in 0s
+[e2e] building identity from /Users/kaka/Code/any/moon/cafaye/wt-m39-parlor-registry-01/../identity
+#0 building with "orbstack" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 1.61kB done
+#1 DONE 0.1s
+
+#2 [internal] load metadata for gcr.io/distroless/static-debian12:nonroot
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/golang:1.26
+#3 DONE 1.5s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 2B done
+#4 DONE 0.0s
+
+#5 [build 1/6] FROM docker.io/library/golang:1.26@sha256:0f063af2d465d8dcae54cce04278ada488b96f77b42449c8d071e47d016cc65a
+#5 DONE 0.0s
+
+#6 [runtime 1/3] FROM gcr.io/distroless/static-debian12:nonroot
+#6 DONE 0.0s
+
+#7 [internal] load build context
+#7 transferring context: 213.72kB 0.2s done
+#7 DONE 0.2s
+
+#8 [build 2/6] WORKDIR /src
+#8 CACHED
+
+#9 [build 3/6] COPY go.mod go.sum ./
+#9 CACHED
+
+#10 [build 4/6] RUN go mod download
+#10 CACHED
+
+#11 [build 5/6] COPY . .
+#11 DONE 0.7s
+
+#12 [build 6/6] RUN go build -trimpath -ldflags="-s -w" -o /out/service ./cmd/identity
+#12 DONE 14.5s
+
+#13 [runtime 2/3] WORKDIR /app
+#13 CACHED
+
+#14 [runtime 3/3] COPY --from=build /out/service /app/service
+#14 CACHED
+
+#15 exporting to image
+#15 exporting layers done
+#15 writing image sha256:f801e9b1723e33a980d6ada6ab403cc40917bc32685b9df5c941c425b5f5d423 done
+#15 naming to docker.io/cafaye/identity:e2e done
+#15 naming to localhost:16010/cafaye/identity:e2e done
+#15 DONE 0.0s
+[e2e]   identity built in 18s
+[e2e] building guard from /Users/kaka/Code/any/moon/cafaye/wt-m39-parlor-registry-01/../guard
+#0 building with "orbstack" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 4.44kB done
+#1 DONE 0.0s
+
+#2 resolve image config for docker-image://docker.io/docker/dockerfile:1.7
+#2 DONE 1.7s
+
+#3 docker-image://docker.io/docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e
+#3 CACHED
+
+#4 [internal] load metadata for docker.io/oven/bun:1.3.12-slim
+#4 DONE 1.1s
+
+#5 [internal] load .dockerignore
+#5 transferring context: 1.67kB done
+#5 DONE 0.0s
+
+#6 [prod-deps 1/4] FROM docker.io/oven/bun:1.3.12-slim@sha256:d3c7094c144dd3975d183a4dbc4ec0a764223995bff73290d983edb47043a75f
+#6 DONE 0.0s
+
+#7 [internal] load build context
+#7 transferring context: 1.48kB done
+#7 DONE 0.0s
+
+#8 [runtime 4/5] COPY --chown=bun:bun package.json ./
+#8 CACHED
+
+#9 [prod-deps 2/4] WORKDIR /app
+#9 CACHED
+
+#10 [prod-deps 3/4] COPY package.json bun.lock ./
+#10 CACHED
+
+#11 [prod-deps 4/4] RUN bun install --frozen-lockfile --production && rm -rf /root/.bun/install/cache
+#11 CACHED
+
+#12 [runtime 3/5] COPY --from=prod-deps --chown=bun:bun /app/node_modules ./node_modules
+#12 CACHED
+
+#13 [runtime 5/5] COPY --chown=bun:bun src ./src
+#13 CACHED
+
+#14 exporting to image
+#14 exporting layers done
+#14 writing image sha256:d038f17cab8b403391340ed5f91204ad8abef7fc1f1e07a235aa5e270f5c212c done
+#14 naming to docker.io/cafaye/guard:e2e done
+#14 naming to localhost:16010/cafaye/guard:e2e done
+#14 DONE 0.0s
+[e2e]   guard built in 3s
+[e2e] pushing localhost:16010/cafaye/identity:e2e
+The push refers to repository [localhost:16010/cafaye/identity]
+f6be862f3c34: Preparing
+c06ceea78a96: Preparing
+5904c32f457c: Preparing
+6e7fbcf090d0: Preparing
+ad51d0769d16: Preparing
+4cde6b0bb6f5: Preparing
+bd3cdfae1d3f: Preparing
+6f1cdceb6a31: Preparing
+af5aa97ebe6c: Preparing
+4d049f83d9cf: Preparing
+114dde0fefeb: Preparing
+35b5ba6e08cd: Preparing
+8fa10c0194df: Preparing
+6fc9269a8b4d: Preparing
+af5aa97ebe6c: Waiting
+4d049f83d9cf: Waiting
+114dde0fefeb: Waiting
+35b5ba6e08cd: Waiting
+8fa10c0194df: Waiting
+4cde6b0bb6f5: Waiting
+6fc9269a8b4d: Waiting
+bd3cdfae1d3f: Waiting
+6f1cdceb6a31: Waiting
+c06ceea78a96: Pushed
+6e7fbcf090d0: Pushed
+ad51d0769d16: Pushed
+5904c32f457c: Pushed
+4cde6b0bb6f5: Pushed
+bd3cdfae1d3f: Pushed
+af5aa97ebe6c: Pushed
+6f1cdceb6a31: Pushed
+4d049f83d9cf: Pushed
+114dde0fefeb: Pushed
+8fa10c0194df: Pushed
+6fc9269a8b4d: Pushed
+35b5ba6e08cd: Pushed
+f6be862f3c34: Pushed
+e2e: digest: sha256:3d1c274bffc7300611ccf31d1c089263f407deff0fba0f5ca3acc28caae2086a size: 3228
+[e2e] pushing localhost:16010/cafaye/guard:e2e
+The push refers to repository [localhost:16010/cafaye/guard]
+6554433fe5a4: Preparing
+923ed507ed5c: Preparing
+6a0f0f62487a: Preparing
+33cfc8d44155: Preparing
+72d586aba069: Preparing
+71dc4ab4ecad: Preparing
+832a0de98206: Preparing
+a11324fe295e: Preparing
+5dd6d0944088: Preparing
+f38e00a1a324: Preparing
+832a0de98206: Waiting
+a11324fe295e: Waiting
+5dd6d0944088: Waiting
+f38e00a1a324: Waiting
+71dc4ab4ecad: Waiting
+33cfc8d44155: Pushed
+923ed507ed5c: Pushed
+72d586aba069: Pushed
+71dc4ab4ecad: Pushed
+832a0de98206: Pushed
+6554433fe5a4: Pushed
+6a0f0f62487a: Pushed
+5dd6d0944088: Pushed
+a11324fe295e: Pushed
+f38e00a1a324: Pushed
+e2e: digest: sha256:4cf42f061f0f555b9ddec7a88138e2bf5ea743b401b03f029468f25846507b38 size: 2403
+[e2e]   published identity -> localhost:16010/cafaye/identity:e2e  localhost:16010/cafaye/identity@sha256:3d1c274bffc7300611ccf31d1c089263f407deff0fba0f5ca3acc28caae2086a
+[e2e]   published guard -> localhost:16010/cafaye/guard:e2e  localhost:16010/cafaye/guard@sha256:4cf42f061f0f555b9ddec7a88138e2bf5ea743b401b03f029468f25846507b38
+[e2e] building images (budget 1800s)
+[e2e]   parlor    <- . (no build args: the BFF reads IDENTITY_URL at run time)
+[e2e]   identity, guard, postgres, redis, nginx and registry: pulled, not built
+[e2e]   edge      <- nginx, a pinned image: see e2e/edge.conf for why it exists
+ Image cafaye/e2e-parlor:local Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 580B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 5.77kB done
+#2 DONE 0.0s
+
+#3 resolve image config for docker-image://docker.io/docker/dockerfile:1
+#3 DONE 0.4s
+
+#4 docker-image://docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+#4 CACHED
+
+#5 [internal] load metadata for docker.io/library/node:22.22.2-slim
+#5 DONE 0.0s
+
+#6 [internal] load .dockerignore
+#6 transferring context: 142B done
+#6 DONE 0.0s
+
+#7 [base 1/1] FROM docker.io/library/node:22.22.2-slim
+#7 DONE 0.0s
+
+#8 [internal] load build context
+#8 transferring context: 85.10kB done
+#8 DONE 0.0s
+
+#9 [deps 1/3] WORKDIR /app
+#9 CACHED
+
+#10 [deps 2/3] COPY package.json package-lock.json .npmrc ./
+#10 CACHED
+
+#11 [deps 3/3] RUN npm ci --include=dev
+#11 CACHED
+
+#12 [builder 2/4] COPY --from=deps /app/node_modules ./node_modules
+#12 CACHED
+
+#13 [builder 3/4] COPY . .
+#13 DONE 0.1s
+
+#14 [builder 4/4] RUN npm run build
+#14 0.793 
+#14 0.793 > parlor@0.1.0 build
+#14 0.793 > next build
+#14 0.793 
+#14 1.321 ▲ Next.js 16.3.7 (Turbopack)
+#14 1.563 ✓ Running next.config.ts took 242ms
+#14 1.570 
+#14 1.615   Creating an optimized production build ...
+#14 7.503 ✓ Compiled successfully in 5.7s
+#14 7.511   Running TypeScript ...
+#14 12.46   Finished TypeScript in 5.0s ...
+#14 12.46   Collecting page data using 7 workers ...
+#14 13.00   Generating static pages using 7 workers (0/15) ...
+#14 13.19   Generating static pages using 7 workers (3/15) 
+#14 13.20   Generating static pages using 7 workers (7/15) 
+#14 13.26   Generating static pages using 7 workers (11/15) 
+#14 13.29 ✓ Generating static pages using 7 workers (15/15) in 295ms
+#14 13.29   Finalizing page optimization ...
+#14 13.46 
+#14 13.46 Route (app)
+#14 13.46 ┌ ○ /
+#14 13.46 ├ ○ /_not-found
+#14 13.46 ├ ○ /accounts
+#14 13.46 ├ ƒ /accounts/[accountId]
+#14 13.46 ├ ○ /billing/customers
+#14 13.46 ├ ○ /billing/plans
+#14 13.46 ├ ○ /forgot-password
+#14 13.46 ├ ƒ /healthz
+#14 13.46 ├ ƒ /invitations/[token]
+#14 13.46 ├ ƒ /login
+#14 13.46 ├ ƒ /readyz
+#14 13.46 ├ ○ /register
+#14 13.46 ├ ƒ /reset-password
+#14 13.46 ├ ƒ /v1/[...path]
+#14 13.46 ├ ○ /verify-email
+#14 13.46 └ ƒ /verify-email/confirm
+#14 13.46 
+#14 13.46 
+#14 13.46 ○  (Static)   prerendered as static content
+#14 13.46 ƒ  (Dynamic)  server-rendered on demand
+#14 13.46 
+#14 13.48 npm notice
+#14 13.48 npm notice New major version of npm available! 10.9.7 -> 12.2.0
+#14 13.48 npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+#14 13.48 npm notice To update run: npm install -g npm@12.2.0
+#14 13.48 npm notice
+#14 DONE 13.7s
+
+#15 [runner 3/5] RUN groupadd --system --gid 1001 nodejs  && useradd --system --uid 1001 --gid nodejs nextjs
+#15 CACHED
+
+#16 [runner 4/5] COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+#16 DONE 0.2s
+
+#17 [runner 5/5] COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+#17 DONE 0.1s
+
+#18 exporting to image
+#18 exporting layers
+#18 exporting layers 0.3s done
+#18 writing image sha256:8fd4fb972c9bd4cc32ad559035e13c14ec13f8157f15fca5e0735b897bf830a5 done
+#18 naming to docker.io/cafaye/e2e-parlor:local 0.0s done
+#18 DONE 0.3s
+
+#19 resolving provenance for metadata file
+#19 DONE 0.0s
+ Image cafaye/e2e-parlor:local Built 
+[e2e] images built in 16s
+[e2e] starting the stack in project parlor-e2e
+ Volume parlor-e2e_identity-postgres-data Creating 
+ Volume parlor-e2e_identity-postgres-data Created 
+ Volume parlor-e2e_guard-redis-data Creating 
+ Volume parlor-e2e_guard-redis-data Created 
+ Container parlor-e2e-guard-redis-1 Creating 
+ Container parlor-e2e-identity-postgres-1 Creating 
+ Container parlor-e2e-registry-1 Running 
+ Container parlor-e2e-identity-postgres-1 Created 
+ Container parlor-e2e-identity-1 Creating 
+ Container parlor-e2e-guard-redis-1 Created 
+ Container parlor-e2e-identity-1 Created 
+ Container parlor-e2e-parlor-1 Creating 
+ Container parlor-e2e-guard-1 Creating 
+ Container parlor-e2e-guard-1 Created 
+ Container parlor-e2e-parlor-1 Created 
+ Container parlor-e2e-edge-1 Creating 
+ Container parlor-e2e-edge-1 Created 
+ Container parlor-e2e-identity-postgres-1 Starting 
+ Container parlor-e2e-guard-redis-1 Starting 
+ Container parlor-e2e-guard-redis-1 Started 
+ Container parlor-e2e-identity-postgres-1 Started 
+ Container parlor-e2e-identity-postgres-1 Waiting 
+ Container parlor-e2e-identity-postgres-1 Healthy 
+ Container parlor-e2e-identity-1 Starting 
+ Container parlor-e2e-identity-1 Started 
+ Container parlor-e2e-parlor-1 Starting 
+ Container parlor-e2e-guard-redis-1 Waiting 
+ Container parlor-e2e-parlor-1 Started 
+ Container parlor-e2e-parlor-1 Waiting 
+ Container parlor-e2e-guard-redis-1 Healthy 
+ Container parlor-e2e-guard-1 Starting 
+ Container parlor-e2e-guard-1 Started 
+ Container parlor-e2e-parlor-1 Healthy 
+ Container parlor-e2e-edge-1 Starting 
+ Container parlor-e2e-edge-1 Started 
+[e2e] containers started in 12s (dependency health ordered)
+[e2e] applying identity's migrations (../identity/migrations)
+2026/10/03 00:00:13 EMPTY 00001_init.sql (5.91ms)
+2026/10/03 00:00:13 OK   00002_users.sql (9.99ms)
+2026/10/03 00:00:13 OK   00003_sessions.sql (10.48ms)
+2026/10/03 00:00:13 OK   00004_outbox_events.sql (8.02ms)
+2026/10/03 00:00:13 OK   00005_accounts.sql (6.85ms)
+2026/10/03 00:00:13 OK   00006_account_users.sql (9.36ms)
+2026/10/03 00:00:13 OK   00007_account_invitations.sql (9.71ms)
+2026/10/03 00:00:13 OK   00008_connected_accounts.sql (5.85ms)
+2026/10/03 00:00:13 OK   00009_oidc_clients.sql (11.52ms)
+2026/10/03 00:00:13 OK   00010_mfa.sql (13.49ms)
+2026/10/03 00:00:13 OK   00011_api_keys.sql (8.14ms)
+2026/10/03 00:00:13 OK   00012_account_audit_log.sql (6.44ms)
+2026/10/03 00:00:13 OK   00013_account_invitation_revocation.sql (4.67ms)
+2026/10/03 00:00:13 OK   00014_user_email_verified_at.sql (3.47ms)
+2026/10/03 00:00:13 OK   00015_recovery_tokens.sql (5.48ms)
+2026/10/03 00:00:13 goose: successfully migrated database to version: 15
+[e2e] migrations applied in 1s
+[e2e] waiting for /readyz on identity-postgres identity guard parlor edge (budget 180s each)
+[e2e]   identity ready after 0s (1 polls) — http://127.0.0.1:16080/readyz
+[e2e]   guard ready after 0s (1 polls) — http://127.0.0.1:16081/readyz
+[e2e]   parlor ready after 0s (1 polls) — http://127.0.0.1:16003/readyz
+[e2e]   edge ready after 0s (1 polls) — http://127.0.0.1:16000/readyz
+[e2e] the whole stack is ready
+EXIT=0
+
+=== compose ps ===
+NAME                             IMAGE                                 COMMAND                  SERVICE             CREATED              STATUS                           PORTS
+parlor-e2e-edge-1                nginx:1.27.4-alpine                   "/docker-entrypoint.…"   edge                12 seconds ago       Up 1 second (health: starting)   80/tcp, 0.0.0.0:16000->3000/tcp, [::]:16000->3000/tcp
+parlor-e2e-guard-1               localhost:16010/cafaye/guard:e2e      "/usr/local/bin/dock…"   guard               13 seconds ago       Up 6 seconds (healthy)           0.0.0.0:16081->8080/tcp, [::]:16081->8080/tcp
+parlor-e2e-guard-redis-1         redis:7.4.1-alpine                    "docker-entrypoint.s…"   guard-redis         13 seconds ago       Up 12 seconds (healthy)          0.0.0.0:16002->6379/tcp, [::]:16002->6379/tcp
+parlor-e2e-identity-1            localhost:16010/cafaye/identity:e2e   "/app/service"           identity            13 seconds ago       Up 6 seconds                     0.0.0.0:16080->8080/tcp, [::]:16080->8080/tcp
+parlor-e2e-identity-postgres-1   postgres:17-alpine                    "docker-entrypoint.s…"   identity-postgres   13 seconds ago       Up 12 seconds (healthy)          0.0.0.0:16001->5432/tcp, [::]:16001->5432/tcp
+parlor-e2e-parlor-1              cafaye/e2e-parlor:local               "docker-entrypoint.s…"   parlor              13 seconds ago       Up 6 seconds (healthy)           0.0.0.0:16003->3000/tcp, [::]:16003->3000/tcp
+parlor-e2e-registry-1            registry:2                            "/entrypoint.sh /etc…"   registry            About a minute ago   Up About a minute (healthy)      0.0.0.0:16010->5000/tcp, [::]:16010->5000/tcp
+
+=== what the two siblings resolved to ===
+parlor-e2e-edge-1  nginx:1.27.4-alpine  Up 1 second (health: starting)
+parlor-e2e-parlor-1  cafaye/e2e-parlor:local  Up 6 seconds (healthy)
+parlor-e2e-guard-1  localhost:16010/cafaye/guard:e2e  Up 6 seconds (healthy)
+parlor-e2e-identity-1  localhost:16010/cafaye/identity:e2e  Up 7 seconds
+parlor-e2e-identity-postgres-1  postgres:17-alpine  Up 12 seconds (healthy)
+parlor-e2e-guard-redis-1  redis:7.4.1-alpine  Up 12 seconds (healthy)
+parlor-e2e-registry-1  registry:2  Up About a minute (healthy)

@@ -1,0 +1,21 @@
+=== STEADY STATE: second 'up' with the registry already populated ===
+2026-10-02T21:01:43Z
+[e2e] starting the registry the sibling artifacts are pulled from (localhost:16010)
+[e2e] registry up in 5s
+[e2e] sibling artifacts: 2/2 already published at localhost:16010, nothing to pull
+[e2e] building images (budget 1800s)
+[e2e]   parlor    <- . (no build args: the BFF reads IDENTITY_URL at run time)
+[e2e]   identity, guard, postgres, redis, nginx and registry: pulled, not built
+[e2e]   edge      <- nginx, a pinned image: see e2e/edge.conf for why it exists
+[e2e] images built in 14s
+[e2e] starting the stack in project parlor-e2e
+[e2e] containers started in 12s (dependency health ordered)
+[e2e] applying identity's migrations (../identity/migrations)
+[e2e] migrations applied in 1s
+[e2e] waiting for /readyz on identity-postgres identity guard parlor edge (budget 180s each)
+[e2e]   identity ready after 0s (1 polls) — http://127.0.0.1:16080/readyz
+[e2e]   guard ready after 0s (1 polls) — http://127.0.0.1:16081/readyz
+[e2e]   parlor ready after 0s (1 polls) — http://127.0.0.1:16003/readyz
+[e2e]   edge ready after 0s (1 polls) — http://127.0.0.1:16000/readyz
+[e2e] the whole stack is ready
+EXIT=

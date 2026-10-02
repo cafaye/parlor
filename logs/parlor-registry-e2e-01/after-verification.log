@@ -1,0 +1,49 @@
+=== compose ps (state + health) ===
+SERVICE             IMAGE                                 STATE     STATUS
+edge                nginx:1.27.4-alpine                   running   Up About a minute (healthy)
+guard               localhost:16010/cafaye/guard:e2e      running   Up About a minute (healthy)
+guard-redis         redis:7.4.1-alpine                    running   Up About a minute (healthy)
+identity            localhost:16010/cafaye/identity:e2e   running   Up About a minute
+identity-postgres   postgres:17-alpine                    running   Up About a minute (healthy)
+parlor              cafaye/e2e-parlor:local               running   Up About a minute (healthy)
+registry            registry:2                            running   Up 2 minutes (healthy)
+
+=== the two siblings: container image vs compose image ===
+identity
+   compose asks for : localhost:16010/cafaye/identity:e2e
+   container runs   : localhost:16010/cafaye/identity:e2e
+   repo digest      : 
+(none)
+guard
+   compose asks for : localhost:16010/cafaye/guard:e2e
+   container runs   : localhost:16010/cafaye/guard:e2e
+   repo digest      : 
+(none)
+
+=== health endpoints, from the host ===
+  16080/readyz -> {"status":"ok","deps":"postgres"}
+
+  16081/readyz -> {"deps":{"identity":"ok","redis":"ok"}}
+  16003/readyz -> {"status":"ok","deps":"none"}
+  16000/readyz -> {"status":"ok","deps":"none"}
+
+=== registry contents (the tags this tier consumes) ===
+{"repositories":["cafaye/guard","cafaye/identity"]}
+
+
+=== repo digests (queried on the IMAGE; a container's RepoDigests is always empty) ===
+  localhost:16010/cafaye/identity:e2e            localhost:16010/cafaye/identity@sha256:3d1c274bffc7300611ccf31d1c089263f407deff0fba0f5ca3acc28caae2086a
+  localhost:16010/cafaye/guard:e2e               localhost:16010/cafaye/guard@sha256:4cf42f061f0f555b9ddec7a88138e2bf5ea743b401b03f029468f25846507b38
+
+  These are the same two digests bin/e2e-stack publish-siblings printed at publish
+  time. That is the point: a run is attributable to an artifact.
+
+=== both names are one image (bare tag == registry-qualified tag) ===
+cafaye/guard:dev  c09aadbdbfe5
+cafaye/guard:e2e  d038f17cab8b
+cafaye/identity:dev  691974d22032
+cafaye/identity:e2e  f801e9b1723e
+
+=== the OLD anonymous tags, now orphaned by this change ===
+cafaye/e2e-guard:local  32c1530edb19
+cafaye/e2e-identity:local  94015e86b7bc
