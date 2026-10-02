@@ -1,3 +1,144 @@
+# HANDOFF — parlor-registry-e2e-02
+
+**Read this section first; the rest of the file is packet 01's, still accurate
+where it is not contradicted here.**
+
+Branch `worker/parlor-registry-e2e-02`, worktree `wt-m39-parlor-registry-02`.
+Seven commits on top of `ed4b522`. Not pushed — push is not mine.
+
+## The thing packet 01 handed over: DONE, and it was not green when found
+
+`./bin/e2e` runs the full tier against registry images. It does — **23 passed,
+0 failed, 0 skipped**, on a worktree that had never run it. Evidence in
+`logs/parlor-registry-e2e-02/`, summarised in `moon/logs/REPORT-parlor-registry-e2e-02.md`.
+
+The awkward part is that **the first run of it was also green, and proved
+nothing.** The resolver logged
+
+    [e2e] sibling artifacts: 2/2 already published at localhost:16010, nothing to pull
+
+against a registry whose catalog was `{"repositories":[]}` and whose manifests
+answered 404. `ensure_sibling_artifacts` accepted a hit from `compose image
+inspect` **or** `docker image ls` — both of which read the LOCAL image store —
+and then printed a sentence naming the registry. A warm cache could therefore
+satisfy the tier's central claim.
+
+Fixed in `51670ac`. The probe is now `docker manifest inspect --insecure`,
+which goes to the registry, and "published" and "cached" are counted as the two
+separate things they are. All four states are exercised and green — the matrix
+is in the report.
+
+**So: if you are reading a green e2e log from BEFORE `51670ac`, the line
+`already published at <registry>` means nothing.** Runs after it print the two
+digests, which you can check against the registry.
+
+## Three things to know before you run this
+
+**`./bin/e2e` destroys the registry every run, by design, and it costs two
+sibling builds.** `bin/e2e`'s teardown calls `bin/e2e-stack down`, which is
+`compose down -v`, which deletes the registry's volume. The registry is
+`registry:2` with no persistent storage (`e2e/docker-compose.yml` says so). So
+the next run finds an empty registry, publishes once from the checkouts, and
+runs. `11-tier-run-5-fixed-steady-state.log` is that, and `13-` is the steady
+state reached by publishing explicitly first.
+
+That means **the steady state is unreachable by typing `./bin/e2e`**. The
+predecessor's report called "2/2 already published, nothing to pull" the fast
+path; on this machine it only happens if you `publish-siblings` and then
+`e2e-stack up` without tearing down. Worth deciding deliberately, because
+"build once, deploy once" is currently true per-run and not across runs.
+
+**The fallback announces itself, and that line is the one to read.** On a machine
+with the checkouts present and the registry empty, the resolver publishes and
+says so, in capitals-because-it-matters:
+
+    [e2e] NOTE: these two images are being built from ../identity and ../guard,
+    [e2e]       so this run tests YOUR working trees, not a published artifact.
+
+A green containing that line is a green against local builds. It is not a
+failure and not a skip; it is a different claim, and it is now true when it is
+printed.
+
+**`--insecure` in `bin/e2e-stack` is load-bearing, not tidiness.** Without it
+`docker manifest inspect` exits 1 for a tag the registry is serving with a 200,
+because this registry is plain HTTP on `localhost:16010`. It fails toward "not
+published", so the symptom is a harmless-looking extra pull on every run and a
+steady-state line that never appears. I shipped that mistake for one commit
+(`4ed9721`) and it was caught only by running the branch it affected. Do not
+delete the flag.
+
+## Still owed, unchanged from packet 01
+
+### 1. `.github/workflows/e2e.yml` is wrong in a way that matters
+
+Not touched — the packet put it out of scope, twice now. Its comment claims the
+compose file builds the siblings from the checkouts. It does not. Add, after the
+three checkout steps and before `./bin/e2e`:
+
+```yaml
+      - name: publish the sibling artifacts the tier consumes
+        working-directory: parlor
+        run: ./bin/e2e-stack publish-siblings
+```
+
+Without it CI still passes — the resolver's fallback publishes and announces —
+but the artifact under test would be built in the same job that tests it.
+
+### 2. `migrate()` still needs `../identity` even on the default path
+
+The packet asked whether kit's migrate-entrypoint had baked migrations into the
+`:e2e` tags. **It has not, and cannot have for identity today.** Checked
+directly: identity's `Dockerfile` builds `/out/service` and copies one file, so
+`docker run --entrypoint sh <the :e2e image>` fails with `exec: "sh": executable
+file not found`. The image is distroless with no migrations, no shell, and no
+migrate binary. kit's `docker/entrypoint.sh` exists
+(`wt-m39-kit-migrate-entrypoint-01`) and its own handoff says **no service repo
+adopted it**, and that identity in particular "needs a static migrate binary
+built in the builder before `KIT_MIGRATE_CMD` points at anything".
+
+So migrations stay a host-side deploy step — `bin/e2e-stack migrate` runs
+`goose` against `../identity/migrations`, which is identity's documented
+procedure. **But that means the default "pull the published artifact" path still
+requires the identity checkout**, while `preflight` only requires sibling
+checkouts under `E2E_BUILD_SIBLINGS=1`. The two disagree, and a developer
+without `../identity` gets a `cd` failure at the migrate step rather than the
+clear preflight error the script already knows how to give. Small, real, and
+nobody's this hour.
+
+### 3. site's identical packet
+
+Unchanged. Still waiting on nothing — the tier is green here — but the pattern
+does not copy cleanly yet, because of the two things above: the registry does
+not survive a `./bin/e2e`, and the migrate step still wants a sibling checkout.
+
+## Not verified here, so nobody should assume it
+
+- **No spec, no `playwright.config.ts`, no fixture and no assertion was touched.**
+  All 23 tests were green before my first change and after it, which is the
+  point: the image contract was the variable under test.
+- **The resolver has no automated check.** `tests/validate-ci.sh` has 45 checks
+  and none of them exercise this function; the gate was green through every
+  defect in this file. The evidence is the four-run matrix in the report. A grep
+  for `docker manifest inspect` in `bin/e2e-stack` would be the check AGENTS.md
+  warns against — one a comment can satisfy — so the honest version needs a
+  fake `docker` on `PATH`, and I did not have the hour.
+- **`tests/validate-ci.sh` self-test still 42 breakages**, floors unchanged in
+  `gate.yml`, because no test was added or removed.
+
+## Things that will look like bugs and are not
+
+Everything in packet 01's list below still holds. Add:
+
+**`bin/e2e` printing two sibling builds on every run is not a regression.** It is
+the registry being deleted by its own teardown, above.
+
+**A green log saying `verified over the network, nothing to pull` is now
+checkable**: the two `sha256:` lines under it are the digests, and they match
+what `publish-siblings` printed when it pushed. If they ever disagree with
+`GET /v2/cafaye/<service>/manifests/e2e`, the log is lying again.
+
+---
+
 # HANDOFF — parlor-registry-e2e-01
 
 parlor's end-to-end tier now consumes identity's and guard's images **by tag from
@@ -45,6 +186,11 @@ exit=1
 ---
 
 ## Half-done, and why
+
+**SUPERSEDED by packet 02, which ran the full tier: 23 passed, 0 failed, 0
+skipped.** Read the top of this file first; the two paragraphs below describe
+what was true when this section was written and are kept because the reason they
+gave is still the reason this handoff existed.
 
 **The full e2e tier (`./bin/e2e`) has not been run.** It was not run in this
 packet's hour. It needs a Playwright chromium download plus the suite on top of
