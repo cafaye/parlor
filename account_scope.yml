@@ -1,0 +1,136 @@
+version: 1
+service: parlor
+
+# account_scope.yml — every entry point `parlor` mounts, and which of them can
+# reach another account's data.
+#
+# Checked by cafaye/core's contract harness:
+#
+#     /Users/kaka/Code/any/moon/cafaye/core/harness/bin/account-scope-check .
+#
+# THE ANSWER IS "NONE OF THEM", AND THAT IS A DECLARATION RATHER THAN A COMMENT.
+#
+# `parlor` is the sign-in form — the page identity's README says it renders no
+# HTML and that the login hop lives here. It holds NO customer rows: there is no
+# database, no query layer and no migration of its own.
+# `kit/reports/tenant-adapter-ts-01/subject-audit.sh` sweeps every TypeScript
+# service in the fleet for a driver import, a driver declaration and a `.sql`
+# file and finds none in any of them, so that is a measurement and not a claim.
+# A repository with no such file is indistinguishable from a service that never
+# did the work, and all eight in-scope repositories are in that state today.
+#
+# WHAT THAT MEANS FOR THE ACCOUNT BOUNDARY, because "holds no rows" is not the
+# same as "has no boundary":
+#
+#   The four `/v1/*` routes are an ALLOW-LISTED FORWARDER. The `ROUTES` table at
+#   `src/lib/upstream.ts:196` names every path this app exposes and which service
+#   owns it, and `handle` (`src/app/v1/[...path]/route.ts:123`) refuses a
+#   segment list that is not in it before a socket is opened. Several of those
+#   paths ARE account-selected — `["accounts", ":accountId"]`,
+#   `["accounts", ":accountId", "members"]`, `["accounts", ":accountId",
+#   "invitations"]` — and the `:accountId` comes from the URL.
+#
+#   So the account is selected by the caller and this service forwards it, and it
+#   is STILL not account-scoped, because the boundary is enforced where the rows
+#   are: the forwarded credential is checked by the upstream, and the seventeen
+#   routes that resolve an account are declared in `identity`'s own
+#   `account_scope.yml`. `parlor` reads no row on the way there, which is why
+#   `reason: none` is LITERALLY true of these four rows rather than a stretch.
+#
+#   `kind` is `http` and NOT `none`. `none` means "there is no request entry
+#   here" — core's doc says so and names `kit` as the live case — and this
+#   service has six. Declaring `none` with six mounted routes would be the same
+#   kind of false claim this file exists to prevent, one field further in.
+surface:
+  kind: http
+  # THREE FILES, and the third is the one that matters: Next.js' App Router puts
+  # the path in the FILE NAME rather than in the line, so a recogniser that read
+  # paths from lines would report this service as having no routes at all — which
+  # is D18's `route_defs=0`, reproduced by the checker written to prevent it.
+  # `core`'s `Recogniser.path_from_filename` resolves
+  # `src/app/v1/[...path]/route.ts` to `/v1/{path}`.
+  sources:
+    - src/app/healthz/route.ts
+    - src/app/readyz/route.ts
+    - src/app/v1/[...path]/route.ts
+  # 6 registrations in those three files: one probe each and four verbs on the
+  # catch-all.
+  minimum: 6
+  accountKey: account_id
+
+entryPoints:
+  # --- the two probes. Reachable with no credential, and they read nothing. ---
+  - id: healthz
+    kind: http
+    method: GET
+    path: /healthz
+    accountScoped: false
+    reason: public
+    registeredAt:
+      file: src/app/healthz/route.ts
+      line: 10
+
+  - id: readyz
+    kind: http
+    method: GET
+    path: /readyz
+    accountScoped: false
+    reason: public
+    registeredAt:
+      file: src/app/readyz/route.ts
+      line: 11
+
+  # --- the forwarder. ONE surface, four verbs, and `reason: none` is LITERALLY
+  #     true of all four: the route reaches no data at all. It matches the
+  #     request against `ROUTES`, opens a socket to identity or billing, and
+  #     returns what that service says. No row is read on this side of it, so
+  #     there is nothing here for a caller to reach that is not already the
+  #     upstream's to refuse.
+  #
+  #     They are declared one row per verb rather than as one row with `ANY`,
+  #     because a method list is not something the checker can see into — core's
+  #     schema says an `ANY` entry "is a claim rather than a check" — and four
+  #     named functions on four lines is a fact four lines long. The file's own
+  #     header says the same thing: there is no catch-all `handler` export, so a
+  #     method this file does not name is a 405 from the framework before it
+  #     reaches the forwarder.
+  # ---------------------------------------------------------------------------
+  - id: forward-v1-get
+    kind: http
+    method: GET
+    path: /v1/{path}
+    accountScoped: false
+    reason: none
+    registeredAt:
+      file: src/app/v1/[...path]/route.ts
+      line: 103
+
+  - id: forward-v1-post
+    kind: http
+    method: POST
+    path: /v1/{path}
+    accountScoped: false
+    reason: none
+    registeredAt:
+      file: src/app/v1/[...path]/route.ts
+      line: 107
+
+  - id: forward-v1-patch
+    kind: http
+    method: PATCH
+    path: /v1/{path}
+    accountScoped: false
+    reason: none
+    registeredAt:
+      file: src/app/v1/[...path]/route.ts
+      line: 111
+
+  - id: forward-v1-delete
+    kind: http
+    method: DELETE
+    path: /v1/{path}
+    accountScoped: false
+    reason: none
+    registeredAt:
+      file: src/app/v1/[...path]/route.ts
+      line: 115
