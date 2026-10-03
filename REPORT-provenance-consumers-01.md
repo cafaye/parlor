@@ -110,6 +110,23 @@ not a claim about output.
 Three-valued exit: `0` behaved, `1` a finding, `2` could not run. A red proof
 that did not run must never read as a pass.
 
+### The same two lines, against the real artifacts
+
+`measurement-real-siblings.out`, in both repositories, runs the reporting loop's
+own two command lines — verbatim — against the sibling images the e2e tier
+actually pulls. Not a full `publish-siblings` run (that rebuilds and republishes
+both siblings and takes minutes); the file says so in its own header. Both
+predicted failure shapes occur for real:
+
+```
+cafaye/identity:e2e  ->  exit 4, "carries no labels at all"
+cafaye/guard:e2e     ->  exit 0, source/revision = oven/bun's, inherited
+```
+
+and the two `RepoDigests` values differ from each other and from anything the
+stamp says — which is the evidence for keeping the digest line beside the
+verifier rather than instead of it.
+
 ## 5. A finding this packet did not cause and did not fix
 
 **`--verify` cannot distinguish an inherited stamp from its own, and this is
@@ -133,6 +150,24 @@ written up in `HANDOFF-provenance-consumers-01.md` for the next packet.
 guessed.
 
 <!--GATE-TABLE-->
+
+Both **GREEN**, exit 0, each run to completion with `timeout 3000` and not
+interrupted. Read against the floors `gate.yml` declares:
+
+| | `parlor` | floor | `site` | floor |
+| --- | --- | --- | --- | --- |
+| `./bin/prime` exit | **0** | green | **0** | green |
+| vitest | 665 passed | ≥ 662 | 367 passed | ≥ 301 |
+| `validate-ci.sh` | 45 passed, 0 failed | ≥ 41 | 61 passed, 0 failed | ≥ 48 |
+| `validate-ci.sh --self-test` | 50 breakages, all red | ≥ 42 | 65 breakages, all red | ≥ 47 |
+| `tests/provenance-consumer-test.sh` | 11 passed, 0 failed | — | 11 passed, 0 failed | — |
+
+No floor moved: this packet added no vitest test and no `validate-ci.sh` check,
+so there is nothing to raise. The new test is deliberately outside the gate —
+see §8 and the handoff §"What was NOT done".
+
+Full logs: `/tmp/gate-parlor.log`, `/tmp/gate-site.log` (not committed; the
+numbers above are the evidence and the commands are `./bin/prime`).
 
 ## 7. Time and shape
 
