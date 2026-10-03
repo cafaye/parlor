@@ -379,14 +379,50 @@ publish_siblings() {
     fi
   done
 
-  # The digest is what makes a run attributable to an artifact, so it is printed
-  # and not merely implied. A reader who wants to know what this tier tested
-  # six weeks from now is reading this line.
+  # TWO facts, and this is why BOTH lines are here. They are not two copies of
+  # one fact, which is the only reason this comment exists.
+  #
+  #   the digest — WHICH BYTES. `repo@sha256:…` is the registry's content
+  #     address. Two rebuilds of one commit produce two of them, so it is the
+  #     only attribution to the artifact itself and the only one that survives
+  #     a stamp being absent or lying.
+  #   the stamp  — WHICH CODE. `--verify` prints source/revision/built_at and
+  #     never prints a digest, so it cannot reproduce the line above.
+  #
+  # The stamp packet's handoff calls the verifier a *supersession* of the digest
+  # line. Measured, it is not: removing the digest would delete half of what a
+  # reader of this log can learn, and the verifier has never claimed the right
+  # to replace a sha256.
+  #
+  # THE DECISION: the stamp line PRINTS and does not ASSERT. `|| true` is
+  # scoped to this one call and the reason is measured, not stylistic — both
+  # numbers below come from this machine's own sibling images:
+  #
+  #   * `publish_siblings` builds identity and guard with a bare `docker build`
+  #     passing only `--build-arg SERVICE_NAME=…`. It passes no
+  #     `KIT_PROVENANCE_*` argument, and neither `identity/Dockerfile` nor
+  #     `guard/Dockerfile` declares the stamp at all. So
+  #     `cafaye/identity:e2e` reports labels `null` and `--verify` exits 4 on
+  #     every ordinary run of this tier. Asserting would make the e2e tier red
+  #     permanently for a drift that lives in two repositories this one may not
+  #     touch.
+  #   * `cafaye/guard:e2e` is worse than unstamped: its labels are BUN's
+  #     upstream ones (`source: https://github.com/oven-sh/bun`, a revision of
+  #     bun's own commit), inherited through `FROM oven/bun`. `--verify` exits 0
+  #     on it and prints a confident, false answer.
+  #
+  # So the print is worth having — it surfaces both facts and it is where the
+  # next reader learns that the siblings do not stamp themselves yet — and the
+  # assertion is not available here. What is NOT available is the assurance:
+  # `tests/provenance-consumer-test.sh` is the proof that `--verify` can go red,
+  # because nothing in this tier can.
   local digest
   for service in "${SIBLING_SERVICES[@]}"; do
     tag="$(sibling_tag "$service")"
     digest=$(docker image inspect --format '{{index .RepoDigests 0}}' "$REGISTRY/$tag" 2>/dev/null || echo "(no repo digest)")
     log "  published $service -> $REGISTRY/$tag  $digest"
+    # What am I? The stamp a pulled image carries — see docker/provenance.sh.
+    sh "$ROOT/docker/provenance.sh" --verify "$REGISTRY/$tag" || true
   done
 }
 

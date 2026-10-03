@@ -1,0 +1,50 @@
+# measurement-real-siblings.out
+#
+# THE TWO LINES FROM THE REPORTING LOOP, RUN AGAINST THE REAL ARTIFACTS.
+#
+# measurement-provenance-consumer.out proves the verifier CAN fail, on images
+# this repository built for the purpose. This file shows the same two lines as
+# they actually appear in `publish_siblings`, run against the sibling images
+# the e2e tier really pulls.
+#
+# repo:   /Users/kaka/Code/any/moon/cafaye/wt-m39-provenance-parlor
+# commit: 11d6c5b
+# run:    2026-10-03T03:27:52Z
+#
+# WHAT IS AND IS NOT CLAIMED. This is not a run of `./bin/e2e-stack
+# publish-siblings` — that rebuilds and republishes both siblings and takes
+# minutes. These are the loop's own two command lines, verbatim, against
+# the images that run would report on. What it shows is the verifier being
+# consulted on real pulled images, and both failure shapes occurring for real.
+#
+#   identity  -> exit 4, "carries no labels at all". The trap the stamp
+#                handoff names, on the image it names.
+#   guard     -> exit 0, and a confident FALSE answer: source and revision
+#                are oven/bun's, inherited through FROM. --verify cannot
+#                tell an inherited stamp from its own.
+#
+# Two different digests on the two lines above, which is the whole reason the
+# digest line was KEPT: the stamp did not and could not produce either of
+# them.
+#
+================================================================================
+--- the reporting loop's own two lines, against cafaye/identity:e2e
+$ docker image inspect --format '{{index .RepoDigests 0}}' cafaye/identity:e2e
+localhost:16004/cafaye/identity@sha256:6f811e1277181789702d9520252bff74fee59a048b1290bf81d1d0af533bcc57
+$ sh "$ROOT/docker/provenance.sh" --verify cafaye/identity:e2e || true
+kit-provenance: cafaye/identity:e2e carries no labels at all — it was built without the stamp.
+kit-provenance:   (kit: docker/Dockerfile.<lang> declares the ARGs and the LABELs; this image predates it, or was built elsewhere.)
+[loop continues: exit of the whole '|| true' form is 0]
+
+--- the reporting loop's own two lines, against cafaye/guard:e2e
+$ docker image inspect --format '{{index .RepoDigests 0}}' cafaye/guard:e2e
+localhost:16004/cafaye/guard@sha256:d48209156b0c74c5247ee2f9f197c108d17b027371b7453d43e6298d3458a687
+$ sh "$ROOT/docker/provenance.sh" --verify cafaye/guard:e2e || true
+provenance: cafaye/guard:e2e
+  source:           https://github.com/oven-sh/bun
+  revision:         700fc117a2fd01ac0201deaa6fa69c5557acb04f
+  built_at:         2026-04-10T03:06:38.682Z
+  source_dirty:     <absent>
+  template_version: <absent>
+[loop continues: exit of the whole '|| true' form is 0]
+
