@@ -1,0 +1,117 @@
+# measurement-provenance-consumer.out
+#
+# Committed MEASURED OUTPUT, not a claim about output. Reproduce with:
+#
+#   bash tests/provenance-consumer-test.sh
+#
+# repo:      /Users/kaka/Code/any/moon/cafaye/wt-m39-provenance-parlor
+# verifier:  docker/provenance.sh, copied byte-identical from
+#            cafaye/kit/docker/provenance.sh
+#            (sha1 b5e9ab563979cf45f10ed79f0ebd50984c7b4f5b)
+# commit:    12d7237 (the commit under test)
+# host:      Darwin 25.5.0, docker 29.4.0
+# run:       2026-10-03T03:25:42Z
+#
+# What is being proved, in one line: `--verify` exits NON-ZERO on a real image
+# whose stamp disagrees, and exits ZERO when the stamp agrees. The four cases
+# marked MUST be red are the ones a printing-only consumer could never show.
+#
+# The images are built FROM scratch with no registry and no network, so this is
+# a measurement of the label sink and the exit status, not of the machine.
+#
+================================================================================
+== provenance consumer: the verifier is consulted, and it can go red
+== repo: /Users/kaka/Code/any/moon/cafaye/wt-m39-provenance-parlor
+== verifier: /Users/kaka/Code/any/moon/cafaye/wt-m39-provenance-parlor/docker/provenance.sh
+
+--- stamped image, printing form
+$ sh /Users/kaka/Code/any/moon/cafaye/wt-m39-provenance-parlor/docker/provenance.sh --verify provenance-consumer-stamped
+provenance: provenance-consumer-stamped
+  source:           cafaye/parlor
+  revision:         1111111111111111111111111111111111111111
+  built_at:         2026-04-10T03:06:38Z
+  source_dirty:     clean
+  template_version: v1.4.0
+[exit 0]
+PASS: stamped image, printing form exited 0 as declared
+PASS: stamped image names its revision printed 1111111111111111111111111111111111111111
+
+--- expectation agrees with the stamp
+$ sh /Users/kaka/Code/any/moon/cafaye/wt-m39-provenance-parlor/docker/provenance.sh --verify provenance-consumer-stamped --expect-revision 1111111111111111111111111111111111111111
+provenance: provenance-consumer-stamped
+  source:           cafaye/parlor
+  revision:         1111111111111111111111111111111111111111
+  built_at:         2026-04-10T03:06:38Z
+  source_dirty:     clean
+  template_version: v1.4.0
+kit-provenance: ok provenance-consumer-stamped is 1111111111111111111111111111111111111111
+[exit 0]
+PASS: expectation agrees with the stamp exited 0 as declared
+
+--- expectation disagrees with the stamp — MUST be red
+$ sh /Users/kaka/Code/any/moon/cafaye/wt-m39-provenance-parlor/docker/provenance.sh --verify provenance-consumer-stamped --expect-revision 2222222222222222222222222222222222222222
+provenance: provenance-consumer-stamped
+  source:           cafaye/parlor
+  revision:         1111111111111111111111111111111111111111
+  built_at:         2026-04-10T03:06:38Z
+  source_dirty:     clean
+  template_version: v1.4.0
+kit-provenance: FAIL provenance-consumer-stamped is commit 1111111111111111111111111111111111111111, and 2222222222222222222222222222222222222222 was expected.
+kit-provenance:   the tag is a mutable name. This is the disagreement the stamp exists to make visible.
+[exit 5]
+PASS: expectation disagrees with the stamp — MUST be red exited 5 as declared
+
+--- image with no labels at all — MUST be red
+$ sh /Users/kaka/Code/any/moon/cafaye/wt-m39-provenance-parlor/docker/provenance.sh --verify provenance-consumer-bare
+kit-provenance: provenance-consumer-bare carries no labels at all — it was built without the stamp.
+kit-provenance:   (kit: docker/Dockerfile.<lang> declares the ARGs and the LABELs; this image predates it, or was built elsewhere.)
+[exit 4]
+PASS: image with no labels at all — MUST be red exited 4 as declared
+
+--- image that does not exist — MUST be red
+$ sh /Users/kaka/Code/any/moon/cafaye/wt-m39-provenance-parlor/docker/provenance.sh --verify provenance-consumer-does-not-exist:no-such-tag
+kit-provenance: provenance-consumer-does-not-exist:no-such-tag carries no labels at all — it was built without the stamp.
+kit-provenance:   (kit: docker/Dockerfile.<lang> declares the ARGs and the LABELs; this image predates it, or was built elsewhere.)
+[exit 4]
+PASS: image that does not exist — MUST be red exited 4 as declared
+
+--- inherited base-image stamp exits zero — the gap, recorded
+$ sh /Users/kaka/Code/any/moon/cafaye/wt-m39-provenance-parlor/docker/provenance.sh --verify provenance-consumer-inherited
+provenance: provenance-consumer-inherited
+  source:           https://github.com/oven-sh/bun
+  revision:         700fc117a2fd01ac0201deaa6fa69c5557acb04f
+  built_at:         <absent>
+  source_dirty:     <absent>
+  template_version: <absent>
+[exit 0]
+PASS: inherited base-image stamp exits zero — the gap, recorded exited 0 as declared
+PASS: inherited stamp names the BASE image commit printed 700fc117a2fd01ac0201deaa6fa69c5557acb04f
+
+--- the e2e tier's own call form tolerates a mismatch
+$ sh -c sh '/Users/kaka/Code/any/moon/cafaye/wt-m39-provenance-parlor/docker/provenance.sh' --verify provenance-consumer-stamped --expect-revision '2222222222222222222222222222222222222222' || true
+provenance: provenance-consumer-stamped
+  source:           cafaye/parlor
+  revision:         1111111111111111111111111111111111111111
+  built_at:         2026-04-10T03:06:38Z
+  source_dirty:     clean
+  template_version: v1.4.0
+kit-provenance: FAIL provenance-consumer-stamped is commit 1111111111111111111111111111111111111111, and 2222222222222222222222222222222222222222 was expected.
+kit-provenance:   the tag is a mutable name. This is the disagreement the stamp exists to make visible.
+[exit 0]
+PASS: the e2e tier's own call form tolerates a mismatch exited 0 as declared
+
+--- the e2e tier's own call form still surfaces a mismatch in its text
+$ sh -c sh '/Users/kaka/Code/any/moon/cafaye/wt-m39-provenance-parlor/docker/provenance.sh' --verify provenance-consumer-stamped --expect-revision '2222222222222222222222222222222222222222' || true
+provenance: provenance-consumer-stamped
+  source:           cafaye/parlor
+  revision:         1111111111111111111111111111111111111111
+  built_at:         2026-04-10T03:06:38Z
+  source_dirty:     clean
+  template_version: v1.4.0
+kit-provenance: FAIL provenance-consumer-stamped is commit 1111111111111111111111111111111111111111, and 2222222222222222222222222222222222222222 was expected.
+kit-provenance:   the tag is a mutable name. This is the disagreement the stamp exists to make visible.
+[exit 0]
+PASS: the e2e tier's own call form still surfaces a mismatch in its text exited 0 as declared
+PASS: the tolerated call still says FAIL in its output
+
+== 11 passed, 0 failed, 0 skipped
