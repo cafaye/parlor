@@ -1269,6 +1269,29 @@ else
   skipped "shellcheck is not installed, so this script was not linted here"
 fi
 
+# --- the provenance verifier, on the images this repository actually uses ---
+# WIRED HERE BECAUSE IT WAS NOT WIRED ANYWHERE. `tests/provenance-consumer-test.sh`
+# arrived with the branch that added `docker/provenance.sh`, and nothing in this
+# repository invoked it: `bin/prime`, `tests/validate-ci.sh` and the workflow all
+# passed straight over it. A 225-line test that no gate runs is a document, and
+# the tell was that it went RED the moment kit's ownership fix was taken and
+# nobody noticed for a full gate run -- which is exactly what a test outside the
+# gate buys you: it fails silently, in a checkout nobody is watching.
+#
+# It is here rather than in the sandbox section below because it needs docker and
+# real images, not a throwaway copy, and because it is a claim about THIS
+# repository's own images rather than about the shape of the files.
+if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+  if prov_out="$(bash "$ROOT/tests/provenance-consumer-test.sh" 2>&1)"; then
+    ok "the provenance verifier refuses a foreign or inherited stamp ($(printf '%s' "$prov_out" | grep -c '^PASS:') assertions)"
+  else
+    no "the provenance verifier refuses a foreign or inherited stamp" \
+      "$(printf '%s' "$prov_out" | grep '^FAIL' | head -3)"
+  fi
+else
+  skipped "docker is not available, so the provenance verifier was not exercised on real images"
+fi
+
 # --- prove the checks can fail --------------------------------------------
 # Forty-seven breakages of a throwaway copy of every file these checks read,
 # each asserted to send this gate red. A check that has only ever been seen

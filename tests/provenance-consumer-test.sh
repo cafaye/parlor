@@ -190,12 +190,27 @@ expect_exit 'image with no labels at all — MUST be red' 4 \
 expect_exit 'image that does not exist — MUST be red' 4 \
   sh "$VERIFY" --verify provenance-consumer-does-not-exist:no-such-tag
 
-# 6. WHAT THE VERIFIER DOES NOT CATCH, measured rather than asserted. An image
-#    that inherits a base image's stamp exits 0 and reports the BASE's commit.
-#    This is the case that makes the e2e tier print rather than assert, and it
-#    is recorded here so the gap is a fact in this repository rather than a
-#    surprise in somebody's log.
-expect_exit 'inherited base-image stamp exits zero — the gap, recorded' 0 \
+# 6. AN INHERITED STAMP IS REFUSED. This assertion used to read `0`, and the
+#    `0` was not a measurement of correctness — it was a measurement of a defect
+#    that had been recorded here and then frozen into the suite as the expected
+#    answer. An image built `FROM oven/bun` inherits Bun's publisher's
+#    `org.opencontainers.image.*`, so the old verifier printed Bun's URL as our
+#    source and exited 0.
+#
+#    A test that pins a bug is how the bug survives a fix: this file went red the
+#    moment kit's ownership check landed, and the red read like a regression in
+#    the fix rather than like the fix working. That is the whole hazard, and it
+#    is why the reason the number changed is written here rather than left for
+#    the next person to reverse-engineer from the diff.
+#
+#    So this is now the fix's own red proof: the same real image, the same
+#    invocation, and a refusal. The SECOND assertion is unchanged and still
+#    passes, which is the point worth keeping — the verifier still PRINTS the
+#    base's commit. It just no longer calls that ours.
+expect_exit 'inherited base-image stamp is REFUSED, not accepted as ours' 6 \
+  sh "$VERIFY" --verify provenance-consumer-inherited
+expect_output 'the refusal names the base image it inherited from' \
+  'oven-sh/bun' \
   sh "$VERIFY" --verify provenance-consumer-inherited
 expect_output 'inherited stamp names the BASE image commit' \
   '700fc117a2fd01ac0201deaa6fa69c5557acb04f' \
