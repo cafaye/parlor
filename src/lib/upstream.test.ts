@@ -747,3 +747,319 @@ describe("the upstream names", () => {
     expect(names).toEqual(["identity", "billing"]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 6. The account boundary, at the forwarder.
+//
+// THE THIRD OF THE THREE THINGS A CROSS-TENANT READ NEEDS, and the only one
+// that leaves this process.
+//
+// `parlor` holds no rows. The account boundary is enforced by `identity`, in
+// SQL, and it is measured there — `identity/tenancy.yml` declares one entry
+// point and `identity/internal/tenancy/tenancy_test.go` proves the three-way
+// denial on real rows. So nothing in this file can prove that account A is
+// refused account B's data, and this section does not claim to. What it proves
+// is the half this repository is responsible for and can therefore go wrong on
+// its own:
+//
+//   a forwarder is the one place in the deployment that decides WHICH ACCOUNT a
+//   request is about, and it decides it from a string a caller sent. Three ways
+//   it can hand `identity` somebody else's account, all of them invisible from
+//   the client side because the client call is still correct:
+//
+//     * SUBSTITUTION — the upstream path is rebuilt from the caller's own
+//       segments, so the account id `identity` scopes by is the account id the
+//       caller named. A refactor that resolved the account from a header, a
+//       query parameter or the token's claims would be correct-looking and
+//       would hand every request to the wrong tenant.
+//     * CREDENTIAL SWAPPING — the account id travels with the CALLER'S token. A
+//       forwarder that relayed a service credential, or none, would ask
+//       `identity` a question it answers from a different subject's membership.
+//     * REFUSAL SWALLOWING — `identity` answers 404 for "not one of yours" on
+//       purpose, so that a guessed id cannot be used to enumerate accounts. A
+//       forwarder that turned that into a 200, or retried it somewhere else,
+//       would hand back exactly the information the refusal exists to withhold.
+//
+// The other two are in `src/lib/accounts.test.ts` (the cache) and in
+// `identity` itself (the rows). Together the three are the boundary; each of
+// the three is somebody else's to break alone.
+//
+// THE ENUMERATION IS DECLARED, NOT GREPPED. `ACCOUNT_SCOPED_ROUTES` below is
+// the list, and `tests/validate-ci.sh`-style drift is caught by the count and
+// by the whole-set tests rather than by a pattern that would read `darkroom`
+// has no routes. Adding a tenth account-scoped route means adding a line here,
+// which is the obligation D18 asks for and the reason the list is data.
+// ---------------------------------------------------------------------------
+
+/** A real uuid, because `SEGMENT_KINDS` value-matches `:accountId` as one. */
+const ACCOUNT_A = "11111111-1111-4111-8111-111111111111";
+/** Another account's id. The one that must never appear in a hop for `ACCOUNT_A`. */
+const ACCOUNT_B = "22222222-2222-4222-8222-222222222222";
+const USER_B = "33333333-3333-4333-8333-333333333333";
+
+/**
+ * The eight account-scoped routes in the table, declared.
+ *
+ * Every one of these carries a `:accountId`, which is what makes it
+ * account-scoped: the account is named in the request rather than derived from
+ * the credential alone. `GET /v1/accounts` and `POST /v1/accounts` are scoped
+ * too — by the token, which is the whole of their scope — and are covered
+ * separately below, because the failure they can suffer is a different one.
+ *
+ * `operation` is the class of read or write, and it is here so a row that
+ * covers the wrong class cannot be satisfied by the wrong assertion.
+ */
+const ACCOUNT_SCOPED_ROUTES = [
+  { id: "get-account", operation: "read-by-id", method: "GET", tail: [], expected: `/v1/accounts/${ACCOUNT_A}` },
+  { id: "rename-account", operation: "update", method: "PATCH", tail: [], expected: `/v1/accounts/${ACCOUNT_A}` },
+  { id: "delete-account", operation: "delete", method: "DELETE", tail: [], expected: `/v1/accounts/${ACCOUNT_A}` },
+  { id: "list-members", operation: "list", method: "GET", tail: ["members"], expected: `/v1/accounts/${ACCOUNT_A}/members` },
+  { id: "invite-member", operation: "create", method: "POST", tail: ["invitations"], expected: `/v1/accounts/${ACCOUNT_A}/invitations` },
+  {
+    id: "change-member-role",
+    operation: "update",
+    method: "PATCH",
+    tail: ["members", USER_B],
+    expected: `/v1/accounts/${ACCOUNT_A}/members/${USER_B}`,
+  },
+  {
+    id: "remove-member",
+    operation: "delete",
+    method: "DELETE",
+    tail: ["members", USER_B],
+    expected: `/v1/accounts/${ACCOUNT_A}/members/${USER_B}`,
+  },
+] as const satisfies readonly {
+  id: string;
+  operation: string;
+  method: string;
+  tail: readonly string[];
+  expected: string;
+}[];
+
+function accountRoute(route: (typeof ACCOUNT_SCOPED_ROUTES)[number], accountId = ACCOUNT_A) {
+  return ["accounts", accountId, ...route.tail];
+}
+
+describe("the account boundary at the forwarder", () => {
+  it("declares every account-scoped route the table holds, and no others", () => {
+    // The declaration is the thing D18 asks for and the thing a grep cannot
+    // give. If this goes red, a ninth or tenth `:accountId` route exists and
+    // nothing in this file is watching it — so the fix is a line here, not a
+    // new suite. Seven, not eight: `GET`/`PATCH`/`DELETE /accounts/{id}` are
+    // three routes over one shape and are all three listed, and
+    // `POST /accounts/{id}/invitations` is the seventh.
+    expect(ACCOUNT_SCOPED_ROUTES).toHaveLength(7);
+    expect(new Set(ACCOUNT_SCOPED_ROUTES.map((r) => r.id)).size).toBe(ACCOUNT_SCOPED_ROUTES.length);
+  });
+
+  describe.each(ACCOUNT_SCOPED_ROUTES)("$id ($operation)", (route) => {
+    it("asks identity about the account the caller named, and no other", async () => {
+      const { forward, hops } = forwarder();
+
+      await forward(
+        new Request(`https://parlor.test/${route.expected}`, {
+          method: route.method,
+          headers: { Authorization: "Bearer alice", "Content-Type": "application/json" },
+          body: route.method === "GET" || route.method === "DELETE" ? undefined : "{}",
+        }),
+        accountRoute(route),
+      );
+
+      // SUBSTITUTION. The URL is built by rebuilding the path from the table's
+      // own shape and the caller's segments, so this is byte-for-byte the
+      // account the caller named. The second assertion is the one that matters:
+      // `ACCOUNT_B` appearing here would mean the forwarder resolved the
+      // account from somewhere other than the request.
+      expect(hops).toHaveLength(1);
+      expect(hops[0].url).toBe(`${IDENTITY_URL}${route.expected}`);
+      expect(hops[0].url).not.toContain(ACCOUNT_B);
+      expect(hops[0].method).toBe(route.method);
+    });
+
+    it("carries the caller's own credential, and nothing that could stand in for it", async () => {
+      const { forward, hops } = forwarder();
+
+      await forward(
+        new Request(`https://parlor.test/${route.expected}`, {
+          method: route.method,
+          headers: {
+            Authorization: "Bearer alice",
+            Cookie: "__Host-session=alice-cookie",
+            "Content-Type": "application/json",
+          },
+          body: route.method === "GET" || route.method === "DELETE" ? undefined : "{}",
+        }),
+        accountRoute(route),
+      );
+
+      // CREDENTIAL SWAPPING. `identity` prefers the `Authorization` header over
+      // the cookie (`presentedToken`), so the header is the credential being
+      // used and the header is the caller's. A forwarder that minted, cached or
+      // pooled one would ask the same question about a different subject's
+      // memberships, and every request would still be 200.
+      expect(hops[0].headers.authorization).toBe("Bearer alice");
+      expect(hops[0].headers.cookie).toBe("__Host-session=alice-cookie");
+    });
+
+    it("relays a refusal as a refusal, status and body, with nothing added", async () => {
+      // The answer `identity` gives for "no such account" AND for "an account
+      // you are not a member of", on purpose, so a guessed id cannot enumerate
+      // accounts. RELAYED, not re-authored: this repository has no business
+      // inventing a different answer, and a forwarder that mapped 404 to 200
+      // would hand back the very rows the refusal withholds.
+      const refusal = JSON.stringify({
+        type: "https://errors.cafaye.com/not_found",
+        title: "Account not found.",
+        status: 404,
+        code: "not_found",
+      });
+      const { forward, hops } = forwarder(
+        () =>
+          new Response(refusal, {
+            status: 404,
+            headers: { "Content-Type": "application/problem+json" },
+          }),
+      );
+
+      const response = await forward(
+        new Request(`https://parlor.test/${route.expected}`, {
+          method: route.method,
+          headers: { Authorization: "Bearer alice", "Content-Type": "application/json" },
+          body: route.method === "GET" || route.method === "DELETE" ? undefined : "{}",
+        }),
+        accountRoute(route),
+      );
+
+      expect(response.status).toBe(404);
+      expect(await response.json()).toEqual(JSON.parse(refusal));
+      // One hop and one hop only. A retry here would be the interesting bug: a
+      // forwarder that "helpfully" tried the caller's other accounts, or asked
+      // again with a different credential, would turn a refusal into a search.
+      expect(hops).toHaveLength(1);
+    });
+
+    it("refuses an account id that is not an account id, before any address is contacted", async () => {
+      // The value check, on every account-scoped route rather than the one the
+      // allow-list tests happened to use. `%2e%2e%2f` is one segment by the time
+      // it arrives (`matchesShape`'s comment), so a check that only counted
+      // positions would splice `../../` into an upstream URL — and a traversal
+      // out of `/v1/accounts/` is a way to reach a route the table never
+      // listed, under an account the caller never named.
+      for (const forged of ["../../v1/me", "x", ACCOUNT_A.slice(0, -1), "", "%2e%2e%2fme"]) {
+        const { forward, hops } = forwarder();
+
+        const response = await forward(
+          new Request(`https://parlor.test/v1/accounts/${forged}`, {
+            method: route.method,
+            headers: { Authorization: "Bearer alice", "Content-Type": "application/json" },
+            body: route.method === "GET" || route.method === "DELETE" ? undefined : "{}",
+          }),
+          accountRoute(route, forged),
+        );
+
+        expect(response.status, `${route.id} with ${JSON.stringify(forged)}`).toBe(404);
+        expect(hops, `${route.id} with ${JSON.stringify(forged)}`).toHaveLength(0);
+      }
+    });
+  });
+
+  it("asks identity once per account route and never reaches billing with one", async () => {
+    // billing has no account in its contract at all, so an account path that
+    // resolved to the billing base would be a request to the wrong service with
+    // somebody else's account id in it.
+    for (const route of ACCOUNT_SCOPED_ROUTES) {
+      const { forward, hops } = forwarder();
+      await forward(
+        new Request(`https://parlor.test/${route.expected}`, {
+          method: route.method,
+          headers: { Authorization: "Bearer alice", "Content-Type": "application/json" },
+          body: route.method === "GET" || route.method === "DELETE" ? undefined : "{}",
+        }),
+        accountRoute(route),
+      );
+
+      // `startsWith` and not a matcher: this repository has no `jest-extended`,
+      // and `expect(url).toMatch(/^http:\/\/identity\.test/)` would be a
+      // pattern — the thing D18 says already reads like an answer when it is
+      // broken.
+      expect(hops[0].url.startsWith(`${IDENTITY_URL}/v1/accounts/`), route.id).toBe(true);
+      expect(hops[0].url, route.id).not.toContain(BILLING_URL);
+    }
+  });
+
+  it("cannot be turned into a fetch-by-id with a query parameter on the collection", async () => {
+    // `GET /v1/accounts` and `POST /v1/accounts` are the two account-scoped
+    // routes with no `:accountId` segment: they are scoped by the token alone.
+    // The failure they can suffer is therefore not substitution but WIDENING —
+    // a query parameter that names the account turns "everything I belong to"
+    // into "this one account", which is a read of somebody else's rows wearing
+    // the shape of a list. Neither route declares a `query`, so the parameter
+    // cannot survive.
+    for (const method of ["GET", "POST"]) {
+      const { forward, hops } = forwarder();
+      await forward(
+        new Request(`https://parlor.test/v1/accounts?account_id=${ACCOUNT_B}&accountId=${ACCOUNT_B}&id=${ACCOUNT_B}`, {
+          method,
+          headers: { Authorization: "Bearer alice", "Content-Type": "application/json" },
+          body: method === "GET" ? undefined : "{}",
+        }),
+        ["accounts"],
+      );
+
+      expect(hops, method).toHaveLength(1);
+      expect(hops[0].url, method).toBe(`${IDENTITY_URL}/v1/accounts`);
+      expect(hops[0].url, method).not.toContain(ACCOUNT_B);
+    }
+  });
+
+  it("takes the account from the path only, and not from the body", async () => {
+    // The mirror of the collection arm, for the write. A body carrying
+    // `account_id` is data the service may or may not read; the forwarder must
+    // not treat it as a second address for the request, because a request about
+    // `ACCOUNT_A` that also says `ACCOUNT_B` is ambiguous and the answer to an
+    // ambiguous tenancy question is which one the forwarder happened to pick.
+    const { forward, hops } = forwarder();
+
+    await forward(
+      new Request(`https://parlor.test/v1/accounts/${ACCOUNT_A}/members/${USER_B}`, {
+        method: "PATCH",
+        headers: { Authorization: "Bearer alice", "Content-Type": "application/json" },
+        body: JSON.stringify({ role: "owner", account_id: ACCOUNT_B }),
+      }),
+      accountRoute(ACCOUNT_SCOPED_ROUTES[5]),
+    );
+
+    // The body crosses verbatim, because that is property 4 — the service is
+    // the one that decides what a request body means. What must not happen is
+    // the ADDRESS moving: one account in the path, one account in the URL.
+    expect(hops[0].url).toBe(`${IDENTITY_URL}/v1/accounts/${ACCOUNT_A}/members/${USER_B}`);
+    expect(hops[0].url).not.toContain(ACCOUNT_B);
+    expect(hops).toHaveLength(1);
+  });
+
+  it("refuses a forged member id on both per-member routes", async () => {
+    // `:userId` is the second wildcard and the narrower one: it addresses a
+    // person INSIDE an account the caller has already named, so a forged value
+    // here is a forged membership. Two routes, both refused before a hop.
+    // The two routes that address a person inside the account, named rather
+    // than matched on `tail`: `ACCOUNT_SCOPED_ROUTES` is `as const`, so
+    // `tail` is a tuple of literal types and `tail.includes(USER_B)` narrows to
+    // `never` rather than to a boolean.
+    const perMember: readonly string[] = ["change-member-role", "remove-member"];
+    for (const route of ACCOUNT_SCOPED_ROUTES.filter((r) => perMember.includes(r.id))) {
+      const { forward, hops } = forwarder();
+      const response = await forward(
+        new Request(`https://parlor.test/${route.expected}`, {
+          method: route.method,
+          headers: { Authorization: "Bearer alice", "Content-Type": "application/json" },
+          body: route.method === "DELETE" ? undefined : "{}",
+        }),
+        ["accounts", ACCOUNT_A, "members", "../../me"],
+      );
+
+      expect(response.status, route.id).toBe(404);
+      expect(hops, route.id).toHaveLength(0);
+    }
+  });
+});

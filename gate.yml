@@ -280,9 +280,35 @@ gate:
     # core has `test_the_gate_floor_is_not_below_the_suite_core_claims_to_have`,
     # and parlor has no equivalent, so raising this number when the suite grows
     # is a thing a human has to remember until MD12's machinery lands).
+    # It is 710 today, raised by the tenant-proof packet: 665 -> 710, a +45 in
+    # two files and for one reason. `DEBT.md` D18 measured this repository at
+    # zero cross-tenant negative tests, and that was true: there was nothing in
+    # the suite asserting that one account's rows are not another account's.
+    # The number moved because the account boundary is now written down in two
+    # places, and both are load-bearing rather than documentation:
+    #
+    #   * 12 in `src/lib/accounts.test.tsx`, on the account cache. This is the
+    #     only store of account-scoped rows in this process — `parlor` has no
+    #     database — so it is where a cross-tenant read can happen with every
+    #     request to `identity` still correct. The arms: two accounts in one
+    #     session (the `:accountId` half of a cache key), two sessions in one
+    #     account (the `token` half), the member panel, and the account list,
+    #     which is scoped by the token alone. Each asserts the REFUSAL reaches
+    #     the screen, not merely that the right name is on it.
+    #   * 33 in `src/lib/upstream.test.ts`, on the forwarder, over a DECLARED
+    #     list of the seven `:accountId` routes. Substitution (the account id
+    #     `identity` scopes by is the one the caller named), credential swapping
+    #     (the caller's own token crosses with it), refusal swallowing (a 404
+    #     stays a 404, in one hop), and the wildcard value check on every route
+    #     rather than the one the allow-list happened to use.
+    #
+    # 665 IS NOT 662, and that gap was there before this packet: the floor is a
+    # decrease-detector and had drifted three above the real count. It is
+    # recorded here rather than quietly absorbed, because a floor nobody can
+    # reconcile with the summary line is a floor nobody is reading.
     - id: suite
       match: '^[ ]*Tests[ ]+([0-9]+)[ ]+passed(?![ ]*\|)'
-      minimum: 662
+      minimum: 710
     # The tally `tests/validate-ci.sh` prints, which is the second half of this
     # gate: the checks that the tree still has the shape CI assumes — one
     # runtime pin, `npm ci` and not `npm install`, the gate command, the
