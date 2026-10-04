@@ -13,7 +13,8 @@ the identity contract with a mocked transport underneath it.
 This is a **template**, not a platform-as-a-service dependency.
 
 - You clone it. You read all of it. It is a few hundred files of ordinary
-  Next.js you can reason about end to end.
+  React you can reason about end to end — TanStack Start for the server and the
+  routes, Vite for the dev server and the build.
 - You change whatever you need and ship your fork. There is no license key, no
   feature gate, no call home, no vendor that can raise your prices or pull the
   rug.
@@ -227,9 +228,15 @@ lost. What it costs: any XSS on this origin still reads the token out of
 
 ## Stack
 
-Next.js (App Router) · TypeScript · Tailwind CSS v4 · @tanstack/react-query ·
-vitest · @testing-library/react · Playwright for the end-to-end tier · Node
-pinned in `package.json`.
+TanStack Start + Vite · React 19 · TypeScript · Tailwind CSS v4 ·
+@tanstack/react-router + @tanstack/react-query · vitest ·
+@testing-library/react · Playwright for the end-to-end tier · Node pinned in
+`package.json`.
+
+`npm run dev` is `vite dev`, `npm run build` is `vite build`, and `npm start` is
+`node server/index.mjs`. The build emits a fetch handler at
+`dist/server/server.mjs`; `server/adapter.mjs` binds it to a socket. There is no
+`.next/` directory, no standalone output and no `next start`.
 
 ## Getting started
 
@@ -247,8 +254,8 @@ the gate.
 `mise run stack` is `caf dev -registry caf.dev.json -port 3000`, and it is the
 task to reach for whenever you are touching sign in, registration, accounts or
 invitations — everything in `src/lib/identity.ts` and `src/lib/auth.tsx`.
-`npm run dev` on its own starts a Next.js server with **nothing behind it**, so
-every authenticated route fails against an origin that is not there.
+`npm run dev` on its own starts `vite dev` with **nothing behind it**, so every
+authenticated route fails against an origin that is not there.
 
 The catalog is committed because `caf` ships none, and it says why in its own
 docs: an image reference guessed by a CLI is a reference that pulls the wrong
@@ -256,9 +263,9 @@ thing. Two facts in it are load-bearing rather than conventional, and both are
 argued at the line in `caf.dev.json`:
 
 - **`-port 3000` is not a preference.** This app declares no `exposes.api`, so
-  `caf dev` cannot tell that a Next.js app serves HTTP and publishes no host
-  port for it. Without the flag the stack comes up fine and the browser cannot
-  reach it.
+  `caf dev` cannot tell that a Vite/TanStack Start app serves HTTP and publishes
+  no host port for it. Without the flag the stack comes up fine and the browser
+  cannot reach it.
 - **parlor is deliberately not an entry in its own catalog.** `caf dev` builds
   the project service from this repository's Dockerfile *unless* the catalog
   names it, in which case it runs `image:` instead. Adding a self-entry would
@@ -275,7 +282,7 @@ npm test           # vitest, single run
 npm run test:watch # vitest, watching
 npm run lint       # eslint
 npm run typecheck  # tsc --noEmit
-npm run dev        # Next.js alone — no identity behind it
+npm run dev        # vite dev alone — no identity behind it
 
 ./bin/e2e          # the whole stack, in a browser — see "End to end"
 ```
