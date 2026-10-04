@@ -87,23 +87,46 @@ WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN npm run build
+# `build:node`, not `build`, and the runner stage's header says why: this image
+# ships a Node server and `npm run build` emits a Worker. The Cloudflare build
+# still runs in `bin/prime` and in the `build` job in `.github/workflows/ci.yml`,
+# so neither target is unbuilt by choosing the other here.
+RUN npm run build:node
 
 # --- runner -----------------------------------------------------------------
-# Non-root: only the build output, the server adapter and `node_modules` are
-# carried forward, so no devDependencies and no sources land in the image.
+# Non-root: only the build output and `node_modules` are carried forward, so no
+# devDependencies and no sources land in the image.
 #
-# WHAT IS COPIED, AND WHY IT IS NOT SIMPLY `dist/`
+# WHY THIS IMAGE STILL EXISTS, GIVEN CLOUDFLARE IS THE DEPLOY STORY. It is
+# written down here rather than left as an unexplained artifact. Two reasons,
+# and the first one is load-bearing:
 #
-# Two things the browser needs are not inside `dist/`:
+#   1. `e2e/docker-compose.yml` builds `parlor` from this file with
+#      `context: .` and runs it as a container on the compose network. That tier
+#      is the only thing in this repository that proves the app works against a
+#      real `identity` and a real `billing`, and deleting this Dockerfile would
+#      not have been "removing a dead deploy target" — it would have deleted the
+#      whole-stack end-to-end tier along with the e2e workflow's required job.
+#   2. A Node target is a genuine capability, and the framework's own answer for
+#      it is `nitro`, which is what `npm run build:node` runs. The alternative
+#      was carrying `server/index.mjs` and `server/adapter.mjs` forward, which
+#      keeps the hand-rolled Node-to-Web adapter this packet exists to delete.
 #
-#   * `server/` — the adapter that binds the built fetch handler to a socket, plus
-#     the production `node_modules` the handler's own imports resolve against.
-#     `dist/server/server.mjs` default-exports `{ fetch(request) }` and does not
-#     listen; without this the container starts, prints nothing and exits 0.
-#   * `dist/client/assets/files/` — the webfont binaries the emitted stylesheet
-#     names with a relative `./files/…` URL. Copying only `*.js` would produce an
-#     image whose every page is unstyled, which passes a healthcheck.
+# THE BUILD IS `npm run build:node`, NOT `npm run build`, and that distinction is
+# the whole difference between the two targets:
+#
+#   npm run build        ->  vite.config.mts      ->  dist/server/index.mjs
+#                            `cloudflare()` plugin      a WORKER, consumed by
+#                            `wrangler deploy`          `wrangler.jsonc`
+#
+#   npm run build:node   ->  vite.node.config.mts ->  .output/
+#                            `nitro()` plugin           a Node server, run by
+#                                                       `node .output/server/index.mjs`
+#
+# Building the Cloudflare output and shipping it as a Node container would produce
+# an image that exits 0 and answers nothing, because `dist/server/index.mjs`
+# default-exports a fetch handler and does not listen. So the builder below runs
+# the Node build, and `.output/` is what this image ships.
 #
 # PINNED, LIKE THE BUILDER STAGE, AND IT WAS NOT. This line said `node:22-slim`
 # while the stage above said `node:22.22.2-slim`, so the image built on the pin
@@ -124,13 +147,22 @@ RUN groupadd --system --gid 1001 nodejs \
  && useradd --system --uid 1001 --gid nodejs nextjs
 
 # The production dependency tree, from `prod-deps` — NOT from `builder`, whose
-# tree still carries `vite`, `typescript` and the whole build toolchain. The
-# built handler imports its runtime dependencies by name (`seroval`, `h3-v2`,
+# tree still carries `vite`, `typescript` and the whole build toolchain. Nitro's
+# output imports its runtime dependencies by name (`srvx`, `h3-v2`,
 # `@tanstack/react-router`), so this directory is not optional decoration and
 # copying the builder's would work only by shipping every devDependency.
 COPY --from=prod-deps --chown=nextjs:nodejs /app/node_modules ./node_modules
-COPY --from=builder --chown=nextjs:nodejs /app/dist ./dist
-COPY --from=builder --chown=nextjs:nodejs /app/server ./server
+#
+# `.output/` AND NOTHING ELSE, and the second thing inside it is the reason this
+# COPY is not simply `COPY .output .output` with a comment. Nitro bundles the
+# webfonts into `.output/public/assets/files/` and the emitted stylesheet names
+# them with a relative `./files/…` URL, so an image carrying `.output/server`
+# without `.output/public` is a container whose every page is unstyled — which
+# passes the HEALTHCHECK below, because liveness is not legibility. Copying the
+# whole directory is deliberate: `dist/client/assets/files/` is no longer where
+# the Node target's fonts land, and a COPY that had to enumerate them would be
+# one more place the two builds could disagree.
+COPY --from=builder --chown=nextjs:nodejs /app/.output ./.output
 
 USER nextjs
 EXPOSE 3000
@@ -138,7 +170,9 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
-# `node server/index.mjs`, not `node dist/server/server.mjs`: the built module
-# exports a fetch handler and does not listen. See the header on
-# `server/adapter.mjs`.
-CMD ["node", "server/index.mjs"]
+# `node .output/server/index.mjs`, and not `node dist/server/server.mjs`: the
+# Cloudflare build's output default-exports `{ fetch(request) }` and does not
+# listen. That is the same class of failure the previous CMD guarded against —
+# a container that starts, prints nothing and exits 0 — so it is guarded by
+# naming the file that actually listens.
+CMD ["node", ".output/server/index.mjs"]

@@ -286,9 +286,47 @@ gate:
     # core has `test_the_gate_floor_is_not_below_the_suite_core_claims_to_have`,
     # and parlor has no equivalent, so raising this number when the suite grows
     # is a thing a human has to remember until MD12's machinery lands).
-    # It is 798 today. 755 -> 798, a +43 in three new files, and every one of
-    # those tests is here because the failure it guards is invisible in a
-    # rendered string.
+    #
+    # IT IS 781 TODAY, AND THIS IS THE FIRST TIME THIS FLOOR HAS MOVED DOWN,
+    # which is why it gets more of an account than an increase would. 798 -> 781,
+    # a decrease of seventeen, and every one of the seventeen is in one deleted
+    # file: `server/adapter.test.mjs`.
+    #
+    # WHY THE DECREASE IS CORRECT RATHER THAN A LOSS. That file tested
+    # `server/adapter.mjs`, the hand-rolled Node-to-Web adapter that bound the
+    # built fetch handler to a socket and served the built client assets. This
+    # repository moved its default deploy to Cloudflare Workers and deleted the
+    # adapter along with `server/index.mjs`, because Cloudflare supplies the
+    # server and the Node target now uses `nitro`, which has one. Every one of
+    # the seventeen asserted behaviour of a module this tree no longer has, and a
+    # test for a deleted module is not a floor to defend — it is a test that
+    # would have to be deleted anyway, one gate failure later, in a hurry.
+    #
+    # WHAT THE SEVENTEEN WERE, because a floor nobody can reconcile with the
+    # summary line is a floor nobody is reading — the same reason the 665-vs-662
+    # gap is recorded further down. Two cookies arriving as two `Set-Cookie`
+    # headers rather than one joined with ", "; a streamed POST body needing
+    # `duplex: "half"` or `new Request` throws on every sign-in; a `..`-bearing
+    # path refused at the filesystem boundary; a throwing handler answering 500
+    # rather than killing the process; and the built client assets being served
+    # at all — `/assets/*`, which the built fetch handler answers 404 for, which
+    # is a page that renders, a green `/healthz`, and a sign-in form that submits
+    # into nothing.
+    #
+    # WHAT REPLACED THEM, WHICH IS NOT ONE-FOR-ONE, and that is the honest cost
+    # of this packet rather than a rounding detail. Nothing now asserts those
+    # five properties of the Node target, because `nitro` is not this
+    # repository's code and its behaviour is its own to test. The replacement is
+    # coverage at a different level: `.github/workflows/ci.yml` asserts that
+    # `.output/server/index.mjs` exists and that `.output/public` carries the
+    # webfont binaries — which is the failure this repository has actually
+    # produced, twice. So this is a GAP and not a trade, named here so that the
+    # next reader counting seventeen fewer tests knows exactly what is no longer
+    # being checked rather than finding out from a bug.
+    #
+    # It is 798 by the next account. 755 -> 798, a +43 in three new files, and
+    # every one of those tests is here because the failure it guards is invisible
+    # in a rendered string.
     #
     #   * 22 in `src/components/social/social-callback-screen.test.tsx`, on the
     #     four answers `completeSocialLogin` can return plus the refusals. The
@@ -409,7 +447,7 @@ gate:
     # reconcile with the summary line is a floor nobody is reading.
     - id: suite
       match: '^[ ]*Tests[ ]+([0-9]+)[ ]+passed(?![ ]*\|)'
-      minimum: 798
+      minimum: 781
     # The tally `tests/validate-ci.sh` prints, which is the second half of this
     # gate: the checks that the tree still has the shape CI assumes — one
     # runtime pin, `npm ci` and not `npm install`, the gate command, the
