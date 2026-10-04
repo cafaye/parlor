@@ -1281,7 +1281,20 @@ fi
 # It is here rather than in the sandbox section below because it needs docker and
 # real images, not a throwaway copy, and because it is a claim about THIS
 # repository's own images rather than about the shape of the files.
-if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+# The `docker/provenance.sh` guard is about THIS repository's verifier, on THIS
+# repository's images. `--self-test` runs this same file against a throwaway copy
+# seeded with the files the checks read — and it does not seed `docker/`, so the
+# copy runs the verifier test with no verifier, the check reports FAIL, and the
+# baseline the 47 breakages are measured against is red before the first breakage
+# is planted. Every self-test case then "passes" for the wrong reason, or none of
+# them runs. That is the exact failure the header above this section describes,
+# reached from the other direction: a check wired into the gate that cannot be
+# satisfied by any real tree.
+#
+# So the copy does not run it, and says so rather than skipping silently. `core`
+# owns a checker for `gate.yml`; this is a sibling property and it is now
+# recorded rather than discovered a third time.
+if [ -f "$ROOT/docker/provenance.sh" ] && command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
   if prov_out="$(bash "$ROOT/tests/provenance-consumer-test.sh" 2>&1)"; then
     ok "the provenance verifier refuses a foreign or inherited stamp ($(printf '%s' "$prov_out" | grep -c '^PASS:') assertions)"
   else
@@ -1289,7 +1302,7 @@ if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
       "$(printf '%s' "$prov_out" | grep '^FAIL' | head -3)"
   fi
 else
-  skipped "docker is not available, so the provenance verifier was not exercised on real images"
+  skipped "docker or docker/provenance.sh is not available, so the provenance verifier was not exercised on real images"
 fi
 
 # --- prove the checks can fail --------------------------------------------
