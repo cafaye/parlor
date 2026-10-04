@@ -95,9 +95,18 @@ no() {
   fi
 }
 
+# A skip prints its reason for the same reason `no` prints its evidence: a
+# caller that hands this a second argument means it, and a helper that silently
+# drops it leaves a reason computed and invisible. The manifest check below is
+# the one that passes one — whether caf is absent is the whole content of that
+# skip, and "SKIP cafaye.yml is a document caf can open" on its own reads as a
+# check that gave up rather than a machine that cannot ask.
 skipped() {
   skip=$((skip + 1))
   printf 'SKIP  %s\n' "$1"
+  if [ $# -gt 1 ]; then
+    printf '      %s\n' "$2"
+  fi
 }
 
 # Read one field out of package.json, by dotted path. An absent key reads as
@@ -200,7 +209,7 @@ manifest_parses_rc=0
 manifest_err="$(manifest_parses)" || manifest_parses_rc=$?
 case "$manifest_parses_rc" in
   0) ok "cafaye.yml is a document caf can open (asked caf, not line-matched)" ;;
-  2) skip "cafaye.yml is a document caf can open" \
+  2) skipped "cafaye.yml is a document caf can open" \
         "${manifest_err:-caf is not on PATH; nothing here can read the manifest}" ;;
   *) no "cafaye.yml is a document caf can open (asked caf, not line-matched)" \
         "${manifest_err:-caf refused it without saying why}" ;;
