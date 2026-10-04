@@ -216,6 +216,15 @@ Three rules:
 - **There is no `href`.** A button that navigates is a link, and a link that
   submits is a button. Use `TextLink`. The absence is what stops the wrong thing
   being easy.
+- **`buttonClasses(variant, size)` is exported for the `<a>` that navigates.**
+  The same argument `linkClasses` makes, one level up: a control that navigates
+  and must look like a commit is an anchor wearing these classes. `TextLink` is
+  for a phrase inside running text; this is for a whole control. The social
+  provider buttons are the case in point — `/v1/auth/oauth/{provider}` is a
+  browser navigation the browser must perform, so it cannot be a `<button>` or a
+  `fetch`, and it is not a route this app renders, so it cannot be the router's
+  `Link`. Retyping these classes at that call site is how a link loses the focus
+  ring, and the ring is measured against the ground colour.
 
 `busy` only draws the spinner. You still own `disabled` and `aria-busy` — a
 control can be busy and still clickable, or clickable and not busy. **Pass all
