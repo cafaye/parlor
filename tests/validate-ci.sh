@@ -264,6 +264,65 @@ found_fixed() {
   grep -F "$1" || true
 }
 
+# Edits a file in place, with the BSD `sed -i ''` and the GNU `sed -i` behind ONE
+# name, because the self-test has to be able to break a copy of this tree on the
+# machine the gate is declared to run on and both of them are real.
+#
+# WITHOUT THIS FUNCTION `./bin/prime` IS GREEN ON A MAC AND RED ON THE RUNNER IT
+# IS DECLARED FOR, AND IT IS WORTH NAMING THE EXACT FAILURE, because it is the
+# one that hides itself. On a GNU runner `sed -i '' 's|a|A|' file` does not
+# complain about the empty argument: `-i` takes `''` as its suffix, so the SCRIPT
+# becomes the FILENAME.
+#
+#   sed: can't read s|\.github/workflows/ci\.reusable|workflows/ci.reusable|:
+#   No such file or directory
+#
+# The self-test runs its breakages under `set -o pipefail` and stops at the first
+# command that exits non-zero, so it dies on breakage three of fifty-one, having
+# reported nothing about the other forty-eight — and the whole run exits 2 with
+# `47 checks declared, 46 passed, 0 failed, 1 skipped` printed above it, which
+# reads as a passing gate. It has been red on every push to this repository's
+# `master` since the self-test was introduced (`609687a`), which is why this
+# comment is a measurement and not a worry.
+#
+# It is not `perl -pi -e`, for the reason the comment beside `strip_comments`
+# gives about perl: this file's header promises it needs no tool but node and
+# grep, and perl is not on a slim CI image by default.
+#
+# `cat "$tmp" >"$file"` rather than `mv`, and the reason is the file list: two
+# breakages edit `bin/prime`, which is `chmod +x`. `mv` across filesystems makes
+# a new inode with default permissions and would leave a non-executable gate
+# behind — a green self-test that then made `./bin/prime` fail with "permission
+# denied" for a reason nothing in the failure named. Redirecting onto the
+# existing path keeps the inode, the mode and the owner.
+#
+# `mktemp` is not a new dependency: `seed_sandbox` already uses `mktemp -d`, and
+# `sed` is already used by `code_lines`.
+#
+# The signature is sed's own (`sed_i [-E] <script> <file>`), so a breakage reads
+# the way it did before with `-i ''` dropped, and the script text is
+# byte-identical. That matters more than it looks: a breakage whose own `sed`
+# had stopped matching reports itself as "that check cannot fail" and halts the
+# WHOLE self-test, so several of these have been rewritten to match a SHAPE
+# rather than a literal in the past. Changing only the invocation is what keeps
+# twenty-six of them from becoming a twenty-seventh instance of that.
+sed_i() {
+  local extended=0
+  if [ "${1:-}" = "-E" ]; then
+    extended=1
+    shift
+  fi
+  local script=$1 file=$2 tmp
+  tmp=$(mktemp) || return 1
+  if [ "$extended" = 1 ]; then
+    sed -E "$script" "$file" >"$tmp" || { rm -f "$tmp"; return 1; }
+  else
+    sed "$script" "$file" >"$tmp" || { rm -f "$tmp"; return 1; }
+  fi
+  cat "$tmp" >"$file"
+  rm -f "$tmp"
+}
+
 # Prints a file with its comments removed, so a check can ask about CODE.
 #
 # Three comment syntaxes, because this walks both TypeScript and the Dockerfile:
@@ -1401,7 +1460,7 @@ fi
 # THIS IS A `case` AND NOT A SECOND FIELD IN THE BREAKAGE LIST, and the reason
 # is a delimiter collision rather than a preference: almost every breakage is a
 # `sed` script written with `|` as its own delimiter, so a `name|axis|command`
-# split reads `sed -i '' 's` out of the middle of one as the axis. It is not an
+# split reads `sed_i 's` out of the middle of one as the axis. It is not an
 # associative array either, because macOS ships bash 3.2 and `declare -A` is
 # 4.0 — the same reason the numbers above are plain variables.
 #
@@ -1533,54 +1592,54 @@ self_test() {
   # end of a line plants nothing.
   for proof in \
     "rm-workflow|rm -f '$SANDBOX/.github/workflows/ci.yml'" \
-    "dead-uses-path|sed -i '' 's|\.github/workflows/ci\.reusable|workflows/ci.reusable|' '$SANDBOX/.github/workflows/ci.yml'" \
-    "language-bun|sed -i '' 's|language: node|language: bun|' '$SANDBOX/.github/workflows/ci.yml'" \
-    "pin-drifts-into-ci|sed -i '' 's|\"node\":\"[^\"]*\"|\"node\":\"24.0.0\"|' '$SANDBOX/.github/workflows/ci.yml'" \
-    "pin-drifts-in-mise|sed -i '' 's|^node = .*|node = \"20.11.0\"|' '$SANDBOX/mise.toml'" \
+    "dead-uses-path|sed_i 's|\.github/workflows/ci\.reusable|workflows/ci.reusable|' '$SANDBOX/.github/workflows/ci.yml'" \
+    "language-bun|sed_i 's|language: node|language: bun|' '$SANDBOX/.github/workflows/ci.yml'" \
+    "pin-drifts-into-ci|sed_i 's|\"node\":\"[^\"]*\"|\"node\":\"24.0.0\"|' '$SANDBOX/.github/workflows/ci.yml'" \
+    "pin-drifts-in-mise|sed_i 's|^node = .*|node = \"20.11.0\"|' '$SANDBOX/mise.toml'" \
     "manifest-reintroduces-a-node-pin|printf 'node: \"20\"\n' >>'$SANDBOX/cafaye.yml'" \
-    "an-unquoted-colon-in-the-manifest|sed -i '' 's|^description: \"The cafaye web app|description: The cafaye web app|; s|live contracts\.\"$|live contracts.|' '$SANDBOX/cafaye.yml'" \
-    "npm-install-in-ci|sed -i '' 's|npm ci|npm install \\&\\& npm ci|' '$SANDBOX/.github/workflows/ci.yml'" \
-    "no-lockfile-guard|sed -i '' '/git diff --exit-code/d' '$SANDBOX/.github/workflows/ci.yml'" \
-    "stale-script-name|sed -i '' 's|npm run typecheck|npm run typecheckp|' '$SANDBOX/.github/workflows/ci.yml'" \
-    "ci-does-not-run-prime|sed -i '' 's|\\./bin/prime|echo skipping the gate|' '$SANDBOX/.github/workflows/ci.yml'" \
-    "npm-install-in-prime|sed -i '' 's|^npm ci\$|npm install|' '$SANDBOX/bin/prime'" \
-      "no-build-in-prime|sed -i '' '/^npm run build\$/d' '$SANDBOX/bin/prime'" \
+    "an-unquoted-colon-in-the-manifest|sed_i 's|^description: \"The cafaye web app|description: The cafaye web app|; s|live contracts\.\"$|live contracts.|' '$SANDBOX/cafaye.yml'" \
+    "npm-install-in-ci|sed_i 's|npm ci|npm install \\&\\& npm ci|' '$SANDBOX/.github/workflows/ci.yml'" \
+    "no-lockfile-guard|sed_i '/git diff --exit-code/d' '$SANDBOX/.github/workflows/ci.yml'" \
+    "stale-script-name|sed_i 's|npm run typecheck|npm run typecheckp|' '$SANDBOX/.github/workflows/ci.yml'" \
+    "ci-does-not-run-prime|sed_i 's|\\./bin/prime|echo skipping the gate|' '$SANDBOX/.github/workflows/ci.yml'" \
+    "npm-install-in-prime|sed_i 's|^npm ci\$|npm install|' '$SANDBOX/bin/prime'" \
+      "no-build-in-prime|sed_i '/^npm run build\$/d' '$SANDBOX/bin/prime'" \
     "manifest-reintroduces-a-gate-command|printf 'prime: ./bin/other\n' >>'$SANDBOX/cafaye.yml'" \
     "no-engines-field|node -e 'const f=process.argv[1];const p=require(f);delete p.engines;require(\"fs\").writeFileSync(f,JSON.stringify(p,null,2))' '$SANDBOX/package.json'" \
-    "range-instead-of-a-pin|sed -i '' 's|\"node\": \"22.22.2\"|\"node\": \"^22\"|' '$SANDBOX/package.json'" \
+    "range-instead-of-a-pin|sed_i 's|\"node\": \"22.22.2\"|\"node\": \"^22\"|' '$SANDBOX/package.json'" \
     "package-manager-is-not-npm|node -e 'const f=process.argv[1];const p=require(f);p.packageManager=\"pnpm@10.9.7\";require(\"fs\").writeFileSync(f,JSON.stringify(p,null,2))' '$SANDBOX/package.json'" \
     "manifest-reintroduces-a-test-command|printf 'test: npm run other\n' >>'$SANDBOX/cafaye.yml'" \
     "no-e2e-workflow|rm -f '$SANDBOX/.github/workflows/e2e.yml'" \
     "e2e-in-the-per-commit-gate|printf '      - run: ./bin/e2e\n' >>'$SANDBOX/.github/workflows/ci.yml'" \
     "e2e-in-bin-prime|printf 'npm run e2e\n' >>'$SANDBOX/bin/prime'" \
-    "e2e-job-does-not-run-the-tier|sed -i '' 's|run: ./bin/e2e|run: echo the tier is optional|' '$SANDBOX/.github/workflows/e2e.yml'" \
+    "e2e-job-does-not-run-the-tier|sed_i 's|run: ./bin/e2e|run: echo the tier is optional|' '$SANDBOX/.github/workflows/e2e.yml'" \
     "e2e-job-is-soft-fail|printf '    continue-on-error: true\n' >>'$SANDBOX/.github/workflows/e2e.yml'" \
-    "e2e-job-cannot-tell-nothing-ran|sed -i '' '/assert-e2e-ran.mjs/d' '$SANDBOX/.github/workflows/e2e.yml'" \
+    "e2e-job-cannot-tell-nothing-ran|sed_i '/assert-e2e-ran.mjs/d' '$SANDBOX/.github/workflows/e2e.yml'" \
     "e2e-runner-not-executable|chmod -x '$SANDBOX/bin/e2e'" \
-    "the-two-test-floors-disagree|sed -i '' 's|^const MINIMUM_TESTS = 2;|const MINIMUM_TESTS = 1;|' '$SANDBOX/e2e/no-token-artifacts.ts'" \
-    "trace-on|sed -i '' 's|trace: \"off\"|trace: \"retain-on-failure\"|' '$SANDBOX/playwright.config.ts'" \
-    "video-on|sed -i '' 's|video: \"off\"|video: \"on\"|' '$SANDBOX/playwright.config.ts'" \
-    "retries-raised|sed -i '' 's|retries: 0|retries: 2|' '$SANDBOX/playwright.config.ts'" \
+    "the-two-test-floors-disagree|sed_i 's|^const MINIMUM_TESTS = 2;|const MINIMUM_TESTS = 1;|' '$SANDBOX/e2e/no-token-artifacts.ts'" \
+    "trace-on|sed_i 's|trace: \"off\"|trace: \"retain-on-failure\"|' '$SANDBOX/playwright.config.ts'" \
+    "video-on|sed_i 's|video: \"off\"|video: \"on\"|' '$SANDBOX/playwright.config.ts'" \
+    "retries-raised|sed_i 's|retries: 0|retries: 2|' '$SANDBOX/playwright.config.ts'" \
     "a-skip-in-the-tier|printf 'test.skip(true, \"no stack\");\n' >>'$SANDBOX/e2e/session.e2e.spec.ts'" \
-    "a-port-on-a-colleague|sed -i '' 's|E2E_GATEWAY_REDIS_PORT:-16002|E2E_GATEWAY_REDIS_PORT:-6379|' '$SANDBOX/e2e/docker-compose.yml'" \
-    "a-port-outside-the-block|sed -i '' 's|E2E_IDENTITY_POSTGRES_PORT:-16001|E2E_IDENTITY_POSTGRES_PORT:-15400|' '$SANDBOX/e2e/docker-compose.yml'" \
-    "a-literal-port-in-the-stack|sed -i '' 's|E2E_EDGE_PORT:-16000|16000|' '$SANDBOX/e2e/docker-compose.yml'" \
-    "playwright-points-at-another-stack|sed -i '' 's|\"E2E_PARLOR_PORT\", \"16003\"|\"E2E_PARLOR_PORT\", \"3000\"|' '$SANDBOX/playwright.config.ts'" \
+    "a-port-on-a-colleague|sed_i 's|E2E_GATEWAY_REDIS_PORT:-16002|E2E_GATEWAY_REDIS_PORT:-6379|' '$SANDBOX/e2e/docker-compose.yml'" \
+    "a-port-outside-the-block|sed_i 's|E2E_IDENTITY_POSTGRES_PORT:-16001|E2E_IDENTITY_POSTGRES_PORT:-15400|' '$SANDBOX/e2e/docker-compose.yml'" \
+    "a-literal-port-in-the-stack|sed_i 's|E2E_EDGE_PORT:-16000|16000|' '$SANDBOX/e2e/docker-compose.yml'" \
+    "playwright-points-at-another-stack|sed_i 's|\"E2E_PARLOR_PORT\", \"16003\"|\"E2E_PARLOR_PORT\", \"3000\"|' '$SANDBOX/playwright.config.ts'" \
     "a-service-with-no-health-and-no-finding|printf '  bogus-service:\n    image: busybox:1.36.1\n' >>'$SANDBOX/e2e/docker-compose.yml'" \
-    "an-unpinned-image|sed -i '' 's|image: nginx:1.27.4-alpine|image: nginx:latest|' '$SANDBOX/e2e/docker-compose.yml'" \
+    "an-unpinned-image|sed_i 's|image: nginx:1.27.4-alpine|image: nginx:latest|' '$SANDBOX/e2e/docker-compose.yml'" \
     "no-deploy-config|rm -f '$SANDBOX/config/deploy.yml'" \
     "an-accessory-in-the-deploy-config|printf '\naccessories:\n  postgres:\n    image: postgres:17-alpine\n' >>'$SANDBOX/config/deploy.yml'" \
     "a-builder-arg-without-a-dockerfile-arg|echo '  args:' >>'$SANDBOX/config/deploy.yml' && echo '    NEXT_PUBLIC_CDN_URL: <%= cdn_url %>' >>'$SANDBOX/config/deploy.yml'" \
-    "a-service-address-out-of-env-clear|sed -i '' 's|^    IDENTITY_URL: <%= identity_url %>||' '$SANDBOX/config/deploy.yml'" \
+    "a-service-address-out-of-env-clear|sed_i 's|^    IDENTITY_URL: <%= identity_url %>||' '$SANDBOX/config/deploy.yml'" \
     "a-service-address-back-in-the-bundle|echo 'const url = process.env.NEXT_PUBLIC_IDENTITY_URL;' >>'$SANDBOX/src/lib/identity.ts'" \
     "a-service-address-back-in-the-dockerfile|echo 'ENV NEXT_PUBLIC_IDENTITY_URL=https://identity.example.com' >>'$SANDBOX/Dockerfile'" \
-    "an-unpinned-node-base|sed -i '' 's|^FROM node:22.22.2-slim AS runner|FROM node:22-slim AS runner|' '$SANDBOX/Dockerfile'" \
+    "an-unpinned-node-base|sed_i 's|^FROM node:22.22.2-slim AS runner|FROM node:22-slim AS runner|' '$SANDBOX/Dockerfile'" \
     "the-deploy-tier-is-not-executable|chmod -x '$SANDBOX/bin/deploy-config'" \
     "no-service-catalog|rm -f '$SANDBOX/caf.dev.json'" \
-    "a-misspelled-key-in-the-catalog|sed -i '' 's|\"image\": \"cafaye/identity:dev\"|\"imag\": \"cafaye/identity:dev\"|' '$SANDBOX/caf.dev.json'" \
-    "an-entry-named-for-another-service|sed -i '' 's|\"name\": \"identity\"|\"name\": \"parlor\"|' '$SANDBOX/caf.dev.json'" \
-    "a-catalog-entry-with-no-image|sed -i '' 's|\"image\": \"cafaye/identity:dev\",||' '$SANDBOX/caf.dev.json'" \
-    "a-healthcheck-with-no-test|sed -i '' 's|\"test\": \[\"CMD\", \"/app/service\", \"-healthcheck\"\],||' '$SANDBOX/caf.dev.json'" \
+    "a-misspelled-key-in-the-catalog|sed_i 's|\"image\": \"cafaye/identity:dev\"|\"imag\": \"cafaye/identity:dev\"|' '$SANDBOX/caf.dev.json'" \
+    "an-entry-named-for-another-service|sed_i 's|\"name\": \"identity\"|\"name\": \"parlor\"|' '$SANDBOX/caf.dev.json'" \
+    "a-catalog-entry-with-no-image|sed_i 's|\"image\": \"cafaye/identity:dev\",||' '$SANDBOX/caf.dev.json'" \
+    "a-healthcheck-with-no-test|sed_i 's|\"test\": \[\"CMD\", \"/app/service\", \"-healthcheck\"\],||' '$SANDBOX/caf.dev.json'" \
     "the-lockfile-does-not-know-the-tarball|node -e 'const fs=require(\"fs\"),p=require(\"path\"),c=require(\"crypto\");const f=process.argv[1];const root=p.dirname(f);const l=JSON.parse(fs.readFileSync(f,\"utf8\"));const rel=\"vendor/thing-1.0.0.tgz\";fs.mkdirSync(p.join(root,\"vendor\"),{recursive:true});fs.writeFileSync(p.join(root,rel),\"a tarball\");l.packages[\"node_modules/thing\"]={version:\"1.0.0\",resolved:\"file:\"+rel,integrity:\"sha512-AAAA\"+c.createHash(\"sha512\").update(\"different bytes\").digest(\"base64\")};fs.writeFileSync(f,JSON.stringify(l,null,2)+\"\\n\")' '$SANDBOX/package-lock.json'" \
     "a-tally-helper-that-is-not-a-function|node -e 'const fs=require(\"fs\");const f=process.argv[1];const s=fs.readFileSync(f,\"utf8\");const m=/\\nexit 0\\n$/;if(!m.test(s))throw new Error(\"this script no longer ends in a bare exit 0\");fs.writeFileSync(f,s.replace(m,\"\\nskip \\\"a tally helper that is not a function\\\"\\nexit 0\\n\"))' '$SANDBOX/tests/validate-ci.sh'"
   do
