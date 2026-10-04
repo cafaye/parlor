@@ -13,7 +13,8 @@ the identity contract with a mocked transport underneath it.
 This is a **template**, not a platform-as-a-service dependency.
 
 - You clone it. You read all of it. It is a few hundred files of ordinary
-  Next.js you can reason about end to end.
+  React you can reason about end to end — TanStack Start for the server and the
+  routes, Vite for the dev server and the build.
 - You change whatever you need and ship your fork. There is no license key, no
   feature gate, no call home, no vendor that can raise your prices or pull the
   rug.
@@ -50,7 +51,7 @@ would your product still build? It has to be.
 | Billing client | `src/lib/billing.ts` | Typed client for billing's five endpoints, with its own error type. |
 | Session state | `src/lib/auth.tsx` | React Query cache keyed by token + auth context. |
 | Token store | `src/lib/token-store.ts` | `localStorage` persistence, injectable. |
-| The forwarder | `src/lib/upstream.ts` | The BFF's allow-list: one fixed destination per service, twenty-two routes, and the only code that names a service address at run time. |
+| The forwarder | `src/lib/upstream.ts` | The BFF's allow-list: one fixed destination per service, twenty-four routes, and the only code that names a service address at run time. |
 | Liveness | `/healthz` | `{"status":"ok"}` — process is up. No dependency checks, on purpose. |
 | Readiness | `/readyz` | `{"status":"ok","deps":"none"}` — `deps` is a reserved placeholder. |
 | Theme tokens | `src/styles/tokens.css` | The cafaye design system: two ramps, a semantic layer, and a measured focus ring. Contrast-checked in `src/styles/tokens.test.ts`. |
@@ -227,28 +228,35 @@ lost. What it costs: any XSS on this origin still reads the token out of
 
 ## Stack
 
-Next.js (App Router) · TypeScript · Tailwind CSS v4 · @tanstack/react-query ·
-vitest · @testing-library/react · Playwright for the end-to-end tier · Node
-pinned in `package.json`.
+TanStack Start + Vite · React 19 · TypeScript · Tailwind CSS v4 ·
+@tanstack/react-router + @tanstack/react-query · vitest ·
+@testing-library/react · Playwright for the end-to-end tier · Node pinned in
+`package.json`.
+
+`npm run dev` is `vite dev`, `npm run build` is `vite build`, and `npm start` is
+`node server/index.mjs`. The build emits a fetch handler at
+`dist/server/server.mjs`; `server/adapter.mjs` binds it to a socket. There is no
+`.next/` directory, no standalone output and no `next start`.
 
 ## Getting started
 
 ```sh
 mise install      # node 22.22.2, the same pin package.json declares
-./bin/prime       # npm ci + npm test + the CI gate
+./bin/prime       # npm ci + npm test + typecheck + build + the CI shape checks
 mise run stack    # the local stack: parlor + identity + postgres + redis
 ```
 
-`bin/prime` is the reproduction check: it installs **exactly** the committed
-lockfile, runs the full suite, and then checks that the tree still says what
-CI assumes about it. If it is green, your checkout is sound *and* the gate is
-the gate.
+`bin/prime` is the reproduction check, and it runs **five** commands: it installs
+**exactly** the committed lockfile, runs the full suite, typechecks the tree,
+builds it, and then checks that the tree still says what CI assumes about it. If
+it is green, your checkout is sound, the tree compiles *and* the gate is the
+gate.
 
 `mise run stack` is `caf dev -registry caf.dev.json -port 3000`, and it is the
 task to reach for whenever you are touching sign in, registration, accounts or
 invitations — everything in `src/lib/identity.ts` and `src/lib/auth.tsx`.
-`npm run dev` on its own starts a Next.js server with **nothing behind it**, so
-every authenticated route fails against an origin that is not there.
+`npm run dev` on its own starts `vite dev` with **nothing behind it**, so every
+authenticated route fails against an origin that is not there.
 
 The catalog is committed because `caf` ships none, and it says why in its own
 docs: an image reference guessed by a CLI is a reference that pulls the wrong
@@ -256,9 +264,9 @@ thing. Two facts in it are load-bearing rather than conventional, and both are
 argued at the line in `caf.dev.json`:
 
 - **`-port 3000` is not a preference.** This app declares no `exposes.api`, so
-  `caf dev` cannot tell that a Next.js app serves HTTP and publishes no host
-  port for it. Without the flag the stack comes up fine and the browser cannot
-  reach it.
+  `caf dev` cannot tell that a Vite/TanStack Start app serves HTTP and publishes
+  no host port for it. Without the flag the stack comes up fine and the browser
+  cannot reach it.
 - **parlor is deliberately not an entry in its own catalog.** `caf dev` builds
   the project service from this repository's Dockerfile *unless* the catalog
   names it, in which case it runs `image:` instead. Adding a self-entry would
@@ -275,7 +283,7 @@ npm test           # vitest, single run
 npm run test:watch # vitest, watching
 npm run lint       # eslint
 npm run typecheck  # tsc --noEmit
-npm run dev        # Next.js alone — no identity behind it
+npm run dev        # vite dev alone — no identity behind it
 
 ./bin/e2e          # the whole stack, in a browser — see "End to end"
 ```
@@ -296,8 +304,8 @@ places is four pins unless something holds them together, so
 habit, as part of `bin/prime`, and therefore in CI:
 
 ```sh
-bash tests/validate-ci.sh              # 18 checks
-bash tests/validate-ci.sh --self-test  # break a throwaway copy 16 ways,
+bash tests/validate-ci.sh              # 47 checks
+bash tests/validate-ci.sh --self-test  # break a throwaway copy 52 ways,
                                        # assert each one goes red
 ```
 
@@ -309,33 +317,48 @@ bash tests/validate-ci.sh --self-test  # break a throwaway copy 16 ways,
 | --- | --- | --- |
 | `ci` | kit's reusable workflow, `language: node` | The shared contract. Called, not copied, so a fix in kit lands here with no per-repo PR. |
 | `prime` | `./bin/prime`, then `git diff --exit-code -- package-lock.json` | CI runs the command a developer runs, and fails if the gate moved the lockfile. |
-| `build` | `rm -rf .next && npm run typecheck`, then `npm run build`, then an assertion that `.next/standalone/server.js` and `.next/BUILD_ID` exist | The suite renders components in jsdom and never asks Next to compile a route, so a broken server/client boundary or a failing prerender is invisible to it. |
+| `build` | `rm -rf dist && npm run typecheck`, then `npm run build`, then an assertion that `dist/server/server.mjs`, `dist/client/assets` and `server/index.mjs` exist and that a `.woff2` was emitted | The suite renders components in jsdom and never asks the bundler to compile a route, so a route that does not compile or a prerender that throws is invisible to it. |
 
 A second workflow, `.github/workflows/e2e.yml`, is the end-to-end tier. It is
 separate because a whole stack is not a per-commit gate, and it is not
 `continue-on-error` because a green badge over a tier that did not run is worse
-than no job. It checks out `identity` and `gateway` beside this repository,
-builds their images, brings the stack up, installs the pinned Chromium, runs
+than no job. It checks out `identity` and `guard` beside this repository, brings
+the stack up, installs the pinned Chromium, runs
 the suite, uploads the report and then fails the job if the report says fewer
 than two tests passed or anything was skipped.
+
+> **What the stack actually consumes, and one stale step in that workflow.**
+> `e2e/docker-compose.yml` carries `image:` and **no** `build:` for `identity`
+> and `gateway` — they are pulled by tag from `${E2E_REGISTRY:-localhost:16010}`,
+> which is the `registry:2` service at the top of the same file — so a run tests
+> the artifacts the fleet publishes rather than whatever happened to be in a
+> sibling checkout. Only `parlor` is built, from this tree (`context: .`). The
+> e2e workflow still checks out `../identity` and `../guard` and still fails when
+> `../$sibling/Dockerfile` is absent, which no longer describes anything the
+> stack does. Known, separate, unfixed; the escape hatch for a developer with an
+> unmerged sibling change is `E2E_BUILD_SIBLINGS=1`.
 
 Two decisions worth knowing about:
 
 - **`lint` is in CI, and it is kit's step.** `npm run lint` runs in the shared
   `node` job, so there is no second copy of it here to drift.
-- **`typecheck` runs before `next build`, and the order is the assertion.** A
-  typecheck that runs after a build can pass on types Next generated. Layout
-  props are typed explicitly rather than with Next's generated `LayoutProps`
-  precisely so a fresh clone typechecks, and the workflow deletes `.next`
-  first so it has to.
-- **The build is given no service addresses at all, and that is the assertion.**
-  The workflow used to pass `NEXT_PUBLIC_IDENTITY_URL` and
-  `NEXT_PUBLIC_BILLING_URL` as build args, because Next inlines `NEXT_PUBLIC_*`
-  at build time and an unset value left a live `process.env` lookup in a browser
-  bundle — `undefined` there — so the app quietly talked to `localhost`. The BFF
-  removed the reason for any of it: the browser no longer knows where the
-  services are. `IDENTITY_URL` and `BILLING_URL` are run-time variables, so one
-  build serves every environment, and
+- **`typecheck` runs before the build, and the order is the assertion.** A
+  typecheck that runs after a build can pass on types the build generated. The
+  one generated module in this tree is `src/routeTree.gen.ts`, and it is
+  **committed** rather than built (`.gitignore` says why at the line), so the
+  workflow deletes `dist` first to keep the question honest.
+- **The build is given no service addresses, and the assertion is subtler than it
+  looks.** `ci.yml` *does* declare `NEXT_PUBLIC_IDENTITY_URL` and
+  `NEXT_PUBLIC_BILLING_URL` — on the `build` job's `env:`, and pointed at
+  `.invalid` names, which RFC 2606 reserves for names that must never resolve.
+  The reason is in the workflow: `src/app/v1/[...path]/route.test.ts` walks the
+  tree refusing any module that names `NEXT_PUBLIC_*`, and a job that set none
+  would prove a build with the variables absent, which is a different question
+  from "this is the build the Dockerfile runs". Nothing in this toolchain
+  substitutes that prefix into anything, which is the real reason no service
+  address is in the bundle. The BFF is why the browser does not need to know
+  where the services are at all: `IDENTITY_URL` and `BILLING_URL` are run-time
+  variables, so one build serves every environment, and
   `src/app/v1/[...path]/route.test.ts` asserts against the **built** client
   chunks that no service address is in them.
 
@@ -357,9 +380,9 @@ docker run --rm -p 3000:3000 parlor
 
 ```sh
 # The addresses a deployment needs are RUN-TIME variables, not build args.
-# This is the change the BFF made: `next build` inlines `NEXT_PUBLIC_*` into the
-# client bundle, so a service address in one is a value the browser can read and
-# change — and the browser no longer needs to know where the services are.
+# The browser does not need to know where the services are, so a service address
+# has no reason to be in the image at all; `PORT` and `HOSTNAME` are read at run
+# time for the same reason.
 docker build -t parlor .
 docker run --rm -p 3000:3000 \
   -e IDENTITY_URL=https://identity.example.com \
@@ -368,15 +391,16 @@ docker run --rm -p 3000:3000 \
 ```
 
 Multi-stage `node:22.22.2-slim` — the pin `package.json` declares, on **both**
-stages, not whatever `node:22-slim` resolves to this week — standalone Next
-output, non-root user, `/healthz` wired to the image `HEALTHCHECK`.
+stages, not whatever `node:22-slim` resolves to this week — the `vite build`
+output (`dist/client` and `dist/server`) plus `server/`, non-root user,
+`/healthz` wired to the image `HEALTHCHECK`, and `CMD ["node",
+"server/index.mjs"]`.
 `tests/validate-ci.sh` fails the gate on an unpinned `FROM node:` anywhere in
 the Dockerfile, so the header's claim that the image is the fourth mirror of the
 pin is a check rather than a comment.
 
-The image is not the point of this section any more. `bin/e2e` builds it, and
-so builds `identity` and `gateway` from their own checkouts, and drives all of it
-from a browser. Read on.
+The image is not the point of this section any more. `bin/e2e` builds it, pulls
+`identity` and `gateway` by tag, and drives all of it from a browser. Read on.
 
 ## Deploying
 
@@ -401,7 +425,7 @@ The five differences, in one place so this section can be read without the file:
 
 | # | Difference | Why |
 | --- | --- | --- |
-| 1 | `healthcheck.path: /readyz`, not `/up` | The App Router serves exactly `/healthz` and `/readyz`. `/up` is a 404 on every request the proxy makes, the container never goes healthy, and every rollout is torn back after `deploy_timeout` on a release that is otherwise fine. |
+| 1 | `healthcheck.path: /readyz`, not `/up` | The app serves exactly `/healthz` and `/readyz`. `/up` is a 404 on every request the proxy makes, the container never goes healthy, and every rollout is torn back after `deploy_timeout` on a release that is otherwise fine. |
 | 2 | No `accessories:` block at all — no postgres, no backup | parlor keeps no state of its own. |
 | 3 | `env.clear` carries both service addresses, at run time | The BFF reads them on the server, so one image serves every environment. They are addresses, not credentials, so they are not names in `secret`. |
 | 4 | `builder.args` is gone entirely | A `NEXT_PUBLIC_*` service address is inlined into the client bundle, and the browser no longer needs one. Keeping the block would put a service address back where the browser can change it. |
@@ -491,9 +515,10 @@ Dockerfile carries the `engines.node` pin, and that this script is executable.
 - **One host, one role, one replica.** `servers.web` is a single address. A
   multi-host rollout is `servers.web` gaining entries and nothing else changing,
   but nothing here has been measured against one.
-- **No CDN, and deliberately no static asset export.** `output: "standalone"`
-  (Dockerfile) is not `output: "export"`, so there is no `out/` to upload and
-  `next start`/`node server.js` remains the only way this app runs. A CDN in
+- **No CDN, and deliberately no static-asset build.** `vite build` emits a
+  server (`dist/server/server.mjs`) as well as client assets, so there is no
+  `out/` to upload and `node server/index.mjs` remains the only way this app
+  runs. A CDN in
   front would also be the wrong shape for the first release: the sign-in screen
   is a server-rendered shell whose API calls go through this app's own origin,
   so the assets are not the interesting part of the latency.
@@ -507,7 +532,7 @@ Dockerfile carries the `engines.node` pin, and that this script is executable.
 ```
 
 `bin/prime` deliberately does not contain this. It is a per-commit gate, and a
-whole stack of containers, three image builds and a browser download are not a
+whole stack of containers and a browser download are not a
 per-commit gate. The tier is `bin/e2e` and CI runs it as its own job.
 
 ### The stack
@@ -515,16 +540,22 @@ per-commit gate. The tier is `bin/e2e` and CI runs it as its own job.
 | Container | From | Published on | What it is for |
 | --- | --- | --- | --- |
 | `edge` | `nginx:1.27.4-alpine` | `16000` | The single origin a browser loads. Everything goes to parlor, including `/v1/*` — the app forwards that itself. |
-| `parlor` | this repository | `16003` | The app under test, also reachable directly. |
-| `identity` | `../identity` | `16080` | Auth, sessions, accounts, on a real Postgres. |
-| `gateway` | `../guard` | `16081` | The gateway: JWT verification, rate limits, a BFF. |
+| `registry` | `registry:2` | `16010` | Where the sibling artifacts come from. Throwaway, no volume, `:e2e`-scoped tags, and deleted by `down -v`. `bin/e2e-stack` brings it up as its own first step because Compose resolves and pulls every `image:` before it creates any container. |
 | `identity-postgres` | `postgres:17-alpine` | `16001` | identity's database. |
 | `gateway-redis` | `redis:7.4.1-alpine` | `16002` | The shared rate-limit counters. |
+| `parlor` | this repository, built (`context: .`) | `16003` | The app under test, also reachable directly. |
+| `identity` | `${E2E_REGISTRY:-localhost:16010}/cafaye/identity:e2e`, **pulled** | `16080` | Auth, sessions, accounts, on a real Postgres. |
+| `gateway` | `${E2E_REGISTRY:-localhost:16010}/cafaye/gateway:e2e`, **pulled** | `16081` | The gateway: JWT verification, rate limits, a BFF. |
+
+Every published port is `${E2E_*:default}` rather than a literal — a literal port
+in a compose file is a collision the second developer on the machine hits.
+`tests/validate-ci.sh` reads the compose file and fails if a published port
+leaves the `16xxx` block, lands on one this workspace owns, or is not a
+substitution.
 
 Everything is in the `16xxx` block, chosen because `15xxx` is this workspace's
 observability stack and `3000`/`5432`/`6379`/`8080` belong to whatever you
-already have running. `tests/validate-ci.sh` reads the compose file and fails if
-a published port leaves the block or lands on one of those.
+already have running.
 
 ### Why there is a reverse proxy in it
 
@@ -582,10 +613,11 @@ Measured on an M-series laptop with OrbStack, `COMPOSE_PARALLEL_LIMIT=1`, from
 | **Cold** — no Docker layer cache, no browser cache | **5m 08s** | 3m 23s building three images from three toolchains; the rest is pulling Chromium and starting containers |
 | **Warm** — images built, volumes recreated | **1m 31s** | 40s re-checking the build cache, 15s starting containers, **4.3s running the six specs** |
 
-The specs are 3% of a warm run and 2.5% of a cold one. The stack is the cost,
-which is exactly why the tier is not in `bin/prime` — and the number a
-self-hoster needs is the warm one, because the cold one is a one-off per
-machine.
+Both rows are a **measurement taken when the stack built all three images**; only
+`parlor` is built now, and the other two are pulled, so a warm run today is
+cheaper than the row above by however long those two builds took. The claim the
+table exists for — the specs are a small fraction of a run and the stack is the
+cost — is if anything stronger now.
 
 `COMPOSE_PARALLEL_LIMIT` defaults to 1 on purpose. Three toolchains building at
 once took the container runtime down on the machine this was written on, and the
@@ -596,8 +628,11 @@ it.
 
 `docker` with the compose v2 plugin, `curl`, `unzip`, and `goose` (the pinned
 version `identity` documents; `bin/e2e-stack` refuses to start without it and
-prints the install command). The sibling checkouts `../identity` and `../guard`
-must exist — the stack builds their images from there, and CI checks out both.
+prints the install command). Registry egress: `identity` and `gateway` are
+pulled, so the compose network cannot be `internal: true`. **No sibling
+checkout is needed** — that was the rule when the stack built their images from
+`../identity` and `../guard`. Set `E2E_REGISTRY` at a registry that persists to
+skip the in-stack one, or `E2E_BUILD_SIBLINGS=1` to go back to building them.
 
 ## Not yet — Phase 2
 
@@ -637,8 +672,12 @@ Deliberately absent, by packet boundary rather than oversight:
   hand-written cards are still in the screens, listed with their replacements
   at the end of [`docs/design-system.md`](docs/design-system.md). Deliberate:
   doing both at once makes neither reviewable.
-- Playwright E2E suite (signup, login, MFA, invites, checkout) against the
-  compose stack — PLAN.md §3 puts its birth in Phase 2.
+- **The Playwright suite exists; MFA, invites and checkout are what it does not
+  cover yet.** `e2e/` holds five spec files — `session`, `password-reset`,
+  `email-verification`, `design-system` and `stack` — against the compose
+  topology, and they are the tier described above. What is missing from it is
+  MFA (no service support to drive), the invitation redemption flow, and any
+  checkout (there is no subscription surface — see "Not yet" above).
 - **CORS on identity, and the finding that it is not needed.** The browser is
   same-origin now, so the question is closed rather than outstanding: no
   `Access-Control-*` header was added to identity, and none should be. A

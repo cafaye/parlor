@@ -6,8 +6,10 @@ parlor-specific part.
 
 ## What this repo is
 
-The cafaye web app: app router, Tailwind v4, theme tokens, health surfaces, test
-rig — and the screens built against identity's and billing's real contracts.
+The cafaye web app: file-based routes under `src/routes/` (TanStack Start),
+the screens and handler modules they render under `src/app/`, Tailwind v4, theme
+tokens, health surfaces, test rig — and the screens built against identity's and
+billing's real contracts.
 Auth (`/register`, `/login`, a session-aware header), accounts and invitations
 (`/accounts`, `/accounts/[accountId]`, `/invitations/[token]`), and the two
 billing surfaces the contract actually declares (`/billing/plans`,
@@ -16,10 +18,16 @@ If you are looking for a dashboard, settings, admin or a subscription screen,
 you are looking at a later packet — see CHANGELOG "Known gaps" for the five
 service-side gaps this build works around.
 
+There is no Next.js here. `grep -rn "from 'next" src/ e2e/` is empty,
+`package.json` has no `next` dependency, and `dev`/`build`/`start` are
+`vite dev`, `vite build` and `node server/index.mjs`. Text below that explains a
+Next-era decision as *history* is doing so on purpose; text that tells you how to
+add a screen describes `src/routes/` and `src/app/`.
+
 ## Setup
 
 ```sh
-./bin/prime      # npm ci + npm test + the CI gate
+./bin/prime      # npm ci + npm test + typecheck + build + the CI shape checks
 mise install      # node version from mise.toml
 ```
 
@@ -34,10 +42,12 @@ mise install      # node version from mise.toml
   and `npm install` in a CI path resolves a disagreement that `npm ci` should
   have reported. `tests/validate-ci.sh` fails if either appears in one.
 - Wrap long/networked commands in `timeout N` (`timeout 600 npm ci`).
-- `npm run typecheck` must pass **without** a build: `rm -rf .next` and check.
-  Layout props are typed explicitly rather than with Next's generated
-  `LayoutProps`, precisely so a fresh clone can typecheck. The CI `build` job
-  deletes `.next` before typechecking, so it cannot pass on generated types.
+- `npm run typecheck` must pass **without** a build: `rm -rf dist` and check.
+  The only generated types in the tree are `src/routeTree.gen.ts`, which is
+  **committed** rather than produced by a build (see `.gitignore`'s "the route
+  tree is the deliberate exception"), so a fresh clone typechecks against the
+  same router the build does. The CI `build` job deletes `dist` before
+  typechecking, so it cannot pass on anything a build produced.
 
 ## The end-to-end tier
 
@@ -48,8 +58,13 @@ before changing the topology; the file states the measured reason the stack has
 a reverse proxy in it, which is not a stylistic choice.
 
 ```
-e2e/docker-compose.yml   the stack: identity + gateway built from ../ and
-                         siblings, one Postgres, one Redis, one edge proxy
+e2e/docker-compose.yml   the stack: identity + gateway PULLED BY TAG from
+                         ${E2E_REGISTRY:-localhost:16010} (a registry:2 in the
+                         same file), one Postgres, one Redis, one edge proxy, and
+                         parlor itself built from this tree (`context: .`).
+                         E2E_BUILD_SIBLINGS=1 layers
+                         e2e/docker-compose.siblings.yml to put the sibling
+                         `build:` stanzas back
 e2e/edge.conf            the same-origin edge. WHY IT EXISTS is in the file
 bin/e2e-stack            build / up / wait / down — the lifecycle, the bounded
                          readiness poll, and the logs on a failed bring-up
@@ -90,12 +105,18 @@ e2e/no-token-artifacts.ts global teardown: no artifact holds a session token,
 
 `.github/workflows/ci.yml` — `ci` (kit's shared `node` job), `prime`
 (`./bin/prime` plus the `git diff --exit-code -- package-lock.json` guard) and
-`build` (typecheck, then `next build`, then an assertion that the standalone
-output the Dockerfile copies exists).
+`build` (`rm -rf dist && npm run typecheck`, then `npm run build`, then an
+assertion that `dist/server/server.mjs`, `dist/client/assets` and
+`server/index.mjs` exist and that a `.woff2` was emitted).
 
 `.github/workflows/e2e.yml` — the whole-stack tier, its own workflow and its own
-required job. It checks out `../identity` and `../guard` beside this repository,
-because the stack builds their images from those checkouts.
+required job. It checks out `../identity` and `../guard` beside this repository
+and has a step that fails when `../$sibling/Dockerfile` is absent. **That step
+now describes a build the stack does not do**: `e2e/docker-compose.yml` carries
+`image:` and no `build:` for identity and gateway, so this repository cannot
+prove the sibling checkouts are what the run consumed. Known, separate and
+unfixed — the escape hatch for a developer who needs it is
+`E2E_BUILD_SIBLINGS=1`.
 
 - **The gate is `bin/prime`, and CI runs that script, not a list of `npm run`
   commands.** If the two can disagree, one of them is lying. Adding a check
@@ -103,7 +124,7 @@ because the stack builds their images from those checkouts.
 - **`tests/validate-ci.sh` is part of the gate, not a CI extra.** It checks the
   shape of the tree CI assumes — the pin, the lockfile contract, the gate
   command, that every `npm run` the workflow calls still exists, and now the
-  end-to-end tier's own shape. Its `--self-test` breaks a throwaway copy 34
+  end-to-end tier's own shape. Its `--self-test` breaks a throwaway copy 52
   ways and asserts each one goes red; a check that has only ever been green has
   verified nothing.
 - **Do not write `grep -q` into that script inside a pipeline.** Under
@@ -148,8 +169,10 @@ in the repository. The format, the checker and the reasoning are `core`'s —
   measurement of one fully-loaded machine, it is red on every machine that is
   not that one — which is every CI runner — and on this fleet, where "a check was
   deleted" and "a check could not run" are the same event, it cannot tell the two
-  apart either. Measured on this tree: 46/45/44/43 passed across four machines,
-  **46 declared on all four**. Never lower these two floors to accommodate a
+  apart either. Measured on this tree: `47 checks declared`, and the declared
+  number is the same on every machine while the *passed* number is whatever that
+  machine could actually run (46/45/44/43 across four machines when the declared
+  total was 46). Never lower these two floors to accommodate a
   missing tool; the sum is the number that means the same thing everywhere.
 - **A self-test breakage declares the ENVIRONMENT AXIS it needs.** `breakage_axis`
   in `tests/validate-ci.sh` maps a breakage name to `caf`, `shellcheck`, `docker`
@@ -256,11 +279,15 @@ password-reset routes under `/v1/password-resets` and the three verification
 routes under `/v1/email-verification(s)` (see "Recovery" and "Verification" below),
 and the ten tenancy routes under `/v1/accounts` and `/v1/invitations`. **The base
 URL is `""`** — same-origin. Every call goes to this app's own `/v1/*`, and
-`src/app/v1/[...path]/route.ts` forwards it to identity from the server. The
+`src/routes/v1/$.ts` wires `src/app/v1/[...path]/route.ts` to those methods,
+which forwards to identity from the server. The
 service address is `IDENTITY_URL`, a server-only variable, and is **not in the
-client bundle**; do not reintroduce a `NEXT_PUBLIC_` prefix on it, because
-`next build` inlines that prefix and a value the browser can read is a value the
-browser can change.
+client bundle**; do not reintroduce a `NEXT_PUBLIC_` prefix on it. Nothing in
+this toolchain would inline that prefix, which is the stronger reason: a name
+only reaches a browser if something deliberately substitutes it, and a value the
+browser can read is a value the browser can change.
+`tests/validate-ci.sh` fails the gate on a `NEXT_PUBLIC_` name in the Dockerfile
+or in `src/`.
 
 - **The tenancy shapes are transcribed from the service's handler, not from its
   OpenAPI document** — `identity/internal/httpapi/accounts.go`, because
@@ -503,11 +530,9 @@ file says all five in its own header. The three worth carrying in your head:
   `kamal config` exits 0 and kamal's own proxy validator accepts a path the app
   does not serve, and every rollout is then torn back after `deploy_timeout` on a
   release that is otherwise fine.
-- **`NEXT_PUBLIC_*` is build-time, and there are now no service addresses in
-  it.** Next substitutes that prefix into the client bundle, which is why the two
-  addresses used to be `builder.args` and could not be `env.clear` at all. The
-  BFF removed the reason for the prefix: the browser no longer needs to know
-  where the services are, so `IDENTITY_URL` and `BILLING_URL` are ordinary
+- **`NEXT_PUBLIC_*` is a Next-era convention, and no service address reaches the
+  browser at all.** Nothing in this toolchain substitutes that prefix, so
+  `IDENTITY_URL` and `BILLING_URL` are ordinary
   run-time variables in `env.clear`, fed by two extra required variables
   (`KIT_IDENTITY_URL`, `KIT_BILLING_URL`) on top of the five kit requires.
   **One image now serves every environment**, which is a real gain and not only a
@@ -515,7 +540,8 @@ file says all five in its own header. The three worth carrying in your head:
   app, because `docker build --build-arg` for an undeclared name is a warning, not
   an error. `tests/validate-ci.sh` now fails the gate on a `NEXT_PUBLIC_` name in
   the Dockerfile or in `src/`, and `src/app/v1/[...path]/route.test.ts` asserts
-  against the **built** client chunks that no service address is in them.
+  against the **built** client chunks (`dist/client/assets`) that no service
+  address is in them.
 - **No accessories, no `DATABASE_URL`, no `config/kamal-backup.yml`.** parlor's
   state is identity's and billing's, over HTTP. The absence is argued in
   `config/deploy.yml` where the template would have put the postgres block,
@@ -541,12 +567,13 @@ of that file before changing anything in it.
   a body. `Host`, `X-Forwarded-Host` and `?url=` are all ignored, and there are
   tests that assert each of them by name.
 - **An allow-list, and the upstream path is REBUILT from it.** Twenty-six routes,
-  transcribed from the two clients: twenty-one to identity, five to billing.
-  Token introspection, the MFA routes, API keys, OIDC clients, email changes and
-  `/v1/probe/{id}` are refused **before an address is contacted**. Because the
-  path is rebuilt from the table rather than forwarded as received, traversal, an
-  absolute URL in a segment and a doubled slash are not filtered — they are not
-  expressible.
+  transcribed from the two clients: twenty-one to identity, five to billing —
+  the count is `grep -oE 'upstream: "[a-z]+"' src/lib/upstream.ts | sort | uniq -c`.
+  identity serves thirty; token introspection, the MFA routes, API keys, OIDC
+  clients, email changes and `/v1/probe/{id}` are refused **before an address is
+  contacted**. Because the path is rebuilt from the table rather than forwarded
+  as received, traversal, an absolute URL in a segment and a doubled slash are
+  not filtered — they are not expressible.
 - **Wildcard segments are value-matched.** `:accountId` and `:userId` must be
   uuids. The router percent-decodes each segment before the handler sees it, so
   `accounts/%2e%2e%2f%2e%2e` arrives as one segment reading `../../`; a check
@@ -606,14 +633,27 @@ red. A check that has only ever been green has verified nothing.
 ## Layout
 
 ```
-src/app/            routes: page, login/, register/, forgot-password/,
-                    reset-password/, verify-email/, verify-email/confirm/,
-                    accounts/, accounts/[accountId]/,
-                    invitations/[token]/, billing/plans/, billing/customers/,
-                    healthz/, readyz/,
-                    v1/[...path]/ — the BFF: the one origin, forwarding to
-                    identity or billing from the server,
-                    providers.tsx — the client provider stack, mounted by layout
+src/routes/           the router. One file per path, TanStack Start's
+                      createFileRoute: __root.tsx (the document shell — it
+                      replaced src/app/layout.tsx), index.tsx, login.tsx,
+                      register.tsx, forgot-password.tsx, reset-password.tsx,
+                      verify-email.tsx, verify-email/confirm.tsx,
+                      accounts/index.tsx, accounts/$accountId.tsx,
+                      invitations/$token.tsx, billing/plans.tsx,
+                      billing/customers.tsx, healthz.ts, readyz.ts,
+                      v1/$.ts — the BFF, as a splat route with server.handlers
+src/routeTree.gen.ts  GENERATED and COMMITTED (.gitignore says so at the line).
+                      The router in src/router.tsx is built from it.
+src/app/              NOT the Next.js app router and NOT scanned by the
+                      framework. Screens and handler modules, imported by the
+                      route files: */page.tsx (default-exported screen
+                      components), */route.ts (pure `GET()`-style handler
+                      functions returning a Response), the `*-screen.tsx` and
+                      `*-form.tsx` they are split into, providers.tsx (the
+                      client provider stack, mounted by __root.tsx),
+                      globals.css, favicon.ico
+server/               index.mjs (binds dist/server/server.mjs to a port) and
+                      adapter.mjs (the listener; it has its own tests)
 config/deploy.yml   the Kamal configuration, copied from kit's template with
                     five differences. NO accessories key: parlor keeps no
                     database, and the reason is written where the template
@@ -640,12 +680,22 @@ src/styles/         tokens.css — the theme
 src/test/           vitest setup + support/ (stubs, render helper)
 ```
 
-- App Router conventions: `page.tsx` per route, `route.ts` per endpoint, layouts
-  at the top. Server components by default — add `"use client"` only for
-  something that genuinely needs interactivity. The auth *pages* are server
-  components that render a client *form*; the split is the point.
-- Route handlers export named HTTP verb functions (`export function GET()`), no
-  default export, no class instances.
+- **Adding a screen is two files, not one.** A route file under `src/routes/`
+  declares the path and renders a screen; the screen itself is a
+  default-exported component in `src/app/**` with its test beside it. See
+  `src/routes/index.tsx`, which is the smallest complete example, and
+  `src/routes/__root.tsx` for the document shell.
+- **A route file is not the screen and a route handler is not a `route.ts`
+  convention.** `createFileRoute("/healthz")({ server: { handlers: { GET } } })`
+  is how a pure `GET(): Response` gets onto the wire, and a route that declares
+  **both** a handler and a `component` serves the handler and then renders into
+  the same response — which is why `/healthz` and `/v1/$` declare no component.
+  The method names are explicit, with no catch-all: a method a route does not
+  name gets a 405 from the router before the handler is reached, and `OPTIONS` is
+  never answered.
+- Server components are not a thing to choose here. `src/app/providers.tsx` is
+  the only place client-only context is mounted, and `__root.tsx` renders the
+  `<html>` document with `HeadContent` and `Scripts` beside `Outlet`.
 - `src/components/ui/index.ts` is the single import path for primitives. The
   primitives are cafaye's own design, not a wrapper over a library; call sites
   do not move when one is added or restyled.
