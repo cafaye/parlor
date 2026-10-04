@@ -4,7 +4,7 @@ The cafaye app shell — the template every cafaye-built product starts from, an
 the admin surface they all inherit.
 
 From [PLAN.md](../PLAN.md): `parlor` is *"app shell template + admin (Next.js)"*,
-built in Phase 2 alongside `guard`. The shell arrived first (routing, theme,
+built in Phase 2 alongside `gateway`. The shell arrived first (routing, theme,
 health surfaces, test rig); the auth screens arrived next, against a client for
 the identity contract with a mocked transport underneath it.
 
@@ -314,7 +314,7 @@ bash tests/validate-ci.sh --self-test  # break a throwaway copy 16 ways,
 A second workflow, `.github/workflows/e2e.yml`, is the end-to-end tier. It is
 separate because a whole stack is not a per-commit gate, and it is not
 `continue-on-error` because a green badge over a tier that did not run is worse
-than no job. It checks out `identity` and `guard` beside this repository,
+than no job. It checks out `identity` and `gateway` beside this repository,
 builds their images, brings the stack up, installs the pinned Chromium, runs
 the suite, uploads the report and then fails the job if the report says fewer
 than two tests passed or anything was skipped.
@@ -375,7 +375,7 @@ the Dockerfile, so the header's claim that the image is the fourth mirror of the
 pin is a check rather than a comment.
 
 The image is not the point of this section any more. `bin/e2e` builds it, and
-so builds `identity` and `guard` from their own checkouts, and drives all of it
+so builds `identity` and `gateway` from their own checkouts, and drives all of it
 from a browser. Read on.
 
 ## Deploying
@@ -517,9 +517,9 @@ per-commit gate. The tier is `bin/e2e` and CI runs it as its own job.
 | `edge` | `nginx:1.27.4-alpine` | `16000` | The single origin a browser loads. Everything goes to parlor, including `/v1/*` — the app forwards that itself. |
 | `parlor` | this repository | `16003` | The app under test, also reachable directly. |
 | `identity` | `../identity` | `16080` | Auth, sessions, accounts, on a real Postgres. |
-| `guard` | `../guard` | `16081` | The gateway: JWT verification, rate limits, a BFF. |
+| `gateway` | `../guard` | `16081` | The gateway: JWT verification, rate limits, a BFF. |
 | `identity-postgres` | `postgres:17-alpine` | `16001` | identity's database. |
-| `guard-redis` | `redis:7.4.1-alpine` | `16002` | The shared rate-limit counters. |
+| `gateway-redis` | `redis:7.4.1-alpine` | `16002` | The shared rate-limit counters. |
 
 Everything is in the `16xxx` block, chosen because `15xxx` is this workspace's
 observability stack and `3000`/`5432`/`6379`/`8080` belong to whatever you
@@ -554,7 +554,7 @@ Rendered text. A role and an accessible name, a heading, a row in a list. There
 is not one `expect(response.status()).toBe(200)` in the auth path, and the one
 API-shaped assertion in the gateway file is there because the surface has no
 page — and it asserts the *distinction* between 401 and 503, which is the only
-way to tell that guard reached identity at all.
+way to tell that gateway reached identity at all.
 
 ### The rules it holds, and how
 

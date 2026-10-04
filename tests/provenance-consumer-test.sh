@@ -84,7 +84,7 @@ LABEL com.cafaye.kit.template.version="${KIT_PROVENANCE_TEMPLATE_VERSION}"
 DOCKERFILE
 
 # The shape of a sibling image that inherits a base image's stamp — measured on
-# this machine: `cafaye/guard:e2e` carries BUN's labels, because it is built
+# this machine: `cafaye/gateway:e2e` carries BUN's labels, because it is built
 # `FROM oven/bun` and nothing overwrites them. The stamp is present, plausible
 # and about the wrong software entirely.
 cat >"$WORK/inherited.Dockerfile" <<'DOCKERFILE'

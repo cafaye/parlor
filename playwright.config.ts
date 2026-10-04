@@ -24,7 +24,7 @@ const port = (name: string, fallback: string): string => process.env[name] ?? fa
 
 const edgeBaseUrl = `http://127.0.0.1:${port("E2E_EDGE_PORT", "16000")}`;
 const parlorBaseUrl = `http://127.0.0.1:${port("E2E_PARLOR_PORT", "16003")}`;
-const guardBaseUrl = `http://127.0.0.1:${port("E2E_GUARD_PORT", "16081")}`;
+const gatewayBaseUrl = `http://127.0.0.1:${port("E2E_GATEWAY_PORT", "16081")}`;
 const identityBaseUrl = `http://127.0.0.1:${port("E2E_IDENTITY_PORT", "16080")}`;
 
 export default defineConfig({
@@ -122,4 +122,4 @@ export default defineConfig({
 // The two base URLs that are not the app under test, re-exported so a spec does
 // not recompute them (and cannot disagree with the config about which port the
 // gateway is on).
-export { edgeBaseUrl, guardBaseUrl, identityBaseUrl, parlorBaseUrl };
+export { edgeBaseUrl, gatewayBaseUrl, identityBaseUrl, parlorBaseUrl };

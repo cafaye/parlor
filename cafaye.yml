@@ -136,7 +136,7 @@ dependencies:
 # `version:` is deliberately absent from both. It means "the dependency's own
 # contract version", and neither identity nor billing publishes one: neither
 # carries a `version` key in its manifest, because core's schema has no such
-# key. guard declares `version: ^0.1.0` for identity with a comment admitting it
+# key. gateway declares `version: ^0.1.0` for identity with a comment admitting it
 # is "the platform's initial core range rather than a version identity has
 # shipped" — a placeholder that reads like a fact. Inventing one here would be
 # the same error with less honesty about it.

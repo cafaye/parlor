@@ -1426,7 +1426,7 @@ self_test() {
     "video-on|sed -i '' 's|video: \"off\"|video: \"on\"|' '$SANDBOX/playwright.config.ts'" \
     "retries-raised|sed -i '' 's|retries: 0|retries: 2|' '$SANDBOX/playwright.config.ts'" \
     "a-skip-in-the-tier|printf 'test.skip(true, \"no stack\");\n' >>'$SANDBOX/e2e/session.e2e.spec.ts'" \
-    "a-port-on-a-colleague|sed -i '' 's|E2E_GUARD_REDIS_PORT:-16002|E2E_GUARD_REDIS_PORT:-6379|' '$SANDBOX/e2e/docker-compose.yml'" \
+    "a-port-on-a-colleague|sed -i '' 's|E2E_GATEWAY_REDIS_PORT:-16002|E2E_GATEWAY_REDIS_PORT:-6379|' '$SANDBOX/e2e/docker-compose.yml'" \
     "a-port-outside-the-block|sed -i '' 's|E2E_IDENTITY_POSTGRES_PORT:-16001|E2E_IDENTITY_POSTGRES_PORT:-15400|' '$SANDBOX/e2e/docker-compose.yml'" \
     "a-literal-port-in-the-stack|sed -i '' 's|E2E_EDGE_PORT:-16000|16000|' '$SANDBOX/e2e/docker-compose.yml'" \
     "playwright-points-at-another-stack|sed -i '' 's|\"E2E_PARLOR_PORT\", \"16003\"|\"E2E_PARLOR_PORT\", \"3000\"|' '$SANDBOX/playwright.config.ts'" \

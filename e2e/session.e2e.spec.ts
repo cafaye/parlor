@@ -4,7 +4,7 @@
  *
  * Why this path and not a longer one is the subject of the packet report. The
  * short version: `parlor`'s browser client calls `identity` directly and nothing
- * proxies it, so `parlor → guard → identity` is not a path that exists in the
+ * proxies it, so `parlor → gateway → identity` is not a path that exists in the
  * code today (see `stack.e2e.spec.ts` for the parts of it that do). What this
  * file proves is the part that a unit test inside one repository structurally
  * cannot see:
