@@ -27,7 +27,7 @@ add a screen describes `src/routes/` and `src/app/`.
 ## Setup
 
 ```sh
-./bin/prime      # npm ci + npm test + the CI gate
+./bin/prime      # npm ci + npm test + typecheck + build + the CI shape checks
 mise install      # node version from mise.toml
 ```
 
@@ -124,7 +124,7 @@ unfixed — the escape hatch for a developer who needs it is
 - **`tests/validate-ci.sh` is part of the gate, not a CI extra.** It checks the
   shape of the tree CI assumes — the pin, the lockfile contract, the gate
   command, that every `npm run` the workflow calls still exists, and now the
-  end-to-end tier's own shape. Its `--self-test` breaks a throwaway copy 34
+  end-to-end tier's own shape. Its `--self-test` breaks a throwaway copy 52
   ways and asserts each one goes red; a check that has only ever been green has
   verified nothing.
 - **Do not write `grep -q` into that script inside a pipeline.** Under
@@ -169,8 +169,10 @@ in the repository. The format, the checker and the reasoning are `core`'s —
   measurement of one fully-loaded machine, it is red on every machine that is
   not that one — which is every CI runner — and on this fleet, where "a check was
   deleted" and "a check could not run" are the same event, it cannot tell the two
-  apart either. Measured on this tree: 46/45/44/43 passed across four machines,
-  **46 declared on all four**. Never lower these two floors to accommodate a
+  apart either. Measured on this tree: `47 checks declared`, and the declared
+  number is the same on every machine while the *passed* number is whatever that
+  machine could actually run (46/45/44/43 across four machines when the declared
+  total was 46). Never lower these two floors to accommodate a
   missing tool; the sum is the number that means the same thing everywhere.
 - **A self-test breakage declares the ENVIRONMENT AXIS it needs.** `breakage_axis`
   in `tests/validate-ci.sh` maps a breakage name to `caf`, `shellcheck`, `docker`

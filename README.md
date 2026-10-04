@@ -51,7 +51,7 @@ would your product still build? It has to be.
 | Billing client | `src/lib/billing.ts` | Typed client for billing's five endpoints, with its own error type. |
 | Session state | `src/lib/auth.tsx` | React Query cache keyed by token + auth context. |
 | Token store | `src/lib/token-store.ts` | `localStorage` persistence, injectable. |
-| The forwarder | `src/lib/upstream.ts` | The BFF's allow-list: one fixed destination per service, twenty-two routes, and the only code that names a service address at run time. |
+| The forwarder | `src/lib/upstream.ts` | The BFF's allow-list: one fixed destination per service, twenty-four routes, and the only code that names a service address at run time. |
 | Liveness | `/healthz` | `{"status":"ok"}` — process is up. No dependency checks, on purpose. |
 | Readiness | `/readyz` | `{"status":"ok","deps":"none"}` — `deps` is a reserved placeholder. |
 | Theme tokens | `src/styles/tokens.css` | The cafaye design system: two ramps, a semantic layer, and a measured focus ring. Contrast-checked in `src/styles/tokens.test.ts`. |
@@ -242,14 +242,15 @@ TanStack Start + Vite · React 19 · TypeScript · Tailwind CSS v4 ·
 
 ```sh
 mise install      # node 22.22.2, the same pin package.json declares
-./bin/prime       # npm ci + npm test + the CI gate
+./bin/prime       # npm ci + npm test + typecheck + build + the CI shape checks
 mise run stack    # the local stack: parlor + identity + postgres + redis
 ```
 
-`bin/prime` is the reproduction check: it installs **exactly** the committed
-lockfile, runs the full suite, and then checks that the tree still says what
-CI assumes about it. If it is green, your checkout is sound *and* the gate is
-the gate.
+`bin/prime` is the reproduction check, and it runs **five** commands: it installs
+**exactly** the committed lockfile, runs the full suite, typechecks the tree,
+builds it, and then checks that the tree still says what CI assumes about it. If
+it is green, your checkout is sound, the tree compiles *and* the gate is the
+gate.
 
 `mise run stack` is `caf dev -registry caf.dev.json -port 3000`, and it is the
 task to reach for whenever you are touching sign in, registration, accounts or
@@ -303,8 +304,8 @@ places is four pins unless something holds them together, so
 habit, as part of `bin/prime`, and therefore in CI:
 
 ```sh
-bash tests/validate-ci.sh              # 18 checks
-bash tests/validate-ci.sh --self-test  # break a throwaway copy 16 ways,
+bash tests/validate-ci.sh              # 47 checks
+bash tests/validate-ci.sh --self-test  # break a throwaway copy 52 ways,
                                        # assert each one goes red
 ```
 
