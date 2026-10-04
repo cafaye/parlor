@@ -3,10 +3,10 @@
 #
 #   E2E_BUILD_SIBLINGS=1 ./bin/e2e
 #
-# This file adds the `build:` stanzas back for identity and gateway. With it
-# layered over e2e/docker-compose.yml, the two siblings are rebuilt from
-# `../identity` and `../gateway` and the tier runs against the developer's working
-# trees instead of the published `:e2e` artifacts.
+# This file adds the `build:` stanzas back for identity, gateway and oauth-stub.
+# With it layered over e2e/docker-compose.yml, the three siblings are rebuilt from
+# `../identity`, `../gateway` and `../oauth-stub` and the tier runs against the
+# developer's working trees instead of the published `:e2e` artifacts.
 #
 # ---------------------------------------------------------------------------
 # WHY IT IS ONE FILE AND ONE FLAG
@@ -83,3 +83,45 @@ services:
       args:
         BUN_VERSION: "1.3.12"
     image: "cafaye/gateway:e2e"
+
+  # oauth-stub is Go, and it is worth reading rather than skimming, because the
+  # natural move here is to copy pantry's or identity's stanza and the copy is
+  # wrong in a way that produces a confident mistake:
+  #
+  #   * NO `SERVICE_NAME`. At v0.1.0 — the ref `bin/e2e-stack` pins, and the ref
+  #     these assertions were written against — `../oauth-stub/Dockerfile` declares
+  #     no such argument. Its module is a single root package, built as
+  #     `go build … .`, so unlike identity's monorepo layout there is no second
+  #     command in the tree to select between and no argument that selects
+  #     anything. An undeclared `--build-arg` is a WARNING, not an error, so adding
+  #     one here would build an image that looks fine, is not the one the publish
+  #     path produces, and leaves a green log saying so.
+  #   * NO `GO_VERSION`. That pin belongs to `../oauth-stub`'s own repository,
+  #     which declares it WITH A DEFAULT. Restating it here makes a second copy of
+  #     a toolchain version that repository owns.
+  #   * `args: {}` rather than omitting `args:`. Omitting it works today; an empty
+  #     mapping is the shape that says "this Dockerfile declares nothing this
+  #     harness needs", which is a fact rather than an omission, and it is the
+  #     difference between a reader checking this stanza and a reader guessing at
+  #     it.
+  oauth-stub:
+    build:
+      context: ../oauth-stub
+      dockerfile: Dockerfile
+      args: {}
+    image: "cafaye/oauth-stub:e2e"
+
+  # THE SECOND INSTANCE GETS ITS OWN STANZA, and it is not a copy for tidiness: the
+  # two services carry DIFFERENT `image:` lines in the default document (one is
+  # registry-qualified, one is the local tag compose builds), so overriding only
+  # the first would leave the second pulling a published artifact while its twin
+  # ran the working tree. That is a hatch that half works, which is worse than one
+  # that does not: the log would say "built from your checkout" and half of the
+  # sign-in path would be testing something else. The build runs twice and the
+  # second one is out of the layer cache, so the cost is seconds.
+  oauth-stub-github:
+    build:
+      context: ../oauth-stub
+      dockerfile: Dockerfile
+      args: {}
+    image: "cafaye/oauth-stub:e2e"

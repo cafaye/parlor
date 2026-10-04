@@ -2,10 +2,11 @@
 # The whole-stack lifecycle for the end-to-end suite: build, up, wait, down.
 #
 #   bin/e2e-stack build              build the image this tier tests
-#   bin/e2e-stack publish-siblings   build identity + gateway once, push to the registry
+#   bin/e2e-stack publish-siblings   build identity + gateway + oauth-stub, push to the registry
 #   bin/e2e-stack up                 build, publish/pull siblings, migrate, start, wait
 #   bin/e2e-stack wait               wait for /readyz on an already-running stack
 #   bin/e2e-stack host-port <service>   the published host port, on stdout
+#   bin/e2e-stack verify-sibling-images [<svc>]   which ref an image was built from
 #   bin/e2e-stack logs               print the stack's logs
 #   bin/e2e-stack ps                 what is running
 #   bin/e2e-stack down               stop it and delete its volumes
@@ -17,10 +18,10 @@
 # WHERE THE SIBLING IMAGES COME FROM — read this before "simplifying" a build
 # ---------------------------------------------------------------------------
 # This repository builds exactly one image: `parlor`'s, the service under test.
-# `identity` and `gateway` are CONSUMED as published artifacts by tag, out of the
-# registry e2e/docker-compose.yml declares. That is the change this script was
-# rewritten for, and the rule that follows from it is the one that is easy to
-# break by accident:
+# `identity`, `gateway` and `oauth-stub` are CONSUMED as published artifacts by
+# tag, out of the registry e2e/docker-compose.yml declares. That is the change
+# this script was rewritten for, and the rule that follows from it is the one
+# that is easy to break by accident:
 #
 #   * a `docker compose build` with no arguments now builds ONE image, not three.
 #     That is not a bug and not a missing loop. Rebuilding the siblings here is
@@ -81,10 +82,32 @@ COMPOSE_FILE="$ROOT/e2e/docker-compose.yml"
 SIBLINGS_OVERRIDE="$ROOT/e2e/docker-compose.siblings.yml"
 PROJECT="${E2E_STACK_NAME:-parlor-e2e}"
 
-# The two services this tier consumes rather than builds, and the tag prefix
-# they share. Listed once because three places need the same list and a list
+# The services this tier consumes rather than builds, and the tag prefix
+# they share. Listed once because four places need the same list and a list
 # that can drift is a list where a service silently stops being published.
-SIBLING_SERVICES=(identity gateway)
+#
+# `oauth-stub` joined the list with parlor-e2e-social-01, when the social sign-in
+# path stopped being untestable here: until then there was no way to run it
+# end to end at all, because the only provider this deployment could have been
+# pointed at was a fake carried inside this repository. `github.com/cafaye/
+# oauth-stub` is a published, versioned repository and this tier consumes it by
+# tag like any other sibling. It is a TEST DOUBLE and it is still a sibling:
+# being a fake is a statement about what it answers, not about whether it has a
+# deploy path, a version anybody depends on, or a suite that ought to be the one
+# that runs.
+#
+# `parlor` has no `pantry`, unlike `site`'s list. That is a fact about this
+# stack's topology rather than a decision this array makes: nothing in
+# e2e/docker-compose.yml is pantry, so a name here would be a sibling whose image
+# is published and never dialled.
+#
+# ADDING A SIBLING MEANS ADDING IT HERE AND NOWHERE ELSE in this file except for
+# the two things it cannot be built or pinned without (`publish_siblings`'s
+# `case`, and `sibling_default_ref` when it does not track `master`).
+# Everything else — the readiness order, the resolver, the tag, the provenance
+# check — iterates this array, so a name added here is published, pulled and
+# checked by all of them without a second edit.
+SIBLING_SERVICES=(identity gateway oauth-stub)
 SIBLING_TAG_PREFIX="${SIBLING_TAG_PREFIX:-cafaye}"
 SIBLING_TAG_SUFFIX=e2e
 
@@ -106,6 +129,231 @@ esac
 
 # The sibling image tag for a service, on stdout and nothing else.
 sibling_tag() { printf '%s/%s:%s' "$SIBLING_TAG_PREFIX" "$1" "$SIBLING_TAG_SUFFIX"; }
+
+# ---------------------------------------------------------------------------
+# WHICH SOURCE A SIBLING IMAGE IS BUILT FROM, and why that is a variable
+# ---------------------------------------------------------------------------
+# A published sibling artifact is built from a NAMED REF of that sibling's
+# repository, and nothing else. Not from the working tree, not from whatever
+# HEAD somebody left in the checkout, and not from whatever directory happens to
+# be sitting next to this one.
+#
+# This is not a preference. It is the defect cafaye/site measured on the image
+# rather than argued from the source (a named ref, stamped into the artifact and
+# checked by `verify-sibling-images`):
+#
+#   $ curl -s http://localhost:16081/v1/pantry/v1/services
+#   HTTP 401 — "a bearer token is required"
+#
+# site's `e2e/docker-compose.siblings.yml` built gateway with `context:
+# ../gateway`, and `bin/e2e-stack` runs compose with `--project-directory` at the
+# repository root, so `../gateway` is the sibling checkout — which on that machine
+# was parked on another agent's unmerged branch. That tree had no
+# `public?: boolean`, so the image had no `isPublicRoute` in it at all:
+#
+#   docker cp <container>:/app/src/routes/table.ts /tmp/t.ts
+#   grep -c isPublicRoute /tmp/t.ts     # 0
+#
+# The stack came up green. Every readiness probe passed. The one request the
+# whole tier exists to prove answered 401, because the running gateway did not
+# understand the route table it was configured with. **A harness that cannot tell
+# which source it built is not a gate** — it is a script that reports on whatever
+# was lying next to it.
+#
+# ---------------------------------------------------------------------------
+# WHY THE REF IS PER-SIBLING AND WHY IT MOSTLY DEFAULTS TO `master`
+# ---------------------------------------------------------------------------
+# One variable per sibling rather than one for all of them, because the
+# repositories move at different rates and a single global ref would make
+# building an in-flight oauth-stub against gateway's master a second command. The
+# name is `E2E_SIBLING_REF_<SERVICE>`, uppercased, so nothing has to be added to
+# this file when a sibling is: a sibling added to SIBLING_SERVICES gets a ref from
+# the same rule without a second edit.
+#
+# `master` is the default because it is the only answer that is right on a clean
+# checkout, which is the case `bin/e2e` has to work in with no manual steps. It is
+# NOT the only ref that may be named: a developer testing an unmerged sibling
+# branch says so in the environment, and the ref they named is recorded in the
+# image's labels and printed in the log, so the run says which branch it was.
+SIBLING_DEFAULT_REF=master
+
+# ---------------------------------------------------------------------------
+# THE ONE SIBLING THAT DOES NOT TRACK `master`, and why this is a `case`
+# ---------------------------------------------------------------------------
+# `oauth-stub` is pinned to `v0.1.0` and must not fall through to the
+# `SIBLING_DEFAULT_REF` above. The reason is specific to what it is: a TEST
+# DOUBLE is a dependency of this tier's ASSERTIONS, not of the product, and a
+# double that moves under the harness changes the meaning of a green run without
+# changing any line of this repository. If `oauth-stub`'s `/github/user` starts
+# answering a verified address inline, `social.e2e.spec.ts` — whose second test
+# exists precisely to exercise the `/user/emails` fallback that a null address
+# forces — stops exercising it and still passes. The suite reports coverage of a
+# path the deployment no longer takes. A test double that moves is a harness
+# whose result changes for reasons nobody can read.
+#
+# `identity` and `gateway` are the opposite case and are deliberately NOT pinned:
+# they are the product this tier exists to test, they are released continuously,
+# and pinning them to a tag would mean a security fix in either of them could not
+# reach the tier until somebody edited this file. **A pin is right for a fixture
+# and wrong for a service**, which is why this is per-sibling rather than a global
+# "everything gets pinned" rule.
+#
+# WHY A `case` AND NOT AN ASSOCIATIVE ARRAY, because macOS ships bash 3.2 and
+# `declare -A` is 4.0 — the same constraint `tests/validate-ci.sh` records at its
+# own `breakage_axis`, for the same reason. The alternative was a second parallel
+# array (`SIBLING_PINS=(...)`) indexed against `SIBLING_SERVICES`, and it is worse
+# than this for a reason that is about failure rather than style: two arrays must
+# stay the same length, in the same order, forever, and nothing checks it. A
+# sibling added to the front of `SIBLING_SERVICES` would silently take the first
+# sibling's pin, and `verify-sibling-images` would then report a perfectly
+# confident, completely wrong answer about which source an image came from. A
+# `case` matches by NAME, so the failure mode of forgetting is "no pin, falls
+# through to the documented default" — which is exactly what the other two
+# siblings want and is visible in the log.
+#
+# It is NOT a second registration list either: a sibling absent from this `case`
+# is not missing a line, it is on `master`, and every function that needs a ref
+# asks `sibling_ref` rather than reading the pin table.
+sibling_default_ref() {
+  case "$1" in
+    # The published tag, exactly. Bump it when a release lands and say why in the
+    # commit; that commit is the only record of which double the assertions were
+    # written against.
+    oauth-stub) printf '%s' 'v0.1.0' ;;
+    # `master`, spelled out rather than falling out of the `case`, so the list of
+    # siblings that track the tip is readable here and a future sibling added to
+    # SIBLING_SERVICES can copy this arm.
+    identity|gateway) printf '%s' "$SIBLING_DEFAULT_REF" ;;
+    # Not an error. A new sibling on `master` needs no line here at all (see the
+    # comment above); this arm exists so that a MISSPELLED name is loud rather
+    # than silent, and so a reader who adds a name here cannot typo the pin.
+    *) printf '%s' "$SIBLING_DEFAULT_REF" ;;
+  esac
+}
+
+# The ref a sibling is published from. Echoed as `<name>=<ref>` on stdout,
+# because the log line that attributes an image has to be able to name the thing
+# it read the name out of.
+#
+# PRECEDENCE, and the reason it is in this order: the ENVIRONMENT wins over the
+# pin. A pin exists so that the default answer is stable; it is not a lock, and a
+# developer testing an unmerged oauth-stub branch names it explicitly and gets
+# what they asked for, recorded in the image's labels either way.
+sibling_ref() {
+  local service=$1 var upper
+  upper=$(printf '%s' "$service" | tr '[:lower:]-' '[:upper:]_')
+  var="E2E_SIBLING_REF_${upper}"
+  printf '%s=%s' "$service" "${!var:-$(sibling_default_ref "$service")}"
+}
+
+# Resolve a ref to a commit sha in a sibling's checkout, and FAIL rather than
+# guess. Three answers, in order, and the last one is an error:
+#
+#   <ref>              a branch or tag in the local repository
+#   origin/<ref>       a remote branch nobody has fetched — the ordinary case on
+#                      a fresh clone, and the one that must not be a silent
+#                      fallback to something local
+#   error              with the command that fixes it
+#
+# The error names `git fetch` rather than saying "ref not found", because "ref
+# not found" on a machine that has simply not fetched is a sentence that sends
+# the reader to the wrong place.
+sibling_revision() {
+  local service=$1 ref=$2 dir sha
+  dir="$ROOT/../$service"
+  [ -d "$dir/.git" ] || die "no git checkout of $service at $dir — ../$service is not a repository, so this harness cannot name the source of an image it is about to build or verify"
+  if sha=$(git -C "$dir" rev-parse --verify --quiet "${ref}^{commit}" 2>/dev/null); then
+    printf '%s' "$sha"
+    return 0
+  fi
+  if sha=$(git -C "$dir" rev-parse --verify --quiet "origin/${ref}^{commit}" 2>/dev/null); then
+    printf '%s' "$sha"
+    return 0
+  fi
+  printf '[e2e] FAIL: %s has no ref "%s"\n' "$service" "$ref" >&2
+  printf '[e2e] Neither %s nor origin/%s resolves to a commit in %s.\n' "$ref" "$ref" "$dir" >&2
+  printf '[e2e] E2E_SIBLING_REF_%s names it; fetch it with:\n' "$(printf '%s' "$service" | tr '[:lower:]-' '[:upper:]_')" >&2
+  printf '[e2e]   git -C %s fetch --all\n' "$dir" >&2
+  exit 1
+}
+
+# ---------------------------------------------------------------------------
+# THE BUILD CONTEXT IS THE REF, NOT A DIRECTORY
+# ---------------------------------------------------------------------------
+# `git archive <sha> | tar -x -C <tmp>` materialises exactly the tracked content
+# of one commit, in a temporary directory, and the `docker build` context is that.
+# Nothing from anybody's working tree can get into the image, and nothing is
+# written into the sibling's repository at all.
+#
+# `git worktree add --detach` is the more usual answer and was rejected for one
+# reason: it registers an entry in the sibling repository's `.git/worktrees/`.
+# The siblings are repositories other sessions are actively working in, and
+# `../gateway` in particular may be parked on someone's in-flight branch. A build
+# that leaves a trace in another session's repository is a build that can collide
+# with that session. `git archive` reads and writes nothing outside the temporary
+# directory.
+#
+# The limitation is deliberate and worth stating: an archive cannot carry a git
+# submodule or an LFS pointer's contents. None of the three siblings here has
+# either (gateway and identity are bun, oauth-stub is go, all three vendor
+# nothing), and a sibling that grows one will fail its e2e build loudly at
+# `docker build` — which is the right failure, and a better one than a silently
+# empty directory.
+sibling_export_tree() {
+  local service=$1 sha=$2 dir tmp
+  dir="$ROOT/../$service"
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/cafaye-e2e-${service}-XXXXXX")
+  # `tar -x` from a pipe and not `git archive -o`: the pipe has no cleanup if the
+  # extraction fails halfway, and a stray tarball in TMPDIR is a small thing to
+  # leave behind on a machine with another agent on it.
+  if ! git -C "$dir" archive --format=tar "$sha" | tar -x -C "$tmp"; then
+    rm -rf "$tmp"
+    die "exporting $service at $sha from $dir failed; the build context was not produced"
+  fi
+  printf '%s' "$tmp"
+}
+
+# ---------------------------------------------------------------------------
+# THE STAMP, and why it is not an org.opencontainers label
+# ---------------------------------------------------------------------------
+# Every image this harness publishes carries three labels of its own:
+#
+#   cafaye.e2e.source     the ref it was built from, verbatim
+#   cafaye.e2e.revision   the commit that ref resolved to at build time
+#   cafaye.e2e.dirty      "false" — the context was a ref, so it could not be dirty
+#
+# `docker build --label` sets these on any Dockerfile, which is why they do not
+# have to be declared in the siblings' Dockerfiles, and why adding a sibling
+# needs no change in four other repositories.
+#
+# NOT `org.opencontainers.image.revision`, and the reason is measured on this
+# fleet's own gateway image rather than guessed:
+#
+#   $ docker image inspect --format '{{json .Config.Labels}}' \
+#       localhost:16010/cafaye/gateway:e2e
+#   {"org.opencontainers.image.created":"...","org.opencontainers.image.revision":
+#   "700fc117a2fd01ac0201deaa6fa69c5557acb04f","org.opencontainers.image.source":
+#   "https://github.com/oven-sh/bun", …}
+#
+# Those are BUN's labels, inherited through `FROM oven/bun`, and
+# `docker/provenance.sh --verify` reads that key and exits 0 on it — a confident
+# false answer, printed as provenance, about a bun commit. Writing a real revision
+# into that key would make a third-party verification tool assert something about
+# our source tree on the strength of a base image's metadata. So this harness keeps
+# its attribution in a namespace it owns, and `publish_siblings` continues to
+# *print* `--verify` without asserting it (the reasoning for that is in the
+# function and has not changed).
+sibling_label_args() {
+  local service=$1 ref=$2 sha=$3
+  printf '%s\n' \
+    "--label" "cafaye.e2e.source=$ref" \
+    "--label" "cafaye.e2e.revision=$sha" \
+    "--label" "cafaye.e2e.dirty=false"
+}
+
+# A short sha on stdout, and the full one on failure — a log line wants seven
+# characters and an error message wants all forty.
+short_sha() { printf '%s' "${1:0:7}"; }
 
 # Budgets. Every one is overridable because a cold run on a laptop and a warm
 # run on a CI runner differ by an order of magnitude, and a hard-coded budget
@@ -137,7 +385,27 @@ POLL_INTERVAL="${E2E_POLL_INTERVAL:-1}"
 # stack adds it to the wait without a second edit. `docker compose config
 # --format json` is the parsed document: a half-parsed YAML read is a worse
 # reader than the tool that renders the file.
-READY_SERVICES=(identity-postgres identity gateway parlor edge)
+#
+# `oauth-stub` and `oauth-stub-github` ARE here, and both are polled FROM THE
+# HOST for the reason identity is: their published image is
+# `gcr.io/distroless/static-debian12:nonroot`, which carries no HTTP client and no
+# shell, so nothing inside the container can answer a probe. The poll IS the
+# readiness signal, which is why leaving them out would be the defect this array's
+# own comment above describes — a service that starts and is never waited for,
+# while the suite is already driving a browser at its authorize endpoint.
+#
+# There are TWO ENTRIES for ONE IMAGE, and the array is keyed on service name
+# (`host_port` looks a port up by that name), so one entry would be a silent gap.
+# Why two instances exist at all is `oauth-stub`'s: it accepts exactly one
+# `client_id`, and identity here holds two providers under two different ids, as
+# two real providers would be — so one instance cannot serve both and the other
+# provider is refused at every authorization.
+#
+# They go last because nothing in the stack talks to them at BOOT: identity
+# dials a provider during a sign-in, and a sign-in is a browser action. Gating
+# identity's boot on a fixture would be a false dependency, and it would turn a
+# fixture's outage into "identity will not start".
+READY_SERVICES=(identity-postgres identity gateway parlor edge oauth-stub oauth-stub-github)
 
 log() { printf '[e2e] %s\n' "$*"; }
 die() { printf '[e2e] FAIL: %s\n' "$*" >&2; exit 1; }
@@ -241,7 +509,7 @@ preflight() {
       [ -f "$ROOT/../$sibling/Dockerfile" ] \
         || die "E2E_BUILD_SIBLINGS=1 but there is no ../$sibling/Dockerfile. The hatch builds that image from its checkout; without it run the default path instead (unset E2E_BUILD_SIBLINGS), which pulls the published artifact."
     done
-    log "sibling build mode: identity and gateway will be built from their checkouts"
+    log "sibling build mode: identity, gateway and oauth-stub will be built from their checkouts"
   fi
 }
 
@@ -293,7 +561,7 @@ ensure_registry() {
   elapsed=$(elapsed_since "$started")
   if [ "$status" -ne 0 ]; then
     printf '[e2e] FAIL: the registry did not come up in %ss (exit %s)\n' "$elapsed" "$status" >&2
-    printf '[e2e] identity and gateway are pulled from it, so nothing else in this stack can start.\n' >&2
+    printf '[e2e] identity, gateway and oauth-stub are pulled from it, so nothing else in this stack can start.\n' >&2
     printf '[e2e] if %s is meant to be a registry that already runs, unset it and let this stack own one.\n' "$REGISTRY" >&2
     compose logs --no-color --tail 50 registry 2>&1 | sed 's/^/[e2e] /' >&2 || true
     exit 1
@@ -303,17 +571,21 @@ ensure_registry() {
 
 # --- publish the sibling artifacts -------------------------------------------
 # THE UPSTREAM BUILD, and it is the step that makes "build once" mean something.
-# It builds identity and gateway from their checkouts, tags them, and pushes them
-# to the registry. It is NOT called by `up` on the default path — that is the
-# entire difference between this and the old behaviour — so a developer runs it
-# when a sibling has moved and CI runs it once per run instead of three times
-# inside compose.
+# It builds identity, gateway and oauth-stub from NAMED REFS of their checkouts,
+# tags them, and pushes them to the registry. It is NOT called by `up` on the
+# default path — that is the entire difference between this and the old behaviour
+# — so a developer runs it when a sibling has moved and CI runs it once per run
+# instead of three times inside compose.
 #
 # `docker build` rather than `compose build`, on purpose: `compose build` only
 # builds services that have a `build:` stanza, and the default document no
 # longer has one for the siblings. Building them from here keeps the tag name in
 # exactly one place (sibling_tag) rather than in a compose file that is not
 # supposed to name them.
+#
+# THE CONTEXT IS AN EXPORTED REF AND NOT THE CHECKOUT DIRECTORY. That is the whole
+# of the `sibling_export_tree` comment above, and it is why a run can say which
+# commit it tested even when the checkout has moved on underneath it.
 #
 # The tag is pushed under BOTH names: the registry-qualified one the compose
 # file pulls, and the bare one a developer's `docker images` will show. The
@@ -323,33 +595,104 @@ ensure_registry() {
 publish_siblings() {
   preflight
   ensure_registry
-  local service context tag started elapsed status
+
+  # THE TEMPORARY EXPORT DIRECTORIES, and why the trap exists at all.
+  #
+  # `cleanup` is `trap`ped and the list is a top-level `SIBLING_TMPDIRS` rather
+  # than a `local`, because a `local` declared inside this function is gone by the
+  # time the EXIT trap fires — after the function returned — and `set -u` then
+  # turned the trap into `tmpdirs: unbound variable`, so the script exited 1
+  # AFTER it had built, pushed and verified every image. A run that does the work
+  # and then reports failure is worse than one that fails before doing it: the
+  # next reader cannot tell which happened.
+  #
+  # `${SIBLING_TMPDIRS:-}` rather than `$SIBLING_TMPDIRS` for the same reason —
+  # the trap also has to survive being armed in a script that never called this
+  # function (`verify-sibling-images`, `host-port`, the usage print).
+  cleanup() {
+    local d
+    for d in ${SIBLING_TMPDIRS:-}; do rm -rf "$d"; done
+    return 0
+  }
+  trap cleanup EXIT
+  SIBLING_TMPDIRS=""
+
+  # WHAT IS PUBLISHED, printed before anything is built, so a reader of a failed
+  # publish knows which commits were about to become the `:e2e` tag before they
+  # read which ones did.
+  local service ref sha started elapsed status ctx
+  log "publishing from named refs, one commit per sibling:"
   for service in "${SIBLING_SERVICES[@]}"; do
-    context="$ROOT/../$service"
+    ref=$(sibling_ref "$service" | cut -d= -f2-)
+    sha=$(sibling_revision "$service" "$ref")
+    log "  $service  $ref  $(short_sha "$sha")  ($ROOT/../$service)"
+  done
+
+  for service in "${SIBLING_SERVICES[@]}"; do
+    ref=$(sibling_ref "$service" | cut -d= -f2-)
+    sha=$(sibling_revision "$service" "$ref")
+    ctx=$(sibling_export_tree "$service" "$sha")
+    SIBLING_TMPDIRS="$SIBLING_TMPDIRS $ctx"
     tag="$(sibling_tag "$service")"
-    log "building $service from $context"
+    log "building $service from $ref ($(short_sha "$sha"))"
     started=$(date +%s)
     set +e
     # The build args are the siblings' own, and they are NOT inherited from the
     # override file because the override is not layered in this mode: this
-    # command publishes what the checkout produces, which is the point of it.
+    # command publishes what the named ref produces, which is the point of it.
     # `--build-arg` for an undeclared name is a warning rather than an error, so
     # a missing arg here produces an image that no deploy path has produced and
     # a green log. The sibling's Dockerfile is the place that fails loudly.
+    #
+    # The `--label`s are what make the artifact attributable; see
+    # sibling_label_args for why they are not `org.opencontainers.*`, which on
+    # gateway's image belongs to bun.
+    local -a label_args=()
+    while IFS= read -r one; do label_args+=("$one"); done < <(sibling_label_args "$service" "$ref" "$sha")
     case "$service" in
       identity)
         timeout "$BUILD_TIMEOUT" docker build \
           --build-arg SERVICE_NAME=identity \
+          "${label_args[@]}" \
           --tag "cafaye/identity:$SIBLING_TAG_SUFFIX" \
           --tag "$REGISTRY/$tag" \
-          "$context"
+          "$ctx"
         ;;
       gateway)
         timeout "$BUILD_TIMEOUT" docker build \
           --build-arg BUN_VERSION=1.3.12 \
+          "${label_args[@]}" \
           --tag "cafaye/gateway:$SIBLING_TAG_SUFFIX" \
           --tag "$REGISTRY/$tag" \
-          "$context"
+          "$ctx"
+        ;;
+      # oauth-stub is Go and takes NO `--build-arg` AT ALL, which is the point of
+      # this arm and the reason it does not read like identity's above.
+      #
+      # READ THE DOCKERFILE, DO NOT PATTERN-MATCH ON "IT IS ALSO GO". At the ref
+      # this tier pins (v0.1.0) `github.com/cafaye/oauth-stub`'s Dockerfile
+      # declares exactly one argument, `ARG GO_VERSION=1.26`, and it is declared
+      # WITH A DEFAULT. There is no `SERVICE_NAME`, because unlike identity's
+      # monorepo layout the module is a single root package and the build line is
+      # `go build … .`. So:
+      #
+      #   * `--build-arg SERVICE_NAME=oauth-stub` would be an UNDECLARED name.
+      #     Docker warns and continues. The image builds, the run goes green, and
+      #     nothing in the log says the harness asked for a build input the deploy
+      #     path never sets. That is precisely the failure the comment above this
+      #     `case` warns about, and the Dockerfile is the contract, not the
+      #     resemblance to a sibling that happens to share its language.
+      #   * `--build-arg GO_VERSION=1.26` would restate a pin that
+      #     `../oauth-stub`'s own repository owns.
+      #
+      # `no go.sum` either: the module has no require block, deliberately, so
+      # there is no dependency download step to feed and no argument for one.
+      oauth-stub)
+        timeout "$BUILD_TIMEOUT" docker build \
+          "${label_args[@]}" \
+          --tag "cafaye/oauth-stub:$SIBLING_TAG_SUFFIX" \
+          --tag "$REGISTRY/$tag" \
+          "$ctx"
         ;;
       *)
         printf '[e2e] FAIL: no build recipe for sibling %s\n' "$service" >&2
@@ -360,10 +703,10 @@ publish_siblings() {
     set -e
     elapsed=$(elapsed_since "$started")
     if [ "$status" -ne 0 ]; then
-      printf '[e2e] FAIL: building %s failed after %ss (exit %s)\n' "$service" "$elapsed" "$status" >&2
+      printf '[e2e] FAIL: building %s from %s failed after %ss (exit %s)\n' "$service" "$ref" "$elapsed" "$status" >&2
       exit 1
     fi
-    log "  $service built in ${elapsed}s"
+    log "  $service built in ${elapsed}s from $ref ($(short_sha "$sha"))"
   done
 
   for service in "${SIBLING_SERVICES[@]}"; do
@@ -378,6 +721,12 @@ publish_siblings() {
       exit 1
     fi
   done
+
+  # AND PROVE IT, before this function claims to have published anything. A push
+  # that succeeded says the registry accepted bytes; it says nothing about which
+  # commits those bytes were built from, and this function's entire reason to
+  # exist is that the answer used to depend on the machine.
+  verify_sibling_images
 
   # TWO facts, and this is why BOTH lines are here. They are not two copies of
   # one fact, which is the only reason this comment exists.
@@ -398,11 +747,11 @@ publish_siblings() {
   # scoped to this one call and the reason is measured, not stylistic — both
   # numbers below come from this machine's own sibling images:
   #
-  #   * `publish_siblings` builds identity and gateway with a bare `docker build`
-  #     passing only `--build-arg SERVICE_NAME=…`. It passes no
-  #     `KIT_PROVENANCE_*` argument, and neither `identity/Dockerfile` nor
-  #     `gateway/Dockerfile` declares the stamp at all. So
-  #     `cafaye/identity:e2e` reports labels `null` and `--verify` exits 4 on
+  #   * `publish_siblings` builds identity, gateway and oauth-stub with a bare
+  #     `docker build` passing only the one `--build-arg` each sibling's Dockerfile
+  #     declares. It passes no `KIT_PROVENANCE_*` argument, and neither
+  #     `identity/Dockerfile` nor `gateway/Dockerfile` declares the stamp at all.
+  #     So `cafaye/identity:e2e` reports labels `null` and `--verify` exits 4 on
   #     every ordinary run of this tier. Asserting would make the e2e tier red
   #     permanently for a drift that lives in two repositories this one may not
   #     touch.
@@ -426,6 +775,126 @@ publish_siblings() {
   done
 }
 
+# ---------------------------------------------------------------------------
+# WHICH SOURCE AN IMAGE WAS BUILT FROM, as a countable check
+# ---------------------------------------------------------------------------
+# The reader, for one sibling. It asks the IMAGE what it is and the CHECKOUT
+# what the ref means, and it refuses to say "fine" unless both agree — a stamp is
+# only as good as the claim it was written by, and this function is the reason
+# the claim is written at all.
+#
+# FOUR ANSWERS, and the last two are the ones that matter:
+#
+#   attributable and on the ref   the ordinary case, printed as one row
+#   attributable, ref is ahead    the image is an ANCESTOR of the named ref,
+#                                 which is legal: the pin moved back, or the
+#                                 tag is older than master
+#   not attributable              no stamp: something else published it
+#   built from the WRONG place    stamped, but not an ancestor of the ref — an
+#                                 in-flight branch, which is the measured 401
+#
+# NO CHECKOUT BESIDE THIS REPO is a counted row, not a silent pass and not a
+# failure. `bin/e2e` is meant to run on a machine that has this repository and
+# nothing else, and there the registry is the source of truth; the checkout cannot
+# be required without breaking that case for the wrong reason. What is then
+# checked is the stamp alone, which is a weaker claim and is printed as one. The
+# summary row says how many siblings got the full check, so a reader never has to
+# infer it from an absence.
+verify_sibling_image() {
+  local service=$1 image=$2 want_ref want_sha stamped_ref stamped_sha dirty
+  local dir
+
+  want_ref=$(sibling_ref "$service" | cut -d= -f2-)
+  dir="$ROOT/../$service"
+
+  # `docker image inspect` on a reference that is not present locally exits 1 and
+  # prints a multi-line error; the label template therefore has to be the whole
+  # command, and a miss has to be turned into a sentence rather than propagated.
+  stamped_sha=$(docker image inspect --format '{{index .Config.Labels "cafaye.e2e.revision"}}' "$image" 2>/dev/null || true)
+  stamped_ref=$(docker image inspect --format '{{index .Config.Labels "cafaye.e2e.source"}}' "$image" 2>/dev/null || true)
+  dirty=$(docker image inspect --format '{{index .Config.Labels "cafaye.e2e.dirty"}}' "$image" 2>/dev/null || true)
+
+  if [ -z "$stamped_sha" ] || [ "$stamped_sha" = "<no value>" ]; then
+    printf '[e2e] FAIL: %s is not attributable\n' "$service" >&2
+    printf '[e2e]   image:  %s\n' "$image" >&2
+    printf '[e2e]   it carries no cafaye.e2e.revision label, so it was not published by\n' >&2
+    printf '[e2e]   this harness and this harness cannot say what is inside it. Building and\n' >&2
+    printf '[e2e]   pushing it again from a named ref is what makes it attributable:\n' >&2
+    printf '[e2e]     ./bin/e2e-stack publish-siblings\n' >&2
+    return 1
+  fi
+
+  if [ ! -d "$dir/.git" ]; then
+    printf '[e2e]   %s stamped %s (%s); not verified against a checkout — there is no ../%s beside this repo\n' \
+      "$service" "$(short_sha "$stamped_sha")" "$stamped_ref" "$service" >&2
+    return 0
+  fi
+
+  if ! git -C "$dir" cat-file -e "${stamped_sha}^{commit}" 2>/dev/null; then
+    printf '[e2e] FAIL: %s was built from a commit this repository does not have\n' "$service" >&2
+    printf '[e2e]   image:      %s\n' "$image" >&2
+    printf '[e2e]   stamped:    %s (%s)\n' "$(short_sha "$stamped_sha")" "$stamped_ref" >&2
+    printf '[e2e]   ../%s has no such object, so the image cannot be reconciled with any ref in it.\n' "$service" >&2
+    return 1
+  fi
+
+  if [ "$dirty" = "true" ]; then
+    printf '[e2e] FAIL: %s was built from a DIRTY tree\n' "$service" >&2
+    printf '[e2e]   image: %s, stamped cafaye.e2e.dirty=true\n' "$image" >&2
+    printf '[e2e]   A dirty tree has no ref, so "which source" has no answer for this image.\n' >&2
+    return 1
+  fi
+
+  want_sha=$(sibling_revision "$service" "$want_ref")
+  if ! git -C "$dir" merge-base --is-ancestor "$stamped_sha" "$want_sha" 2>/dev/null; then
+    printf '[e2e] FAIL: %s was built from %s, which is NOT on %s\n' "$service" "$(short_sha "$stamped_sha")" "$want_ref" >&2
+    printf '[e2e]   image:             %s\n' "$image" >&2
+    printf '[e2e]   stamped source:    %s\n' "$stamped_ref" >&2
+    printf '[e2e]   %s resolves to:  %s in ../%s\n' "$want_ref" "$(short_sha "$want_sha")" "$service" >&2
+    printf '[e2e]   That is an in-flight branch or a rewrite, and a stack built from it can\n' >&2
+    printf '[e2e]   come up green while answering 401 on the request this tier exists to prove.\n' >&2
+    printf '[e2e]   For oauth-stub that has a second meaning: the pin is a FIXTURE pin, so an\n' >&2
+    printf '[e2e]   image from off the tag is a different double than the assertions were written\n' >&2
+    printf '[e2e]   against. To test a branch on purpose, name it:\n' >&2
+    printf '[e2e]     E2E_SIBLING_REF_%s=%s ./bin/e2e\n' "$(printf '%s' "$service" | tr '[:lower:]-' '[:upper:]_')" "$stamped_ref" >&2
+    return 1
+  fi
+
+  if [ "$stamped_sha" = "$want_sha" ]; then
+    printf '[e2e]   %s -> %s (%s) is %s\n' "$service" "$image" "$(short_sha "$stamped_sha")" "$want_ref"
+  else
+    printf '[e2e]   %s -> %s (%s) is an ancestor of %s (%s)\n' \
+      "$service" "$image" "$(short_sha "$stamped_sha")" "$want_ref" "$(short_sha "$want_sha")"
+  fi
+  return 0
+}
+
+# One row per sibling and a summary, so "it passed" and "it passed and told me
+# what it could not check" are different strings. Non-zero if any sibling is
+# unattributable.
+verify_sibling_images() {
+  local service image ok=0 failed=0 checked=0
+  for service in "${SIBLING_SERVICES[@]}"; do
+    image="$REGISTRY/$(sibling_tag "$service")"
+    if [ -d "$ROOT/../$service/.git" ]; then
+      checked=$((checked + 1))
+    fi
+    if verify_sibling_image "$service" "$image"; then
+      ok=$((ok + 1))
+    else
+      failed=$((failed + 1))
+    fi
+  done
+  printf '[e2e] sibling origins: %d/%d attributable, %d verified against a checkout in ../\n' \
+    "$ok" "${#SIBLING_SERVICES[@]}" "$checked"
+  if [ "$checked" -lt "${#SIBLING_SERVICES[@]}" ]; then
+    printf '[e2e]   %d of them were checked on their stamp alone — no checkout beside this repo to reconcile it against.\n' \
+      "$(( ${#SIBLING_SERVICES[@]} - checked ))"
+  fi
+  [ "$failed" -eq 0 ] || return 1
+  return 0
+}
+
 # --- build ------------------------------------------------------------------
 # ONE image. This used to be three, and the reduction is the change rather than
 # a side effect of it: the sibling images are consumed from the registry (or
@@ -437,10 +906,11 @@ build() {
     log "building images (budget ${BUILD_TIMEOUT}s) — sibling build mode"
     log "  identity  <- ../identity, built into cafaye/identity:e2e (NOT pushed)"
     log "  gateway   <- ../gateway, built into cafaye/gateway:e2e (NOT pushed)"
+    log "  oauth-stub <- ../oauth-stub, built into cafaye/oauth-stub:e2e (NOT pushed)"
   else
     log "building images (budget ${BUILD_TIMEOUT}s)"
     log "  parlor    <- . (no build args: the BFF reads IDENTITY_URL at run time)"
-    log "  identity, gateway, postgres, redis, nginx and registry: pulled, not built"
+    log "  identity, gateway, oauth-stub, postgres, redis, nginx and registry: pulled, not built"
   fi
   log "  edge      <- nginx, a pinned image: see e2e/edge.conf for why it exists"
   local started elapsed status
@@ -466,20 +936,20 @@ build() {
 # --- make the sibling artifacts available -------------------------------------
 # The resolver, and the order is the whole design:
 #
-#   1. hatch mode (`E2E_BUILD_SIBLINGS=1`): build() has already produced the two
+#   1. hatch mode (`E2E_BUILD_SIBLINGS=1`): build() has already produced the three
 #      images under their local tags. Nothing to resolve and nothing to pull —
 #      and specifically nothing to pull, because pulling the registry tag here
 #      would overwrite the working-tree build the developer just asked for.
-#   2. the tag is already in the registry: pull nothing. This is the steady
-#      state and it is the fast path.
-#   3. the tag is in neither place but the checkouts exist: publish once. This
-#      is the seeding step on a fresh machine, and it is announced in the log
-#      rather than done silently, because "built from my checkout" is a
-#      materially different claim from "pulled the published artifact" and a
-#      reader of a green e2e run is entitled to know which one they got.
-#   4. neither: fail, loudly, naming the command that fixes it.
+#   2. the tag is already in the registry AND cached here: pull nothing. This is
+#      the steady state and it is the fast path.
+#   3. published but not cached, or published nowhere: pull it, and if there is
+#      nothing there to pull, publish once from the checkouts and ANNOUNCE that
+#      this run therefore tested a working tree rather than a published artifact.
+#      A reader of a green e2e run is entitled to know which of the two they got.
+#   4. neither a registry nor a checkout can produce one: fail, loudly, naming
+#      the command that fixes it.
 #
-# Step 3 is the only place the default path builds a sibling, and it is
+# Step 3's publish is the only place the default path builds a sibling, and it is
 # reachable only when the artifact does not already exist — which is the honest
 # reading of "build once upstream": somebody has to build it the first time, and
 # the difference is that it is then a named, published tag rather than an
@@ -487,6 +957,24 @@ build() {
 ensure_sibling_artifacts() {
   if [ "$BUILD_SIBLINGS" -eq 1 ]; then
     log "sibling artifacts: built from the working tree by the hatch, nothing to pull"
+    # THE ONE PATH THIS HARNESS CANNOT ATTRIBUTE, and it says so on every run
+    # rather than only in a comment. The hatch hands the build to the compose
+    # document (`e2e/docker-compose.siblings.yml`, `context: ../<name>`), and
+    # compose has no way to set image labels — `labels:` on a service labels the
+    # CONTAINER, not the image — so the artifacts of this path carry no
+    # `cafaye.e2e.*` stamp and cannot be reconciled against anything.
+    #
+    # That is acceptable here and only here, for three reasons worth stating
+    # rather than assuming: the path is opt-in under a flag named after what it
+    # does; it does not push, so it cannot replace a published artifact for
+    # anybody else; and building from the working tree is precisely what somebody
+    # who set the flag asked for. It is printed because a reader of a green run
+    # is entitled to know which of the two they got, and a countable row is the
+    # difference between knowing and inferring.
+    printf '[e2e] NOTE: hatch mode — identity, gateway and oauth-stub are built by docker compose\n' >&2
+    printf '[e2e]       from ../identity, ../gateway and ../oauth-stub, so this run tests whatever is in\n' >&2
+    printf '[e2e]       those working trees and nothing here can tell you which commit that was.\n' >&2
+    printf '[e2e]       For a run that CAN be attributed, use the default path.\n' >&2
     return 0
   fi
 
@@ -575,6 +1063,20 @@ ensure_sibling_artifacts() {
         log "  $service -> $(timeout 60 docker manifest inspect --insecure --verbose "$tag" 2>/dev/null \
           | sed -n 's/.*"digest": *"\(sha256:[0-9a-f]*\)".*/\1/p' | head -1)"
       done
+      # "PUBLISHED AND CACHED" IS NOT "RIGHT", and this is where that used to end.
+      # Everything above asks the registry and the local store whether a tag
+      # EXISTS. None of it asks what is in the tag, and a tag built from an
+      # in-flight branch of a sibling exists quite happily — that is the measured
+      # 401 in the sibling_export_tree comment. So the fast path verifies too: it
+      # is a handful of `docker image inspect` calls and no I/O.
+      verify_sibling_images || {
+        printf '[e2e] FAIL: the sibling artifacts already published here cannot be reconciled\n' >&2
+        printf '[e2e] with the refs this harness means. They are present and were served over the\n' >&2
+        printf '[e2e] network, and they are not what this run is supposed to test — the check\n' >&2
+        printf '[e2e] above names the ref and the commit for each one. Rebuild them:\n' >&2
+        printf '[e2e]   ./bin/e2e-stack publish-siblings\n' >&2
+        exit 1
+      }
       return 0
     fi
   fi
@@ -610,17 +1112,18 @@ ensure_sibling_artifacts() {
 
   if [ "$have_all_checkouts" -eq 1 ]; then
     log "not published at $REGISTRY and the sibling checkouts are here; publishing once"
-    printf '[e2e] NOTE: these two images are being built from ../identity and ../gateway,\n' >&2
-    printf '[e2e]       so this run tests YOUR working trees, not a published artifact.\n' >&2
-    printf '[e2e]       After ./bin/e2e-stack publish-siblings the registry tag is the one used.\n' >&2
+    printf '[e2e] NOTE: these three images are being built from ../identity, ../gateway\n' >&2
+    printf '[e2e]       and ../oauth-stub, so this run tests YOUR working trees, not a published\n' >&2
+    printf '[e2e]       artifact. After ./bin/e2e-stack publish-siblings the registry tag is the one\n' >&2
+    printf '[e2e]       used.\n' >&2
     publish_siblings
     return 0
   fi
 
   printf '[e2e] FAIL: no %s artifact for %s\n' "$(sibling_tag "$service")" "$missing" >&2
-  printf '[e2e] The default path consumes identity and gateway as published images, and neither\n' >&2
-  printf '[e2e] the registry nor a sibling checkout has one. Either:\n' >&2
-  printf '[e2e]   ./bin/e2e-stack publish-siblings   (with ../identity and ../gateway checked out)\n' >&2
+  printf '[e2e] The default path consumes identity, gateway and oauth-stub as published images, and\n' >&2
+  printf '[e2e] neither the registry nor a sibling checkout has one. Either:\n' >&2
+  printf '[e2e]   ./bin/e2e-stack publish-siblings   (with ../identity, ../gateway and ../oauth-stub)\n' >&2
   printf '[e2e]   E2E_BUILD_SIBLINGS=1 ./bin/e2e       (build the working trees instead)\n' >&2
   printf '[e2e]   E2E_REGISTRY=<host:port> ...        (if a persistent registry should serve this)\n' >&2
   exit 1
@@ -631,9 +1134,9 @@ up() {
   preflight
   # The registry comes first, always, and not because it is a dependency of the
   # build: `docker compose up` pulls every `image:` before it creates a single
-  # container, so a stack that pulls identity and gateway out of the registry it
-  # is about to start cannot start. This is the first step for that reason and
-  # for no other.
+  # container, so a stack that pulls identity, gateway and oauth-stub out of the
+  # registry it is about to start cannot start. This is the first step for that
+  # reason and for no other.
   ensure_registry
   ensure_sibling_artifacts
   build
@@ -805,19 +1308,61 @@ case "${1:-}" in
   # block lives in exactly one file, so the reader is this function and not a
   # literal somebody copied.
   host-port) [ $# -ge 2 ] || die "usage: bin/e2e-stack host-port <service>"; host_port "$2" ;;
+  # Which ref each sibling image was built from, as a check rather than a log.
+  # It existed before the pin (registry-e2e-02) and became load-bearing with
+  # it: `verify-sibling-images oauth-stub` is how a reader confirms the double
+  # these assertions were written against is the one in the local image store, and
+  # `v0.1.0` on stdout is the whole answer when it is.
+  #
+  # With no argument it checks every sibling, which is what `publish_siblings`
+  # and the `ensure_sibling_artifacts` fast path call. With one, it checks that
+  # one. With two, the second is any image reference — a developer's own local
+  # `cafaye/oauth-stub:e2e`, say — because the question is about the image rather
+  # than about a name this harness chose.
+  # The one-argument form resolves the image itself, to
+  # `$REGISTRY/$(sibling_tag "$1")` — the same expression the loop over
+  # SIBLING_SERVICES builds — so naming a sibling is enough and the answer cannot
+  # name an image the rest of the harness does not mean. The TWO-argument form is
+  # kept for the case it is always for: an image that is NOT the registry one,
+  # which is what a developer pointing this at their own `cafaye/oauth-stub:e2e`
+  # after `E2E_BUILD_SIBLINGS=1` needs.
+  verify-sibling-images)
+    shift
+    case $# in
+      0) verify_sibling_images ;;
+      1)
+        # An unknown name is refused HERE rather than reported as an unverified
+        # image. `sibling_tag` will happily name a tag for a service that does not
+        # exist, and the check would then print a confident FAILURE about a missing
+        # label on an image nobody ever published — which is a very confusing way to
+        # say "you typed the name wrong", and it is a check that fails for a reason
+        # other than the one it exists to catch.
+        case " ${SIBLING_SERVICES[*]} " in
+          *" $1 "*) ;;
+          *) die "no sibling called '$1'; this tier consumes ${SIBLING_SERVICES[*]}. 'verify-sibling-images' with no arguments checks all of them." ;;
+        esac
+        verify_sibling_image "$1" "$REGISTRY/$(sibling_tag "$1")"
+        ;;
+      2) verify_sibling_image "$1" "$2" ;;
+      *) die "usage: bin/e2e-stack verify-sibling-images [<service> [<image>]]" ;;
+    esac
+    ;;
   logs) shift; compose logs --no-color "$@" ;;
   ps) compose ps -a ;;
   down) down ;;
   *)
     # The usage is the header comment, and only the header comment: printing
     # more than that answers a question nobody asked, and the line range is the
-    # only thing keeping the two in step. `sed -n '4,11p'` is the block from the
+    # only thing keeping the two in step. `sed -n '4,12p'` is the block from the
     # first subcommand through the last, which is where a reader stops reading.
     # The range is a contract with the block above: move a subcommand and this
     # prints a usage that does not list it, which is the failure it is for. It
     # was wrong by one line when this was written (3,13p, which printed a blank
-    # line and cut off `down`) and is asserted by the sibling tier's checks.
-    sed -n '4,11p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    # line and cut off `down`) and is asserted by the sibling tier's checks. The
+    # range moved from 4,11p to 4,12p with the `verify-sibling-images` line, which
+    # is the same kind of edit: a subcommand added without moving the range is a
+    # subcommand this usage does not list.
+    sed -n '4,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
     exit 2
     ;;
 esac
