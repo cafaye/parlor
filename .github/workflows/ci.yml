@@ -15,14 +15,14 @@
 #          plus the coverage step (see the note on why coverage is 0 here).
 #   prime  THIS repository's gate — literally `./bin/prime`, the same command a
 #          developer runs — and the lockfile guard.
-#   build  `tsc --noEmit` on a tree with no generated types, then `next build`,
+#   build  `tsc --noEmit` on a tree with no generated types, then `npm run build`,
 #          then an assertion that the output the Dockerfile ships was produced.
 #
 # Why prime and build cannot live in kit's workflow, and are not copies of it:
 # kit owns what every service does the same way. It cannot own which command
-# this repository's own gate is, nor that this repository's build depends on
-# two build-time `NEXT_PUBLIC_*` values, nor that its typecheck must run before
-# `next build` has generated `.next/`. Reaching into a service's script layout
+# this repository's own gate is, nor that this repository's build depends on two
+# build-time `NEXT_PUBLIC_*` values, nor that its typecheck must run before a
+# build has generated anything for it. Reaching into a service's script layout
 # or its env contract is exactly the step kit is not allowed to have: it would
 # be kit knowing about parlor, and the next service would fork the file.
 name: ci
@@ -96,32 +96,32 @@ jobs:
   # ----------------------------------------------- typecheck, then the build
   # One job, two checks, in this order and the order is the assertion.
   #
-  # `typecheck` runs first, on a tree where `rm -rf .next` has just happened, so
-  # it cannot pass on types Next generated. Layout props are typed explicitly
-  # rather than with Next's generated `LayoutProps` precisely so that a fresh
-  # clone typechecks — a typecheck that needs a prior build is a typecheck
+  # `typecheck` runs first, on a tree where `rm -rf dist` has just happened, so
+  # it cannot pass on anything a build generated. Layout props are typed
+  # explicitly rather than with a framework-generated type precisely so that a
+  # fresh clone typechecks — a typecheck that needs a prior build is a typecheck
   # that has not been run on a clean checkout by anyone.
   #
-  # `build` runs second because nothing else in CI runs it: vitest renders
-  # components in jsdom and never asks Next to compile a route, so a server
-  # component that imports a browser-only module, a broken client/server
-  # boundary or a prerender that throws is invisible to the test suite. The
-  # suite passing is not a claim that this repository builds.
+  # `build` runs second because nothing else in CI runs it. vitest renders
+  # components in jsdom, so a route that does not compile, an import that only
+  # resolves on one side of the client/server split, or a prerender that throws
+  # is invisible to the test suite. The suite passing is not a claim that this
+  # repository builds.
   build:
     name: typecheck + build
     runs-on: ubuntu-latest
     env:
-      # Next inlines `NEXT_PUBLIC_*` into the client bundle at build time, so
-      # the values have to be present here or the build is not exercising the
-      # path a deployed build takes. The code has defaults, and those defaults
-      # are localhost — which would make this a build of the artifact nobody
-      # ships. RFC 2606 reserves `.invalid` precisely for a name that must
-      # never resolve, so a build that somehow reached for one fails loudly
-      # instead of quietly phoning home.
+      # The BFF means the client bundle contains no service address, so a build
+      # needs none of these. They are declared anyway, to `.invalid` names, for
+      # one reason: `src/app/v1/[...path]/route.test.ts` walks the SOURCE tree
+      # refusing any module that names `NEXT_PUBLIC_*`, and a job that set none
+      # would not prove the build is the one the Dockerfile runs — it would prove
+      # it is a build with the variables absent, which is a different question.
+      # RFC 2606 reserves `.invalid` for a name that must never resolve, so a
+      # build that somehow reached for one fails loudly instead of quietly
+      # phoning home.
       NEXT_PUBLIC_IDENTITY_URL: https://identity.invalid
       NEXT_PUBLIC_BILLING_URL: https://billing.invalid
-      # Keeps a telemetry beacon out of the build log and off the network.
-      NEXT_TELEMETRY_DISABLED: '1'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -131,31 +131,40 @@ jobs:
         run: npm ci
       - name: typecheck without generated types
         run: |
-          rm -rf .next
+          rm -rf dist
           npm run typecheck
       - name: build
         run: npm run build
-      # The Dockerfile ships `.next/standalone` and `.next/static` and runs
-      # `node server.js` out of the first. A build that exits 0 without
-      # producing them is a green job over a broken image, and this is not
-      # belt-and-braces on the build's exit code: `next build` does not fail
-      # when the standalone output is missing.
+      # The Dockerfile copies `dist/` and `server/` and runs
+      # `node server/index.mjs`. A build that exits 0 without producing them is a
+      # green job over a broken image, and this is not belt-and-braces on the
+      # build's exit code: `vite build` does not fail because the font binaries
+      # under `dist/client/assets/files/` were never copied, and it does not fail
+      # when a route fails to prerender.
       #
-      # It used to carry a longer paragraph saying `docker build` was itself
-      # broken — the deps stage inherited `NODE_ENV=production`, so `npm ci` there
-      # installed no devDependencies and Turbopack could not resolve
-      # `@tailwindcss/postcss` — and tracked that as a DECISION NEEDED. Measured on
-      # this branch, `docker build -t parlor .` exits 0 and produces a runnable
-      # standalone image, because the deps stage runs `npm ci --include=dev`. So
-      # the defect is fixed and the DECISION is closed. The assertion stays: it
-      # was never redundant, and `next build` still exits 0 without the output.
+      # The two artefacts named here are the ones whose absence the previous
+      # build made invisible. `vite build` printed 41 lines saying the webfonts
+      # "didn't resolve at build time, it will remain unchanged to be resolved at
+      # runtime" and emitted a stylesheet pointing at a directory it never
+      # created — so every page rendered unstyled, `/healthz` was green, and
+      # nothing failed. `server/index.mjs` is here for the same class of reason:
+      # the built module exports a fetch handler, so an image missing the adapter
+      # starts, prints nothing and exits 0.
       - name: the output the Dockerfile ships exists
         run: |
           set -euo pipefail
-          for artefact in .next/standalone/server.js .next/BUILD_ID; do
+          for artefact in dist/server/server.mjs dist/client/assets server/index.mjs; do
             if [ ! -e "$artefact" ]; then
               echo "::error::$artefact is missing; the Dockerfile copies it" >&2
               exit 1
             fi
           done
-          echo "standalone output present"
+          # The webfont binaries, by CONTENT rather than by the build log. The log
+          # prints a warning and exits 0; a stylesheet whose `@font-face` blocks
+          # name eleven files that are not there is an app that renders and cannot
+          # be read.
+          if [ -z "$(find dist/client -name '*.woff2' -print -quit)" ]; then
+            echo "::error::no webfont binaries under dist/client; the emitted stylesheet names them" >&2
+            exit 1
+          fi
+          echo "build output present"
