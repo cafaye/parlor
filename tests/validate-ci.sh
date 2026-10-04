@@ -20,7 +20,7 @@
 # and a partial parse is a worse reader than a grep that says what it wants.
 #
 #   bash tests/validate-ci.sh              the checks
-#   bash tests/validate-ci.sh --self-test  prove they can fail (51 breakages,
+#   bash tests/validate-ci.sh --self-test  prove they can fail (52 breakages,
 #                                         minus whatever this machine cannot
 #                                         prove, plus the opposite cases)
 #
@@ -548,20 +548,24 @@ else
   no "bin/prime is executable" "$PRIME is not chmod +x"
 fi
 
-# The gate is three commands and its own header says a green run means the
-# checkout reproduces AND the tree compiles. An extra install in here would
-# change what that means.
+# The gate is four commands and its own header says a green run means the
+# checkout reproduces AND the tree compiles AND the tree type checks. An extra
+# install in here would change what that means.
 #
-# `npm run build` is in the list on purpose, and the alternation has to name it
-# explicitly. A pattern of `( ci| install| test)?$` would simply not match the
-# line, so this check would keep reporting "exactly npm ci then npm test" while
-# the gate had grown a third command — a check that is confidently true about a
-# gate it can no longer see. Naming the command is what keeps the two honest.
-prime_commands=$(grep -oE '^(npm|bun|yarn|pnpm)( ci| install| test| run build)?$' "$PRIME" | tr '\n' ' ')
-if [ "$prime_commands" = "npm ci npm test npm run build " ]; then
-  ok "bin/prime runs exactly npm ci, npm test, then npm run build"
+# `npm run build` and `npm run typecheck` are both in the list on purpose, and the
+# alternation has to name them explicitly. A pattern of `( ci| install| test)?$`
+# would simply not match either line, so this check would keep reporting "exactly
+# npm ci then npm test" while the gate had grown a third and a fourth command —
+# a check that is confidently true about a gate it can no longer see. Naming the
+# command is what keeps the two honest, and naming `typecheck` is also the only
+# thing that stops this step from being deleted quietly: the line is a whole-line
+# match on an exact list, so a gate that loses it reports a DIFFERENT command
+# list rather than a shorter one, and the self-test breaks exactly that.
+prime_commands=$(grep -oE '^(npm|bun|yarn|pnpm)( ci| install| test| run build| run typecheck)?$' "$PRIME" | tr '\n' ' ')
+if [ "$prime_commands" = "npm ci npm test npm run typecheck npm run build " ]; then
+  ok "bin/prime runs exactly npm ci, npm test, npm run typecheck, then npm run build"
 else
-  no "bin/prime runs exactly npm ci, npm test, then npm run build" \
+  no "bin/prime runs exactly npm ci, npm test, npm run typecheck, then npm run build" \
     "found: ${prime_commands:-<nothing>}"
 fi
 
@@ -1442,7 +1446,7 @@ else
 fi
 
 # --- prove the checks can fail --------------------------------------------
-# Fifty-one breakages of a throwaway copy of every file these checks read, each
+# Fifty-two breakages of a throwaway copy of every file these checks read, each
 # asserted to send this gate red — except the ones this machine cannot prove,
 # which are counted separately and said out loud rather than passed quietly (see
 # `axis_available` and the tally at the bottom of `self_test`).
@@ -1603,7 +1607,8 @@ self_test() {
     "stale-script-name|sed_i 's|npm run typecheck|npm run typecheckp|' '$SANDBOX/.github/workflows/ci.yml'" \
     "ci-does-not-run-prime|sed_i 's|\\./bin/prime|echo skipping the gate|' '$SANDBOX/.github/workflows/ci.yml'" \
     "npm-install-in-prime|sed_i 's|^npm ci\$|npm install|' '$SANDBOX/bin/prime'" \
-      "no-build-in-prime|sed_i '/^npm run build\$/d' '$SANDBOX/bin/prime'" \
+    "no-build-in-prime|sed_i '/^npm run build\$/d' '$SANDBOX/bin/prime'" \
+    "no-typecheck-in-prime|sed_i '/^npm run typecheck\$/d' '$SANDBOX/bin/prime'" \
     "manifest-reintroduces-a-gate-command|printf 'prime: ./bin/other\n' >>'$SANDBOX/cafaye.yml'" \
     "no-engines-field|node -e 'const f=process.argv[1];const p=require(f);delete p.engines;require(\"fs\").writeFileSync(f,JSON.stringify(p,null,2))' '$SANDBOX/package.json'" \
     "range-instead-of-a-pin|sed_i 's|\"node\": \"22.22.2\"|\"node\": \"^22\"|' '$SANDBOX/package.json'" \
