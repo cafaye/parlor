@@ -17,11 +17,19 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
-    // `server/` is in here because `server/adapter.mjs` is plain JavaScript that
-    // Node runs directly — it cannot live under `src/` without becoming a module
-    // the bundler owns — and it carries real logic that would otherwise be
-    // untested. It is `.mjs` rather than `.ts` for the same reason
-    // `vitest.config.mts` is: package.json has no `"type": "module"`.
-    include: ["src/**/*.test.{ts,tsx}", "server/**/*.test.mjs"],
+    // `server/**/*.test.mjs` USED to be in here, because `server/adapter.mjs` was
+    // plain JavaScript that Node ran directly — it could not live under `src/`
+    // without becoming a module the bundler owns — and it carried real logic that
+    // would otherwise have been untested. That adapter is deleted; the app
+    // deploys to Cloudflare Workers and the Node target uses `nitro`, so there is
+    // no hand-rolled server left to test and no `server/` directory. The glob is
+    // removed rather than left matching nothing: a test glob that silently matches
+    // no file is the same failure as a check that cannot fail, and the seventeen
+    // tests it used to pick up are accounted for by name in `gate.yml`.
+    //
+    // Every test this repository has is therefore under `src/`, which is worth
+    // stating plainly rather than leaving to be discovered: if you add a test
+    // outside `src/`, it will not run, and `bin/prime` will not notice.
+    include: ["src/**/*.test.{ts,tsx}"],
   },
 });
