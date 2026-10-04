@@ -33,7 +33,7 @@
 #   1. NO SIBLING BUILD CONTEXTS — this file changed, and the change is the
 #      point of the whole contract below. `caf dev` builds the project service
 #      and pulls its dependencies; so does this file, for `parlor`. But
-#      `identity` and `guard` carry an `image:` and NO `build:`, so this tier
+#      `identity` and `gateway` carry an `image:` and NO `build:`, so this tier
 #      consumes them as published artifacts rather than rebuilding them from
 #      `../identity` and `../guard` on every run.
 #
@@ -104,7 +104,7 @@
 #
 # A service with no `/readyz` would be a finding to report, not a reason to
 # sleep. All three application services here have one: identity (`/readyz`,
-# which pings its database), guard (`/readyz`, which reports `identity` and
+# which pings its database), gateway (`/readyz`, which reports `identity` and
 # `redis` by name), and parlor (`/readyz`, currently reporting
 # `"deps":"none"` — see AGENTS.md, "Health surfaces").
 #
@@ -137,20 +137,20 @@ networks:
     # Not `internal: true`: the image pulls in this stack need the registry, and
     # a compose network with no egress cannot pull. The stack publishes to the
     # host loopback and nowhere else, which is the posture that matters. This
-    # reason got STRONGER in the registry change: `identity` and `guard` are
+    # reason got STRONGER in the registry change: `identity` and `gateway` are
     # pulled, not built, so every run of this tier now depends on that egress.
     driver: bridge
 
 volumes:
   identity-postgres-data:
-  guard-redis-data:
+  gateway-redis-data:
 
 services:
   # ----------------------------------------------------------------- registry
   # WHERE THE SIBLING ARTIFACTS COME FROM, and the first service in the file
   # for a reason that is mechanical rather than editorial: `docker compose up`
   # resolves and pulls every `image:` in the document BEFORE it creates any
-  # container, so a stack that pulls `identity` and `guard` from a registry
+  # container, so a stack that pulls `identity` and `gateway` from a registry
   # that this same compose file is about to start cannot start at all. Compose
   # has no way to express "start this one first, then pull those", so
   # `bin/e2e-stack` brings this service up as its own step before anything else
@@ -261,7 +261,7 @@ services:
   # So identity's readiness is established from the host, by `bin/e2e` polling
   # the published `/readyz` with a bounded budget — which is the mechanism the
   # packet asks for anyway, and the only one that can see a container that
-  # cannot see itself. `guard` and `parlor` below do get container healthchecks
+  # cannot see itself. `gateway` and `parlor` below do get container healthchecks
   # because their images have a runtime that can fetch, and they are useful:
   # they gate compose's own `depends_on` ordering.
   #
@@ -297,7 +297,7 @@ services:
       # thing this stack did when it was brought up with only a key). Turning it
       # on needs an https issuer plus a PEM signing key, and neither belongs in
       # a test fixture. So identity serves its /v1 surface and its probes, and
-      # publishes no key set. The consequence — guard has no JWKS to verify
+      # publishes no key set. The consequence — gateway has no JWKS to verify
       # against, and no test mints a JWT — is stated in the packet report as the
       # reason the suite's guard assertions are about readiness and refusal
       # rather than about a verified token.
@@ -309,17 +309,17 @@ services:
     networks: [platform]
 
   # -------------------------------------------------------------------- redis
-  # guard's rate-limit counters. One replica makes the in-memory store correct,
+  # gateway's rate-limit counters. One replica makes the in-memory store correct,
   # so Redis is here to prove the *shared* path the moment there are two, and
-  # because a Redis probe in guard's `/readyz` is a third service boundary the
+  # because a Redis probe in gateway's `/readyz` is a third service boundary the
   # harness can see.
-  guard-redis:
+  gateway-redis:
     image: redis:7.4.1-alpine
     command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - "${E2E_GUARD_REDIS_PORT:-16002}:6379"
+      - "${E2E_GATEWAY_REDIS_PORT:-16002}:6379"
     volumes:
-      - guard-redis-data:/data
+      - gateway-redis-data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 2s
@@ -328,45 +328,45 @@ services:
       start_period: 2s
     networks: [platform]
 
-  # -------------------------------------------------------------------- guard
+  # ------------------------------------------------------------------ gateway
   # The same contract as identity, for the same reason and through the same
   # override: an `image:` pulled by tag, no `build:` of its own.
-  guard:
-    image: "${E2E_REGISTRY:-localhost:16010}/cafaye/guard:e2e"
+  gateway:
+    image: "${E2E_REGISTRY:-localhost:16010}/cafaye/gateway:e2e"
     environment:
       PORT: "8080"
       NODE_ENV: production
       # Where the /auth surface sends its calls, and what its readiness probe
       # checks. By service name over the compose network.
       IDENTITY_URL: "http://identity:8080"
-      # The issuer tokens are *verified* against. guard appends
+      # The issuer tokens are *verified* against. gateway appends
       # /.well-known/jwks.json itself (identity/internal/oidc/provider.go,
-      # PathJWKS; guard/src/middleware/jwt.ts, JWKS_PATH). This is the shape of
-      # the three-process chain: a token minted by identity, checked by guard,
+      # PathJWKS; gateway/src/middleware/jwt.ts, JWKS_PATH). This is the shape of
+      # the three-process chain: a token minted by identity, checked by gateway,
       # against a key set fetched from identity. identity publishes no key set
       # in this stack — see the OIDC note above — so the chain is configured and
-      # its first two hops are asserted (guard reached identity and redis; guard
+      # its first two hops are asserted (gateway reached identity and redis; gateway
       # refuses a caller with no credential) and its third hop is not. A test
       # that cannot be true is worse than a test that is smaller.
       IDENTITY_ISSUER: "http://identity:8080"
-      # The shared counter store, so guard's /readyz has a second dependency to
+      # The shared counter store, so gateway's /readyz has a second dependency to
       # report and the shared-allowance path is the one under test.
-      REDIS_URL: "redis://guard-redis:6379"
+      REDIS_URL: "redis://gateway-redis:6379"
     ports:
-      - "${E2E_GUARD_PORT:-16081}:8080"
+      - "${E2E_GATEWAY_PORT:-16081}:8080"
     depends_on:
       # `service_started` on identity, not `service_healthy`: identity's image
       # cannot carry a healthcheck (see the finding above), and compose would
-      # otherwise wait forever for a signal that can never arrive. guard does
+      # otherwise wait forever for a signal that can never arrive. gateway does
       # not need identity to be *ready* to boot — the pool is lazy and the
       # readiness probe reports an unavailable dependency rather than refusing to
       # start — so `bin/e2e`'s host poll is what gates the suite.
       identity:
         condition: service_started
-      guard-redis:
+      gateway-redis:
         condition: service_healthy
     healthcheck:
-      # /healthz, NOT /readyz, and the distinction is guard's own: a dependency
+      # /healthz, NOT /readyz, and the distinction is gateway's own: a dependency
       # outage is /readyz's to report and must not take the gateway out of
       # rotation (../guard/docker-compose.yml says this at the same line). A
       # container healthcheck on /readyz would restart the gateway every time
@@ -429,7 +429,7 @@ services:
       identity:
         condition: service_started
     healthcheck:
-      # Liveness, for the same reason as guard's: a restart should mean "this
+      # Liveness, for the same reason as gateway's: a restart should mean "this
       # process is not answering", never "a dependency is unhappy". The same
       # HEALTHCHECK is already in the image's own Dockerfile; it is restated so
       # this file is the one place a reader looks for a service's health.

@@ -181,7 +181,7 @@ function* walk(path: string): Generator<string> {
  *
  * The `skipped` count is the important half. A tier that skips is a green run
  * that verified nothing, and the failure mode the whole fleet has been bitten
- * by is a skip nobody was forced to notice (guard's live-Redis tier, identity's
+ * by is a skip nobody was forced to notice (gateway's live-Redis tier, identity's
  * `TEST_DATABASE_URL` tests, darkroom's 41). A tier with no skip *mechanism* is
  * better than a tier with a counted one, and this config has none: nothing in
  * `bin/e2e` or the specs has a `test.skip` or a conditional `test.fixme`.
@@ -241,7 +241,7 @@ async function assertTheTierRan(): Promise<void> {
 
 /**
  * The floor. Two, because the suite has two independent subjects: the auth path
- * through parlor and identity, and the whole-stack view through guard. One test
+ * through parlor and identity, and the whole-stack view through gateway. One test
  * that is filtered out should fail the run rather than quietly halve it.
  */
 const MINIMUM_TESTS = 2;

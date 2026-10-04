@@ -32,7 +32,7 @@
 #      asserted again in e2e/no-token-artifacts.ts, so it holds for a developer
 #      running `npx playwright test` directly.
 #
-# That is guard's live-Redis mechanism (GUARD_REDIS_REQUIRED plus a job that
+# That is gateway's live-Redis mechanism (GATEWAY_REDIS_REQUIRED plus a job that
 # parses the summary and fails on zero passes) applied to a tier that cannot
 # skip in the first place: the belt, and then the braces.
 set -euo pipefail
@@ -47,7 +47,7 @@ cd "$ROOT"
 # of them, and the wrong one is a connection refused.
 export E2E_EDGE_PORT="${E2E_EDGE_PORT:-$(./bin/e2e-stack host-port edge)}"
 export E2E_PARLOR_PORT="${E2E_PARLOR_PORT:-$(./bin/e2e-stack host-port parlor)}"
-export E2E_GUARD_PORT="${E2E_GUARD_PORT:-$(./bin/e2e-stack host-port guard)}"
+export E2E_GATEWAY_PORT="${E2E_GATEWAY_PORT:-$(./bin/e2e-stack host-port gateway)}"
 export E2E_IDENTITY_PORT="${E2E_IDENTITY_PORT:-$(./bin/e2e-stack host-port identity)}"
 
 KEEP=0
@@ -98,7 +98,7 @@ fi
 printf '[e2e] edge    %s   <- the origin the browser uses\n' "http://127.0.0.1:${E2E_EDGE_PORT}"
 printf '[e2e] parlor  %s   <- the app directly\n' "http://127.0.0.1:${E2E_PARLOR_PORT}"
 printf '[e2e] identity %s\n' "http://127.0.0.1:${E2E_IDENTITY_PORT}"
-printf '[e2e] guard   %s\n' "http://127.0.0.1:${E2E_GUARD_PORT}"
+printf '[e2e] gateway %s\n' "http://127.0.0.1:${E2E_GATEWAY_PORT}"
 
 # ---------------------------------------------------------------------------
 # The browser.

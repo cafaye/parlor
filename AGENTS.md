@@ -48,7 +48,7 @@ before changing the topology; the file states the measured reason the stack has
 a reverse proxy in it, which is not a stylistic choice.
 
 ```
-e2e/docker-compose.yml   the stack: identity + guard built from ../ and
+e2e/docker-compose.yml   the stack: identity + gateway built from ../ and
                          siblings, one Postgres, one Redis, one edge proxy
 e2e/edge.conf            the same-origin edge. WHY IT EXISTS is in the file
 bin/e2e-stack            build / up / wait / down — the lifecycle, the bounded
