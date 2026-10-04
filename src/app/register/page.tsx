@@ -1,5 +1,7 @@
 import { Link } from "@tanstack/react-router";
 
+import { SocialProviderButtons } from "@/components/social/social-provider-buttons";
+
 import { RegisterForm } from "./register-form";
 
 
@@ -23,6 +25,15 @@ export default function RegisterPage() {
             </Link>
           </p>
         </div>
+        {/*
+          The provider way in, ABOVE the form and below the heading.
+
+          Above because it is the shorter path for somebody who already has a
+          provider account and came here because they were told to create an
+          account — and above because a screen that leads with the email field
+          says "type your address" before it has said "you do not have to".
+        */}
+        <SocialProviderButtons />
         <RegisterForm />
       </div>
     </main>

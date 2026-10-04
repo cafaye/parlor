@@ -19,7 +19,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useMemo, useSyncExternalStore, type ReactNode } from "react";
 
-import { IdentityError, type Credentials, type IdentityClient, type User } from "@/lib/identity";
+import {
+  IdentityError,
+  type Credentials,
+  type IdentityClient,
+  type Session,
+  type User,
+} from "@/lib/identity";
 import { createTokenStore, type TokenStore } from "@/lib/token-store";
 
 /** The token is the key, so a different session is a different cache entry. */
@@ -51,6 +57,29 @@ export type AuthValue = {
   login(credentials: Credentials): Promise<void>;
   register(credentials: Credentials): Promise<User>;
   logout(): Promise<void>;
+  /**
+   * Take a session identity has already minted, without asking it again.
+   *
+   * `login` and `register` both make their request and write the token
+   * themselves. A social sign-in cannot use either: `completeSocialLogin` hands
+   * back a token that was spent exchanging an authorization code, and there is
+   * nothing left to ask the service — asking again would be a second request
+   * for a session that already exists, on the one leg where an extra request can
+   * cost something.
+   *
+   * So this is the same write, exposed: `store.set(session.token)`, which is
+   * what changes the query key and what starts the `me` fetch. Nothing needs
+   * invalidating for the same reason nothing does after `login` — the new key
+   * names a different session, so it has no data to be stale.
+   *
+   * It is a method on the context rather than a `createTokenStore()` call at the
+   * call site because the store is an INSTANCE (`createTokenStore` closes over
+   * its own listeners), and a second instance would write the same key to
+   * `localStorage` without notifying the one the provider is subscribed to. The
+   * header would stay signed out; the reload would be signed in. That is the
+   * bug this method exists to make unwriteable.
+   */
+  adoptSession(session: Session): void;
   /** True while any of the three is in flight. */
   pending: boolean;
   /**
@@ -165,6 +194,12 @@ export function AuthProvider({
     login: (credentials) => loginMutation.mutateAsync(credentials),
     register: (credentials) => registerMutation.mutateAsync(credentials),
     logout: () => logoutMutation.mutateAsync(),
+    // Deliberately NOT a mutation. There is nothing in flight here — the request
+    // that matters has already resolved by the time this is called, and a
+    // mutation would put a second one in `pending` for the span between the
+    // exchange and the navigation, which is the span in which the header reads
+    // `anonymous` and flickers.
+    adoptSession: (session) => store.set(session.token),
     pending: loginMutation.isPending || registerMutation.isPending || logoutMutation.isPending,
     // `UNKNOWN_TOKEN` is the server render and the hydration commit, where
     // there is genuinely no token to report. Collapsing it to null is the same

@@ -34,6 +34,8 @@ export type StubIdentity = IdentityClient & {
   requestEmailVerification: MockedFunction<IdentityClient["requestEmailVerification"]>;
   redeemEmailVerification: MockedFunction<IdentityClient["redeemEmailVerification"]>;
   verificationStatus: MockedFunction<IdentityClient["verificationStatus"]>;
+  startSocialLogin: MockedFunction<IdentityClient["startSocialLogin"]>;
+  completeSocialLogin: MockedFunction<IdentityClient["completeSocialLogin"]>;
 };
 
 const unscripted = (method: string) =>
@@ -66,6 +68,13 @@ export function stubIdentity(overrides: Partial<IdentityClient> = {}): StubIdent
       overrides.redeemEmailVerification ?? unscripted("redeemEmailVerification"),
     ),
     verificationStatus: vi.fn(overrides.verificationStatus ?? unscripted("verificationStatus")),
+    // Both social methods are here rather than left out because a screen that
+    // calls one and finds it undefined gets a `TypeError` rather than the loud
+    // "was not scripted" this file exists to produce.
+    startSocialLogin: vi.fn(overrides.startSocialLogin ?? unscripted("startSocialLogin")),
+    completeSocialLogin: vi.fn(
+      overrides.completeSocialLogin ?? unscripted("completeSocialLogin"),
+    ),
   } as StubIdentity;
 }
 

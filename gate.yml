@@ -286,9 +286,41 @@ gate:
     # core has `test_the_gate_floor_is_not_below_the_suite_core_claims_to_have`,
     # and parlor has no equivalent, so raising this number when the suite grows
     # is a thing a human has to remember until MD12's machinery lands).
-    # It is 755 today. 727 -> 755, a +28 in two files, and both halves of the
-    # count are there because this is the only place in parlor that writes down
-    # how many tests there are.
+    # It is 796 today. 755 -> 796, a +41 in three new files, and every one of
+    # those tests is here because the failure it guards is invisible in a
+    # rendered string.
+    #
+    #   * 22 in `src/components/social/social-callback-screen.test.tsx`, on the
+    #     four answers `completeSocialLogin` can return plus the refusals. The
+    #     risk on that screen is reading the wrong one of three mutually
+    #     exclusive bodies: a LINK body read as a session, or a 202 MFA challenge
+    #     read as a success, is how a client claims a session nobody minted. Each
+    #     is asserted by what the screen does NOT do -- no token written, no
+    #     navigation -- as much as by its copy. One test exists only for the
+    #     exchange happening EXACTLY ONCE, asserted on the CALL COUNT rather than
+    #     on the result, because a screen that exchanged twice and rendered the
+    #     first answer correctly looks identical to one that exchanged once.
+    #   * 8 in `src/routes/v1/auth/oauth/$provider/callback.test.ts`, on the route
+    #     that took the callback away from the forwarder. The one that matters: a
+    #     document navigation makes NO HOP AT ALL, asserted on a `fetch` spy,
+    #     because a page whose own navigation reached identity and then fetched
+    #     the same URL spends a one-shot authorization code twice and reports it
+    #     to the person as a sign-in that did not work. The other half walks the
+    #     round trip through the forwarder and asserts the callback presents the
+    #     cookie the START leg set -- the leg nobody remembers.
+    #   * 11 in `src/components/social/social-provider-buttons.test.tsx`, run
+    #     against BOTH screens so a control that moved between them goes red. One
+    #     is a guard on the provider list not being empty: the buttons render as
+    #     nothing when it is, and every other assertion in the file would pass
+    #     vacuously.
+    #
+    #     The red proofs for the double-exchange property were run before this
+    #     floor moved: forwarding the document branch, forwarding the programmatic
+    #     branch, and deleting the latch each turned a named test red.
+    #
+    # The floor before that, 755, was this: 727 -> 755, a +28 in two files, and
+    # both halves of the count are there because this is the only place in parlor
+    # that writes down how many tests there are.
     #
     #   * 16 in `src/lib/upstream.test.ts`, on the social-login surface. The
     #     packet's whole risk is a redirect and a cookie, and neither of those is
@@ -366,7 +398,7 @@ gate:
     # reconcile with the summary line is a floor nobody is reading.
     - id: suite
       match: '^[ ]*Tests[ ]+([0-9]+)[ ]+passed(?![ ]*\|)'
-      minimum: 755
+      minimum: 796
     # The tally `tests/validate-ci.sh` prints, which is the second half of this
     # gate: the checks that the tree still has the shape CI assumes — one
     # runtime pin, `npm ci` and not `npm install`, the gate command, the

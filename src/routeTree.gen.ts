@@ -24,6 +24,7 @@ import { Route as BillingPlansRouteImport } from './routes/billing/plans'
 import { Route as InvitationsTokenRouteImport } from './routes/invitations/$token'
 import { Route as V1SplatRouteImport } from './routes/v1/$'
 import { Route as VerifyEmailConfirmRouteImport } from './routes/verify-email/confirm'
+import { Route as V1AuthOauthProviderCallbackRouteImport } from './routes/v1/auth/oauth/$provider/callback'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -100,6 +101,12 @@ const VerifyEmailConfirmRoute = VerifyEmailConfirmRouteImport.update({
   path: '/confirm',
   getParentRoute: () => VerifyEmailRoute,
 } as any)
+const V1AuthOauthProviderCallbackRoute =
+  V1AuthOauthProviderCallbackRouteImport.update({
+    id: '/v1/auth/oauth/$provider/callback',
+    path: '/v1/auth/oauth/$provider/callback',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -117,6 +124,7 @@ export interface FileRoutesByFullPath {
   '/v1/$': typeof V1SplatRoute
   '/verify-email/confirm': typeof VerifyEmailConfirmRoute
   '/accounts/': typeof AccountsIndexRoute
+  '/v1/auth/oauth/$provider/callback': typeof V1AuthOauthProviderCallbackRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -134,6 +142,7 @@ export interface FileRoutesByTo {
   '/v1/$': typeof V1SplatRoute
   '/verify-email/confirm': typeof VerifyEmailConfirmRoute
   '/accounts': typeof AccountsIndexRoute
+  '/v1/auth/oauth/$provider/callback': typeof V1AuthOauthProviderCallbackRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -152,6 +161,7 @@ export interface FileRoutesById {
   '/v1/$': typeof V1SplatRoute
   '/verify-email/confirm': typeof VerifyEmailConfirmRoute
   '/accounts/': typeof AccountsIndexRoute
+  '/v1/auth/oauth/$provider/callback': typeof V1AuthOauthProviderCallbackRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -171,6 +181,7 @@ export interface FileRouteTypes {
     | '/v1/$'
     | '/verify-email/confirm'
     | '/accounts/'
+    | '/v1/auth/oauth/$provider/callback'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -188,6 +199,7 @@ export interface FileRouteTypes {
     | '/v1/$'
     | '/verify-email/confirm'
     | '/accounts'
+    | '/v1/auth/oauth/$provider/callback'
   id:
     | '__root__'
     | '/'
@@ -205,6 +217,7 @@ export interface FileRouteTypes {
     | '/v1/$'
     | '/verify-email/confirm'
     | '/accounts/'
+    | '/v1/auth/oauth/$provider/callback'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -222,6 +235,7 @@ export interface RootRouteChildren {
   InvitationsTokenRoute: typeof InvitationsTokenRoute
   V1SplatRoute: typeof V1SplatRoute
   AccountsIndexRoute: typeof AccountsIndexRoute
+  V1AuthOauthProviderCallbackRoute: typeof V1AuthOauthProviderCallbackRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -331,6 +345,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof VerifyEmailConfirmRouteImport
       parentRoute: typeof VerifyEmailRoute
     }
+    '/v1/auth/oauth/$provider/callback': {
+      id: '/v1/auth/oauth/$provider/callback'
+      path: '/v1/auth/oauth/$provider/callback'
+      fullPath: '/v1/auth/oauth/$provider/callback'
+      preLoaderRoute: typeof V1AuthOauthProviderCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -361,6 +382,7 @@ const rootRouteChildren: RootRouteChildren = {
   InvitationsTokenRoute: InvitationsTokenRoute,
   V1SplatRoute: V1SplatRoute,
   AccountsIndexRoute: AccountsIndexRoute,
+  V1AuthOauthProviderCallbackRoute: V1AuthOauthProviderCallbackRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
