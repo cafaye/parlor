@@ -8,7 +8,7 @@ import { anIdentityError, aUser, stubIdentity } from "@/test/support/identity";
 import { renderWithProviders } from "@/test/support/render";
 
 const { push } = vi.hoisted(() => ({ push: vi.fn() }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push, refresh: vi.fn() }) }));
+vi.mock("@/lib/navigation", () => ({ useNavigation: () => ({ push, refresh: vi.fn() }) }));
 
 const CREDENTIALS = { email: "kaka@example.com", password: "correct horse" };
 
@@ -26,14 +26,19 @@ async function alertText() {
 }
 
 /**
- * The page component is async — it awaits `searchParams` to decide whether to
- * announce a completed reset — so every render below goes through this helper
- * rather than through `<LoginPage />` directly. JSX cannot hold a promise, and a
- * test that wrote `<LoginPage />` would render a thenable and find nothing on the
- * screen.
+ * Every render below goes through this helper rather than through
+ * `<LoginPage />` directly.
+ *
+ * It used to be async: the page component was async, because it awaited
+ * `searchParams` to decide whether to announce a completed reset, and JSX
+ * cannot hold a promise. That is no longer true — the route resolves the
+ * location and hands a plain object down, so the page is a synchronous
+ * function and this helper is synchronous with it. Nothing below had to change
+ * when that happened, which is the point of the page taking an object rather
+ * than reaching for the router itself.
  */
-async function loginPage(query: Record<string, string> = {}) {
-  return LoginPage({ searchParams: Promise.resolve(query) });
+function loginPage(query: Record<string, string> = {}) {
+  return LoginPage({ searchParams: query });
 }
 
 /**
@@ -50,13 +55,13 @@ beforeEach(() => {
 
 describe("login page", () => {
   it("names itself as the sign in screen", async () => {
-    renderWithProviders(await loginPage(), { identity: stubIdentity() });
+    renderWithProviders(loginPage(), { identity: stubIdentity() });
 
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(/sign in/i);
   });
 
   it("marks the email field for autofill", async () => {
-    renderWithProviders(await loginPage(), { identity: stubIdentity() });
+    renderWithProviders(loginPage(), { identity: stubIdentity() });
 
     expect(screen.getByLabelText("Email")).toHaveAttribute("autocomplete", "email");
   });
@@ -64,13 +69,13 @@ describe("login page", () => {
   it("marks the password field as the current one, not a new one", async () => {
     // autocomplete="new-password" here makes password managers offer to
     // generate a replacement instead of filling in the one they already have.
-    renderWithProviders(await loginPage(), { identity: stubIdentity() });
+    renderWithProviders(loginPage(), { identity: stubIdentity() });
 
     expect(screen.getByLabelText("Password")).toHaveAttribute("autocomplete", "current-password");
   });
 
   it("points people without an account at registration", async () => {
-    renderWithProviders(await loginPage(), { identity: stubIdentity() });
+    renderWithProviders(loginPage(), { identity: stubIdentity() });
 
     expect(screen.getByRole("link", { name: "Create account" })).toHaveAttribute(
       "href",
@@ -83,7 +88,7 @@ describe("login page", () => {
     // unconditionally rather than after a failed attempt: a link that appeared
     // only once the form had refused you would be leaking something about the
     // address, and this page is the one screen that must never do that.
-    renderWithProviders(await loginPage(), { identity: stubIdentity() });
+    renderWithProviders(loginPage(), { identity: stubIdentity() });
 
     expect(screen.getByRole("link", { name: /forgot your password/i })).toHaveAttribute(
       "href",
@@ -92,7 +97,7 @@ describe("login page", () => {
   });
 
   it("says nothing about a changed password on a plain arrival", async () => {
-    renderWithProviders(await loginPage(), { identity: stubIdentity() });
+    renderWithProviders(loginPage(), { identity: stubIdentity() });
 
     expect(screen.queryByText(/password has been changed/i)).toBeNull();
   });
@@ -102,7 +107,7 @@ describe("login page", () => {
     // verified — the audience `POST /v1/email-verifications` cannot serve with a
     // banner, because `GET /v1/email-verification` answers for the caller's own
     // address and they are the one who is not signed in.
-    renderWithProviders(await loginPage(), { identity: stubIdentity() });
+    renderWithProviders(loginPage(), { identity: stubIdentity() });
 
     expect(screen.getByRole("link", { name: /verify your email/i })).toHaveAttribute(
       "href",
@@ -114,7 +119,7 @@ describe("login page", () => {
     // Same rule as the "forgot your password" link above it: a control that
     // appeared only after a refused attempt would be reporting something about the
     // address, and this is the screen that must never do that.
-    renderWithProviders(await loginPage(), { identity: stubIdentity() });
+    renderWithProviders(loginPage(), { identity: stubIdentity() });
 
     const link = screen.getByRole("link", { name: /verify your email/i });
     expect(link).toBeVisible();

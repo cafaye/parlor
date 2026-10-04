@@ -1,11 +1,7 @@
-import type { Metadata } from "next";
-import Link from "next/link";
+import { Link } from "@tanstack/react-router";
 
 import { VerifyEmailForm } from "./verify-email-form";
 
-export const metadata: Metadata = {
-  title: "Verify your email · parlor",
-};
 
 /**
  * `/verify-email` — asking for a verification link, and asking again.
@@ -39,7 +35,7 @@ export default function VerifyEmailPage() {
         </div>
         <VerifyEmailForm />
         <p className="text-center text-sm text-muted">
-          <Link className="underline hover:no-underline" href="/login">
+          <Link className="underline hover:no-underline" to="/login">
             Back to sign in
           </Link>
         </p>

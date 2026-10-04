@@ -397,7 +397,7 @@ services:
   #
   # There are NO BUILD ARGS, and their absence is the BFF. The image used to be
   # built with `--build-arg NEXT_PUBLIC_IDENTITY_URL=…` pointing at the EDGE's
-  # origin, because `next build` inlines `NEXT_PUBLIC_*` into the client bundle
+  # origin, because that framework inlined `NEXT_PUBLIC_*` into the client bundle
   # and the browser needed to be told where identity was. The browser does not
   # any more: `src/app/v1/[...path]/route.ts` answers `/v1/*` on this app's own
   # origin and forwards to identity from the server.

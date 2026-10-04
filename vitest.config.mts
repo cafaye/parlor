@@ -17,6 +17,11 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
-    include: ["src/**/*.test.{ts,tsx}"],
+    // `server/` is in here because `server/adapter.mjs` is plain JavaScript that
+    // Node runs directly — it cannot live under `src/` without becoming a module
+    // the bundler owns — and it carries real logic that would otherwise be
+    // untested. It is `.mjs` rather than `.ts` for the same reason
+    // `vitest.config.mts` is: package.json has no `"type": "module"`.
+    include: ["src/**/*.test.{ts,tsx}", "server/**/*.test.mjs"],
   },
 });

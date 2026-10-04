@@ -24,7 +24,7 @@
  * token was once real and turn a guess into a probe.
  */
 
-import Link from "next/link";
+import { Link } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 
 import { Button, ErrorState, FieldSummary, LoadingState } from "@/components/ui";
@@ -69,14 +69,14 @@ export function InvitationScreen({ token }: { token: string }) {
         <p className="mt-4 text-sm">
           <Link
             className="font-medium underline underline-offset-2 hover:no-underline"
-            href="/login"
+            to="/login"
           >
             Sign in
           </Link>
           <span className="text-muted"> · </span>
           <Link
             className="font-medium underline underline-offset-2 hover:no-underline"
-            href="/accounts"
+            to="/accounts"
           >
             Your accounts
           </Link>
@@ -181,7 +181,8 @@ function Accepted({ membership }: { membership: Membership }) {
       <p className="text-sm">
         <Link
           className="font-medium underline underline-offset-2 hover:no-underline"
-          href={`/accounts/${membership.account_id}`}
+          to="/accounts/$accountId"
+          params={{ accountId: membership.account_id }}
         >
           Go to the account
         </Link>
@@ -204,7 +205,7 @@ function Unrecognised() {
       <p className="mt-4 text-sm">
         <Link
           className="font-medium underline underline-offset-2 hover:no-underline"
-          href="/accounts"
+          to="/accounts"
         >
           Your accounts
         </Link>
@@ -227,7 +228,7 @@ function Gone() {
       <p className="mt-4 text-sm">
         <Link
           className="font-medium underline underline-offset-2 hover:no-underline"
-          href="/accounts"
+          to="/accounts"
         >
           Your accounts
         </Link>
@@ -249,7 +250,7 @@ function AlreadyMember() {
       <p className="mt-4 text-sm">
         <Link
           className="font-medium underline underline-offset-2 hover:no-underline"
-          href="/accounts"
+          to="/accounts"
         >
           Your accounts
         </Link>

@@ -1,11 +1,7 @@
-import type { Metadata } from "next";
-import Link from "next/link";
+import { Link } from "@tanstack/react-router";
 
 import { RegisterForm } from "./register-form";
 
-export const metadata: Metadata = {
-  title: "Create an account · parlor",
-};
 
 /**
  * `/register` — the account creation screen.
@@ -22,7 +18,7 @@ export default function RegisterPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Create your account</h1>
           <p className="text-sm text-muted">
             Already have one?{" "}
-            <Link className="underline hover:no-underline" href="/login">
+            <Link className="underline hover:no-underline" to="/login">
               Sign in
             </Link>
           </p>

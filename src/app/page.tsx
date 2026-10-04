@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { Link } from "@tanstack/react-router";
 
 /**
  * The landing page.
@@ -50,7 +50,7 @@ function Card({ href, name, body }: { href: string; name: string; body: string }
   return (
     <Link
       className="flex flex-col gap-1 rounded-lg border border-border bg-surface-raised px-4 py-3 hover:border-cafaye-300"
-      href={href}
+      to={href}
     >
       <span className="font-medium">{name}</span>
       <span className="text-sm text-muted">{body}</span>

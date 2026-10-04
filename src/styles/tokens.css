@@ -177,6 +177,16 @@
      "major second"-ish ladder) and it is defined here rather than left to
      Tailwind's defaults so the ramp is a decision rather than an inherited
      accident. 12/14/16/18/24/30/36. */
+
+  /* The two faces themselves. `src/app/globals.css` imports the `@font-face`
+     rules, and these two lines are the seam between that import and the token
+     below — they are the same two names `next/font/google` used to inject,
+     kept as variables so the fallback chain below is unchanged. Declared here
+     rather than in globals.css because this file is the only place a theme
+     value lives. */
+  --font-geist-sans: "Geist Variable";
+  --font-geist-mono: "Geist Mono";
+
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 

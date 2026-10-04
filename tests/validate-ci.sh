@@ -890,7 +890,7 @@ else
 
   # C2. The cross-file contract, and the one whose failure is invisible.
   #
-  # `next build` substitutes every `NEXT_PUBLIC_*` at BUILD time, so a service
+  # the previous framework substituted every `NEXT_PUBLIC_*` at BUILD time, so a service
   # address cannot be set at run time at all — which is why the deploy config
   # passes it as a build arg. The trap is the join: `docker build --build-arg`
   # for a name the Dockerfile does not declare is a WARNING, so renaming a key on
@@ -961,7 +961,7 @@ else
   # The second is the load-bearing half. `tests/validate-ci.sh` and the vitest
   # suite both assert it, from different directions: this reads the committed
   # files, and `src/app/v1/[...path]/route.test.ts` reads the BUILT client chunks.
-  # A source check cannot see what `next build` emits, and a build check does not
+  # A source check cannot see what the build emits, and a build check does not
   # run on every commit.
   # -------------------------------------------------------------------------
   missing_clear=""
@@ -1023,7 +1023,7 @@ else
     # vitest check records at `src/app/v1/[...path]/route.test.ts`: a `/*` inside
     # a string would start a comment that does not end. No file this walks has
     # one, and the check that actually closes the gap is the build-level
-    # assertion over `.next/static`, which reads emitted bytes rather than source.
+    # assertion over `dist/client/assets`, which reads emitted bytes rather than source.
     matches=$(strip_comments <"$file" | found 'NEXT_PUBLIC_' || true)
     if [ -n "$matches" ]; then
       public_leaks="$public_leaks $file"
@@ -1033,7 +1033,7 @@ else
     ok "no NEXT_PUBLIC_ variable reaches the browser (Dockerfile, src/)"
   else
     no "no NEXT_PUBLIC_ variable reaches the browser (Dockerfile, src/)" \
-      "these files use a NEXT_PUBLIC_ variable in code, which next build inlines into the client bundle:$public_leaks. The BFF moved the browser same-origin; a service address in the bundle is a deployment that cannot sign in, and a forwarder whose destination the browser can read."
+      "these files use a NEXT_PUBLIC_ variable in code, which a bundler inlines into the client bundle:$public_leaks. The BFF moved the browser same-origin; a service address in the bundle is a deployment that cannot sign in, and a forwarder whose destination the browser can read."
   fi
 fi
 
@@ -1281,7 +1281,20 @@ fi
 # It is here rather than in the sandbox section below because it needs docker and
 # real images, not a throwaway copy, and because it is a claim about THIS
 # repository's own images rather than about the shape of the files.
-if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+# The `docker/provenance.sh` guard is about THIS repository's verifier, on THIS
+# repository's images. `--self-test` runs this same file against a throwaway copy
+# seeded with the files the checks read — and it does not seed `docker/`, so the
+# copy runs the verifier test with no verifier, the check reports FAIL, and the
+# baseline the 47 breakages are measured against is red before the first breakage
+# is planted. Every self-test case then "passes" for the wrong reason, or none of
+# them runs. That is the exact failure the header above this section describes,
+# reached from the other direction: a check wired into the gate that cannot be
+# satisfied by any real tree.
+#
+# So the copy does not run it, and says so rather than skipping silently. `core`
+# owns a checker for `gate.yml`; this is a sibling property and it is now
+# recorded rather than discovered a third time.
+if [ -f "$ROOT/docker/provenance.sh" ] && command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
   if prov_out="$(bash "$ROOT/tests/provenance-consumer-test.sh" 2>&1)"; then
     ok "the provenance verifier refuses a foreign or inherited stamp ($(printf '%s' "$prov_out" | grep -c '^PASS:') assertions)"
   else
@@ -1289,7 +1302,7 @@ if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
       "$(printf '%s' "$prov_out" | grep '^FAIL' | head -3)"
   fi
 else
-  skipped "docker is not available, so the provenance verifier was not exercised on real images"
+  skipped "docker or docker/provenance.sh is not available, so the provenance verifier was not exercised on real images"
 fi
 
 # --- prove the checks can fail --------------------------------------------

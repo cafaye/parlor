@@ -8,9 +8,9 @@
     "node": "22.22.2"
   },
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
+    "dev": "vite dev",
+    "build": "vite build",
+    "start": "node server/index.mjs",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -20,14 +20,18 @@
     "e2e:stack": "./bin/e2e-stack"
   },
   "dependencies": {
+    "@fontsource-variable/geist": "^5.3.0",
+    "@fontsource/geist-mono": "^5.3.0",
     "@tanstack/react-query": "^5.104.0",
-    "next": "16.3.7",
+    "@tanstack/react-router": "^1.170.41",
+    "@tanstack/react-start": "^1.168.60",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
     "@tailwindcss/postcss": "^4",
+    "@tanstack/router-plugin": "^1.168.42",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@types/node": "^22",
@@ -35,10 +39,11 @@
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^6.1.1",
     "eslint": "^9",
-    "eslint-config-next": "16.3.7",
     "jsdom": "^30.1.1",
     "tailwindcss": "^4",
     "typescript": "^5",
+    "typescript-eslint": "^8.71.0",
+    "vite": "^8.3.2",
     "vitest": "^5.0.2"
   }
 }

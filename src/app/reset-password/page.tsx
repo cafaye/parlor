@@ -1,19 +1,9 @@
-import type { Metadata } from "next";
-
 import { ResetPasswordForm } from "./reset-password-form";
-
-export const metadata: Metadata = {
-  title: "Choose a new password · parlor",
-  // A reset link is followed from an email and its query string carries a live
-  // credential. Indexing it would publish that credential to a search engine, so
-  // the same answer the invitation page gives.
-  robots: { index: false, follow: false },
-};
 
 /**
  * `/reset-password` — spending an emailed reset link.
  *
- * A server component that awaits `searchParams` and hands the token down. The
+ * A page that hands `searchParams` down. The
  * query parameter is read HERE and nowhere else, so there is exactly one place
  * that knows what the link carries.
  *
@@ -24,18 +14,16 @@ export const metadata: Metadata = {
  * something the service fixes, which is why a link with no `token` is a rendered
  * state in the client screen and not an exception thrown here.
  *
- * `searchParams` is typed explicitly rather than with Next 16's generated
- * `PageProps`: that global only exists after `next build` has written
- * `.next/types`, and `npm run typecheck` has to pass on a fresh clone. Same rule
- * as the invitation page's `params`.
+ * `searchParams` is a plain object rather than a Promise: the route that
+ * renders this has already resolved the location, so there is nothing to await
+ * and a component that awaited would only be a component React has to suspend.
  */
-export default async function ResetPasswordPage({
+export default function ResetPasswordPage({
   searchParams,
 }: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
+  searchParams: Record<string, string | string[] | undefined>;
 }) {
-  const params = await searchParams;
-  const raw = params.token;
+  const raw = searchParams.token;
   // A repeated parameter arrives as an array. `URLSearchParams.get` takes the
   // first, and so does this — a link with `?token=a&token=b` is malformed and the
   // service would answer 404 for either value.

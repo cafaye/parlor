@@ -247,23 +247,29 @@ gate:
     #     recorded in `upstream.ts`'s header — because a check that has only ever
     #     been green has verified nothing;
     #   * 1 in `src/app/v1/[...path]/route.test.ts` for the handler's own
-    #     contract, plus the two build-level bundle assertions that run only when
-    #     `.next/static` exists and which are counted as skipped otherwise. Those
-    #     two are the only place in this repository that can see what `next build`
-    #     emits, and they assert that no `NEXT_PUBLIC_` name and no upstream
-    #     hostname reaches a client chunk.
+    #     contract, plus the two build-level bundle assertions that search the
+    #     BUILT client chunks in `dist/client/assets` — the only place in this
+    #     repository that can see what the build emits, and what asserts that no
+    #     `NEXT_PUBLIC_` name and no upstream hostname reaches a client chunk.
     #
     # NOTHING IN THIS FILE SKIPS, and that is not an accident. The two
     # build-level cases in `route.test.ts` were first written to run only when
-    # `.next/static` already existed, and this floor is what caught it: with two
-    # skips, vitest prints `Tests  662 passed | 2 skipped (664)`, and the `suite`
-    # proof's negative lookahead — `[ ]+passed(?![ ]*\|)` — refuses exactly that
+    # a framework's build output already existed, and this floor is what caught
+    # it: with two skips, vitest prints `Tests  662 passed | 2 skipped (664)`,
+    # and the `suite` proof's negative lookahead — `[ ]+passed(?![ ]*\|)` — refuses exactly that
     # line. The gate reported `gate.proof-missing` and was RIGHT to: a check that
     # silently does not run on a fresh clone is a check that has verified nothing
     # on that machine. The fix was to make the build unconditional rather than to
-    # loosen the pattern, and the cost is one `next build` on a run that did not
-    # need it. `next build` is incremental against an existing `.next`, so a warm
-    # run is seconds.
+    # loosen the pattern, and the cost is one build on a run that did not need it.
+    #
+    # That history repeated itself once more, one framework later, which is why
+    # the sentence above is phrased the way it is. The migration moved those two
+    # assertions from the old build output to `dist/client/assets`, and they run —
+    # but the suite had been reporting them as SKIPPED, because the `beforeAll`
+    # that builds and reads the directory threw before either assertion was
+    # reached. A search of a directory no build produces finds nothing and passes;
+    # a search of a directory the build stopped producing SKIPS. Neither is a
+    # green, and both pass the same eyeball.
     #
     # That is the rule this repository already had, meeting a packet that tried to
     # route around it. The `\|` is not a formatting detail in the summary line; it
@@ -280,8 +286,22 @@ gate:
     # core has `test_the_gate_floor_is_not_below_the_suite_core_claims_to_have`,
     # and parlor has no equivalent, so raising this number when the suite grows
     # is a thing a human has to remember until MD12's machinery lands).
-    # It is 710 today, raised by the tenant-proof packet: 665 -> 710, a +45 in
-    # two files and for one reason. `DEBT.md` D18 measured this repository at
+    # It is 727 today. 710 -> 727, a +17, all of them in
+    # `server/adapter.test.mjs` — the Node-to-Web adapter that binds the built
+    # fetch handler to a socket and serves the built client assets. Both of those
+    # are things the built server does not do: it exports `{ fetch(request) }` and
+    # answers 404 for `/assets/*`, which is a page that renders, a green
+    # `/healthz` and a sign-in form that submits into nothing.
+    #
+    # It is also the one file in the tree where a byte is translated between two
+    # runtimes, so every property that fails silently is asserted directly: two
+    # cookies arriving as two `Set-Cookie` headers rather than one joined by
+    # ", ", a streamed POST body needing `duplex: "half"` or `new Request` throws
+    # on every sign-in, a `..`-bearing path refused at the filesystem boundary,
+    # and a throwing handler answering 500 rather than killing the process.
+    #
+    # The floor before that, 710, was raised by the tenant-proof packet:
+    # 665 -> 710, a +45 in two files and for one reason. `DEBT.md` D18 measured this repository at
     # zero cross-tenant negative tests, and that was true: there was nothing in
     # the suite asserting that one account's rows are not another account's.
     # The number moved because the account boundary is now written down in two
@@ -308,11 +328,16 @@ gate:
     # reconcile with the summary line is a floor nobody is reading.
     - id: suite
       match: '^[ ]*Tests[ ]+([0-9]+)[ ]+passed(?![ ]*\|)'
-      minimum: 710
+      minimum: 727
     # The tally `tests/validate-ci.sh` prints, which is the second half of this
     # gate: the checks that the tree still has the shape CI assumes — one
     # runtime pin, `npm ci` and not `npm install`, the gate command, the
-    # end-to-end tier's shape, and now the deployment story's shape. 41 is this machine's count.
+    # end-to-end tier's shape, and now the deployment story's shape.
+    #
+    # 46 is this machine's count, up from 41: the deployment story added five.
+    # A floor is a decrease-detector, so it is raised to the real count rather
+    # than left under it — a floor below the tally cannot tell a check being
+    # removed from a check being lost.
     #
     # NO ESCAPE TOLERANCE HERE, and the difference is measured rather than
     # assumed. This line is a bash `printf` in `tests/validate-ci.sh` (line 1039),
@@ -341,11 +366,11 @@ gate:
     # pretend otherwise.
     - id: ci-shape-checks
       match: '^([0-9]+) passed, [0-9]+ failed, [0-9]+ skipped$'
-      minimum: 41
-    # And the self-test, which is what makes the 41 above load-bearing: 42
+      minimum: 46
+    # And the self-test, which is what makes the 46 above load-bearing: 50
     # throwaway copies of the tree, each broken one way, each asserted to go
-    # red. A gate that runs the 41 checks but silently stopped proving they can
-    # fail would still print `41 passed` — this is the line that says the
+    # red. A gate that runs the 46 checks but silently stopped proving they can
+    # fail would still print `46 passed` — this is the line that says the
     # rubber stamp was pressed.
     #
     # Also a bash `printf` in the same file (line 1030) and also plain by
@@ -356,7 +381,7 @@ gate:
     # colon.
     - id: check-self-test
       match: '^self_test: ([0-9]+) breakages'
-      minimum: 42
+      minimum: 50
   # NOT PROVED, and named here rather than left to be discovered: a proof is a
   # line of output. `484 passed` proves 484 tests ran; it does not prove the
   # tests touched identity, because they do not — the identity and billing
@@ -450,7 +475,7 @@ ci:
   #
   # Note what is NOT declared here and should not be: that ci.yml also has a
   # `ci` job running kit's reusable workflow and a `build` job running
-  # typecheck + next build. They are not the gate. `bin/prime` is the gate, and
+  # typecheck + build. They are not the gate. `bin/prime` is the gate, and
   # core's checker asks one question of a workflow — does it invoke the argv
   # this declaration names — so a declaration that listed the build job as the
   # gate would be checked against a job that is not one.

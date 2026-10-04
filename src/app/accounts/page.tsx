@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { Link } from "@tanstack/react-router";
 
 import { AccountsScreen } from "./accounts-screen";
 
@@ -39,7 +39,7 @@ export function SignedOut() {
         are.
       </p>
       <p className="mt-4 text-sm">
-        <Link className="font-medium underline underline-offset-2 hover:no-underline" href="/login">
+        <Link className="font-medium underline underline-offset-2 hover:no-underline" to="/login">
           Sign in
         </Link>
       </p>

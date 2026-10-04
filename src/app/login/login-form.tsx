@@ -18,8 +18,8 @@
  * about what exists.
  */
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { Link } from "@tanstack/react-router";
+import { useNavigation } from "@/lib/navigation";
 import { useRef, useState, type FormEvent } from "react";
 
 import { Button, Callout, Field, FieldSummary, Input } from "@/components/ui";
@@ -56,7 +56,7 @@ type FormState =
   | { kind: "failed"; summary: string; fields: FieldError[] };
 
 export function LoginForm({ passwordChanged = false }: { passwordChanged?: boolean } = {}) {
-  const router = useRouter();
+  const router = useNavigation();
   const { login, pending } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -158,7 +158,7 @@ export function LoginForm({ passwordChanged = false }: { passwordChanged?: boole
         registered.
       */}
       <p className="text-sm">
-        <Link className="underline hover:no-underline" href="/forgot-password">
+        <Link className="underline hover:no-underline" to="/forgot-password">
           Forgot your password?
         </Link>
       </p>

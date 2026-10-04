@@ -1,7 +1,8 @@
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import Home from "./page";
+import { renderWithRouter } from "@/test/support/render";
 
 /**
  * The landing page.
@@ -14,19 +15,19 @@ import Home from "./page";
  */
 describe("landing page", () => {
   it("renders the parlor brand name as the page heading", () => {
-    render(<Home />);
+    renderWithRouter(<Home />);
 
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("parlor");
   });
 
   it("states the template's promise that buyers own the code", () => {
-    render(<Home />);
+    renderWithRouter(<Home />);
 
     expect(screen.getByText(/you own the code/i)).toBeInTheDocument();
   });
 
   it("links to the health surface", () => {
-    render(<Home />);
+    renderWithRouter(<Home />);
 
     // A prefix match, not an exact one. The card is a single link whose
     // accessible name is its title run together with its description, and
@@ -38,7 +39,7 @@ describe("landing page", () => {
   });
 
   it("links to every section this build has", () => {
-    render(<Home />);
+    renderWithRouter(<Home />);
 
     const nav = screen.getByRole("navigation", { name: "Sections" });
     const hrefs = Array.from(nav.querySelectorAll("a")).map((a) => a.getAttribute("href"));
@@ -49,7 +50,7 @@ describe("landing page", () => {
   });
 
   it("links nowhere that does not exist, and in particular nowhere near subscriptions", () => {
-    render(<Home />);
+    renderWithRouter(<Home />);
 
     const hrefs = Array.from(document.querySelectorAll("a")).map((a) => a.getAttribute("href") ?? "");
 

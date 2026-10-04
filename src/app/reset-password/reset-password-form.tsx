@@ -52,7 +52,7 @@
  * then clicked it.
  */
 
-import { useRouter } from "next/navigation";
+import { useNavigation } from "@/lib/navigation";
 import { useRef, useState, type FormEvent } from "react";
 
 import { Button, Field, FieldSummary, Input } from "@/components/ui";
@@ -101,7 +101,7 @@ type FormState =
   | { kind: "unusable-link" };
 
 export function ResetPasswordForm({ token }: { token: string | null }) {
-  const router = useRouter();
+  const router = useNavigation();
   const { client } = useAuth();
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");

@@ -1,10 +1,6 @@
-import type { Metadata } from "next";
 
 import { PlansScreen } from "./plans-screen";
 
-export const metadata: Metadata = {
-  title: "Plans · parlor",
-};
 
 /**
  * `/billing/plans` — the plan catalogue.

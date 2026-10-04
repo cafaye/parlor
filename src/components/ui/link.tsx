@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { Link } from "@tanstack/react-router";
 import type { ComponentProps, ReactNode } from "react";
 
 import { cx } from "@/lib/cx";
@@ -35,21 +35,31 @@ const BASE =
 /** The class, for the call sites that need an element other than these two. */
 export const linkClasses = BASE;
 
-export type TextLinkProps = Omit<ComponentProps<typeof Link>, "className"> & {
+export type TextLinkProps = Omit<ComponentProps<typeof Link>, "className" | "to"> & {
   className?: string;
+  /**
+   * Where it goes, under the name this app's components have always used.
+   *
+   * The router's own prop is `to`, and this component takes `href` anyway:
+   * thirty-odd call sites spell it `href`, a button that navigates is a link and
+   * a link is an anchor, and an `href` is what an anchor has. The translation
+   * happens once, here, which is the whole reason this is a component rather
+   * than a class string at each site.
+   */
+  href: string;
   children: ReactNode;
 };
 
 /**
  * An inline link in running text: "Sign in", "Go to the account", "Try again".
  *
- * Wraps `next/link`, so middle-click, open-in-new-tab and "copy link address"
- * all work. A `<button>` styled as a link does not offer any of them, which is
- * why `Button` has no `href`.
+ * Wraps the router's `Link`, so middle-click, open-in-new-tab and "copy link
+ * address" all work. A `<button>` styled as a link does not offer any of them,
+ * which is why `Button` has no `href`.
  */
-export function TextLink({ className, children, ...rest }: TextLinkProps) {
+export function TextLink({ className, children, href, ...rest }: TextLinkProps) {
   return (
-    <Link className={cx(BASE, "font-medium", className)} {...rest}>
+    <Link className={cx(BASE, "font-medium", className)} to={href} {...rest}>
       {children}
     </Link>
   );
@@ -66,12 +76,13 @@ export function TextLink({ className, children, ...rest }: TextLinkProps) {
  *
  * Focus ring included, which the ten hand-written versions of this did not have.
  */
-export type CardLinkProps = Omit<ComponentProps<typeof Link>, "className"> & {
+export type CardLinkProps = Omit<ComponentProps<typeof Link>, "className" | "to"> & {
   className?: string;
+  href: string;
   children: ReactNode;
 };
 
-export function CardLink({ className, children, ...rest }: CardLinkProps) {
+export function CardLink({ className, children, href, ...rest }: CardLinkProps) {
   return (
     <Link
       className={cx(
@@ -80,6 +91,7 @@ export function CardLink({ className, children, ...rest }: CardLinkProps) {
         "hover:border-border-strong hover:bg-surface-sunken",
         className,
       )}
+      to={href}
       {...rest}
     >
       {children}
