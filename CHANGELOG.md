@@ -349,10 +349,11 @@ All notable changes to parlor are recorded here. The format follows
   Cafaye/site carried **29 type errors** behind a passing local gate for as long
   as the migration ran, and the argument is the same one the build step's entry
   below makes: a check that only runs on a runner is a check its author watches
-  fail from a distance. Measured on this tree, `npm run typecheck` is 4.7s and
-  exits 0, with a planted error (`const planted: number = "not a number"`) it
-  reports as `error TS2322` and exits 2 — and `./bin/prime` stops there, before
-  the build.
+  fail from a distance. Measured on this tree: `npm run typecheck` is 4.7s and
+  exits 0; with `const planted: number = money.currency` planted in
+  `src/lib/money.ts` it reports `error TS2322`, exits 2, and `./bin/prime` stops
+  there — before the build, with 727 tests green above it, because vitest
+  transpiled the very line `tsc` rejected and never noticed.
 
   It is ahead of the build in the sequence on purpose: both read the tree and
   the typecheck is the cheaper and more specific of the two, so a type error is

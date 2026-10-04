@@ -548,9 +548,10 @@ else
   no "bin/prime is executable" "$PRIME is not chmod +x"
 fi
 
-# The gate is four commands and its own header says a green run means the
-# checkout reproduces AND the tree compiles AND the tree type checks. An extra
-# install in here would change what that means.
+# The gate is four npm commands (bin/prime's own header counts five, the
+# fifth being this script, which is not an npm command) and its header says a
+# green run means the checkout reproduces AND the tree compiles AND the tree type
+# checks. An extra install in here would change what that means.
 #
 # `npm run build` and `npm run typecheck` are both in the list on purpose, and the
 # alternation has to name them explicitly. A pattern of `( ci| install| test)?$`
