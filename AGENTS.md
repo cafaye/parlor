@@ -115,13 +115,40 @@ the plugin's own `dist/server/wrangler.json` and `dist/client/assets`, with a
 for the Node target, against `.output/server/index.mjs` and `.output/public`).
 
 `.github/workflows/e2e.yml` — the whole-stack tier, its own workflow and its own
-required job. It checks out `../identity` and `../guard` beside this repository
-and has a step that fails when `../$sibling/Dockerfile` is absent. **That step
-now describes a build the stack does not do**: `e2e/docker-compose.yml` carries
-`image:` and no `build:` for identity and gateway, so this repository cannot
-prove the sibling checkouts are what the run consumed. Known, separate and
-unfixed — the escape hatch for a developer who needs it is
-`E2E_BUILD_SIBLINGS=1`.
+required job. It checks out `../identity` and `../gateway` beside this
+repository — **every checkout names a `repository:`**, and that is not
+boilerplate: `actions/checkout` with only `path:` checks out
+`${{ github.repository }}` into the directory `path:` names, so for this job's
+whole life `../identity` held a copy of *parlor* and the sibling assertion below
+was satisfied by this repository's own Dockerfile. The job had never checked out
+a sibling, and a renamed path is not a checkout of a renamed repository.
+**The mechanism is `bin/e2e-stack publish-siblings`, not a compose build
+stanza**: `e2e/docker-compose.yml` carries `image:` and no `build:` for either
+sibling, so the checkouts are load-bearing because of *where the tags come
+from* — the stack's registry is a `registry:2` container the run starts itself
+with no volume, so on a fresh runner it holds nothing, and
+`ensure_sibling_artifacts` can only fill it by building each sibling from a
+named ref of its checkout. The same two checkouts supply
+`../identity/migrations`, which `migrate()` reads from the host. The assertion
+step sets `working-directory: parlor` (it was the only `run:` step that did not,
+so `../identity` resolved *beside* the workspace, where a `path:` checkout puts
+nothing) and reads `SIBLING_SERVICES` out of `bin/e2e-stack` rather than
+restating it, failing loudly on an empty extraction.
+`E2E_BUILD_SIBLINGS=1` is the developer's hatch that puts the `build:` stanzas
+back, and this job does not set it.
+
+- **`SIBLING_SERVICES=(identity gateway)` is TWO entries and that is decided,
+  not inherited.** The list is not a wish list: it is what four loops in
+  `bin/e2e-stack` iterate — `preflight`'s Dockerfile check, `publish_siblings`'
+  build and push, and `ensure_sibling_artifacts`' probe, pull and checkout test.
+  `pantry` appears nowhere in this tree, and adding it is not a widening but a
+  red build: `publish_siblings`' `case` has recipes for identity and gateway and
+  a `*)` arm that dies with "no build recipe for sibling pantry", on the default
+  path, in CI. (`cafaye/site`'s list has three entries and that is right for
+  `site`.) Adding a service to this tier is three edits in one commit — a
+  `publish_siblings` recipe, a `build:` context in
+  `e2e/docker-compose.siblings.yml`, and the entry in `SIBLING_SERVICES` — and
+  never the last one alone.
 
 - **The gate is `bin/prime`, and CI runs that script, not a list of `npm run`
   commands.** If the two can disagree, one of them is lying. Adding a check
