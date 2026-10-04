@@ -75,6 +75,30 @@ function copyFontFiles(): Plugin {
 }
 
 export default defineConfig({
+  // `@/*` -> `./src/*`, declared once in tsconfig.json and consumed here.
+  //
+  // WITHOUT THIS LINE `vite dev` DOES NOT WORK, and `vite build` is green
+  // anyway, which is what let the defect survive a migration and a full gate.
+  // Measured on this tree before the line existed:
+  //
+  //   $ npx vite dev --port 3997 --strictPort
+  //   (!) Failed to run dependency scan. ... @/app/verify-email/page
+  //       (imported by src/routes/verify-email.tsx) could not be resolved
+  //   $ curl -o- http://[::1]:3997/          -> 500
+  //   $ curl -o- http://[::1]:3997/healthz   -> 500  {"status":500,...}
+  //
+  // Every route, including the health check. The build resolves the alias
+  // because `tanstackStart()` carries a resolve plugin that reads tsconfig
+  // paths, and that plugin is registered for the build; the dev server's own
+  // dependency scan runs outside it. So the two halves of `vite` disagree, and
+  // only one of them is exercised by `npm run build`.
+  //
+  // Vite 8.3.2 has this natively — `resolve.tsconfigPaths`, default **false**.
+  // Declaring it here rather than in `vitest.config.mts` is the point: vitest
+  // already reads the alias from tsconfig on its own, so the alias was working
+  // in the suite and in the build and in neither dev, and nothing in the gate
+  // starts a dev server to notice.
+  resolve: { tsconfigPaths: true },
   plugins: [tanstackStart(), viteReact(), copyFontFiles()],
   css: { postcss: { plugins: [tailwindPostcss()] } },
   // Without this a font above some size threshold would be inlined into the
