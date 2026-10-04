@@ -1211,6 +1211,243 @@ describe("tenancy: the failures the service declares", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// The social surface.
+//
+// The two calls that make up a social sign-in, and the reason they do not look
+// like any other method in this file: **both are redirects rather than JSON**,
+// at least one of them, and `send`'s contract — 2xx or throw — is wrong for a 302.
+// So the 3xx is recognised before the failure branch, which is the ordering
+// identity's own client uses for the same operation and for the same reason: a
+// 302 carries no problem document, so an implementation that checked the status
+// first would report a redirect as a malformed answer from a proxy.
+// ---------------------------------------------------------------------------
+
+describe("social login: starting the flow", () => {
+  it("asks identity for the provider's address and sends no credential", async () => {
+    // `security: []` in the document. The operation reads a session cookie but
+    // only to record an INTENTION — whether this becomes a sign-in or a LINK —
+    // so it needs no credential of its own, and `send` is called with no `token`
+    // for the same reason the recovery routes take none.
+    const { transport, calls } = stubTransport(
+      () =>
+        new Response(null, {
+          status: 302,
+          headers: { Location: "https://accounts.google.com/o/oauth2/v2/auth?state=xyz" },
+        }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const location = await client.startSocialLogin("google");
+
+    expect(calls[0].method).toBe("GET");
+    expect(calls[0].url).toBe(`${baseUrl}/v1/auth/oauth/google`);
+    // The header a client must NOT send, asserted by name because "the transport
+    // attaches one" is the kind of thing a later refactor adds back quietly.
+    expect(calls[0].headers.Authorization).toBeUndefined();
+    expect(location).toBe("https://accounts.google.com/o/oauth2/v2/auth?state=xyz");
+  });
+
+  it("treats the 302 as the success it is, not as a failure", async () => {
+    // The one test that distinguishes this method from `send`. A 302 is not
+    // `response.ok`, so an implementation that reached the failure branch first
+    // would throw `IdentityError` on a perfectly good answer — and the button
+    // would never navigate anywhere.
+    const { transport } = stubTransport(
+      () => new Response(null, { status: 302, headers: { Location: "https://example.test/go" } }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await expect(client.startSocialLogin("github")).resolves.toBe("https://example.test/go");
+  });
+
+  it("fails rather than return an empty string when the answer carries no Location", async () => {
+    // A 302 with nowhere to send the browser is not a success, and an empty
+    // string here would render as a link pointing at the current page. identity's
+    // own client raises here for exactly the same reason.
+    const { transport } = stubTransport(() => new Response(null, { status: 302 }));
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const failure = await theFailure(client.startSocialLogin("google"));
+
+    expect(failure.status).toBe(302);
+    expect(failure.message).toMatch(/Location/);
+  });
+
+  it("reports a 2xx as the contract violation it is", async () => {
+    // The document promises no 2xx for this operation. One means something
+    // between here and identity is not identity, and there is no Location to
+    // report — so it must not be handed back as an empty string either.
+    const { transport } = stubTransport(() => json(200, {}));
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const failure = await theFailure(client.startSocialLogin("google"));
+
+    expect(failure.message).toMatch(/redirect/i);
+  });
+
+  it("carries a refusal rather than an address of nowhere", async () => {
+    // A provider this deployment has no credentials for, and a provider that does
+    // not exist, are BOTH this answer. The client must not distinguish them, and
+    // must certainly not render the message — which is why `IdentityError.title`
+    // is the fixed summary and `message` carries `detail`.
+    const { transport } = stubTransport(() =>
+      problem(404, { code: "not_found", title: "Not found." }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const failure = await theFailure(client.startSocialLogin("gitlab"));
+
+    expect(failure.status).toBe(404);
+    expect(failure.code).toBe("not_found");
+  });
+});
+
+describe("social login: reaching the callback", () => {
+  it("reads a finished sign-in as a session", async () => {
+    // The sign-in shape: a `token`, and the `__Host-session` cookie that rides
+    // alongside it in the response headers. This method only ever sees the body,
+    // because the cookie belongs to the browser — which is exactly why the hop
+    // that produced it has to relay `Set-Cookie`, and why `upstream.test.ts` has
+    // a test for that which this one cannot stand in for.
+    const { transport, calls } = stubTransport(() =>
+      json(200, { token: "tok_social", expires_at: "2026-10-30T12:00:00Z" }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const result = await client.completeSocialLogin("github", {
+      code: "the-code",
+      state: "st_1",
+    });
+
+    expect(calls[0].method).toBe("GET");
+    expect(calls[0].url).toBe(
+      `${baseUrl}/v1/auth/oauth/github/callback?code=the-code&state=st_1`,
+    );
+    expect(calls[0].headers.Authorization).toBeUndefined();
+    expect(result).toEqual({
+      kind: "session",
+      session: { token: "tok_social", expires_at: "2026-10-30T12:00:00Z" },
+    });
+  });
+
+  it("reads a link as a link, and never as a session with an empty token", async () => {
+    // THE SHAPE THAT CATCHES A LAZY READER. The link body has `linked_provider`
+    // and NO `token` field at all, so a client that looked for `token` and
+    // defaulted it to `""` would be inventing a state the service does not have:
+    // a caller holding that would treat somebody's account as signed in when
+    // nothing was minted.
+    const { transport } = stubTransport(() => json(200, { linked_provider: "google" }));
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const result = await client.completeSocialLogin("google", { state: "st_1" });
+
+    expect(result).toEqual({ kind: "linked", linked: { linked_provider: "google" } });
+    expect(result).not.toHaveProperty("session");
+  });
+
+  it("reads a second factor as a login that is not finished", async () => {
+    // A 202 is NOT a session and must never be typed as one. It is also the one
+    // shape this app cannot finish from the browser: the second step is
+    // `POST /v1/session/mfa`, which is deliberately absent from the forwarder's
+    // allow-list (see `upstream.ts`), so a caller reaching this has somewhere to
+    // go and no route to take.
+    const { transport } = stubTransport(() =>
+      json(202, {
+        mfa_required: true,
+        challenge: "chal_1",
+        expires_at: "2026-10-30T12:10:00Z",
+      }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const result = await client.completeSocialLogin("github", { state: "st_1", code: "c" });
+
+    expect(result).toEqual({
+      kind: "mfa_required",
+      challenge: { mfa_required: true, challenge: "chal_1", expires_at: "2026-10-30T12:10:00Z" },
+    });
+    expect(result).not.toHaveProperty("session");
+  });
+
+  it("carries a declined consent as a refusal rather than as a missing code", async () => {
+    // Somebody who said no at the provider comes back with `error` and no `code`.
+    // identity answers that as a 400 on purpose so the screen can say "you
+    // declined" instead of "that is not valid" — which only works if `error` is
+    // in the URL this method builds.
+    const { transport, calls } = stubTransport(() =>
+      problem(400, {
+        code: "invalid_request",
+        title: "Invalid request",
+        detail: "this social sign-in did not start in this browser",
+      }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const failure = await theFailure(
+      client.completeSocialLogin("google", { state: "st_1", error: "access_denied" }),
+    );
+
+    expect(calls[0].url).toBe(
+      `${baseUrl}/v1/auth/oauth/google/callback?state=st_1&error=access_denied`,
+    );
+    expect(failure.status).toBe(400);
+  });
+
+  it("carries the anti-takeover 409 as a refusal, not as a session", async () => {
+    // An address a local account already holds REFUSES the sign-in. Flattening
+    // this into a success would be the worst answer available: somebody who
+    // controls a provider account with another person's address would walk into
+    // that account. It has to reach the screen as a 409.
+    const { transport } = stubTransport(() =>
+      problem(409, {
+        code: "conflict",
+        title: "Conflict",
+        detail: "an account already exists for the email address that oauth account reports",
+      }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const failure = await theFailure(client.completeSocialLogin("google", { state: "s", code: "c" }));
+
+    expect(failure.status).toBe(409);
+    expect(failure.code).toBe("conflict");
+  });
+
+  it("does not treat a body carrying both keys as something it recognises", async () => {
+    // Neither documented shape carries both, so this answer is one this build has
+    // no reading for. Returning a session for it would be a guess about which of
+    // the two the service meant, and this file does not guess — the same
+    // discipline `readJson` applies to a body that is not JSON.
+    const { transport } = stubTransport(() =>
+      json(200, { token: "tok_social", linked_provider: "google" }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const failure = await theFailure(client.completeSocialLogin("google", { state: "s", code: "c" }));
+
+    expect(failure.status).toBe(200);
+    expect(failure.message).toMatch(/recognise|recognize/i);
+  });
+
+  it("cannot be pointed at another provider's callback than the one it was asked for", async () => {
+    // A provider name is a PATH SEGMENT here, not a query parameter, and it is
+    // encoded on the way in. A caller that could smuggle `/callback` or a second
+    // provider into it would be asking a different question than the method says
+    // it is asking — which is the whole reason `upstream.ts` rebuilds the path
+    // from its own table instead of forwarding what it received.
+    const { transport, calls } = stubTransport(() => json(200, { linked_provider: "google" }));
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await client.completeSocialLogin("../google/../../me" as "google", { state: "s", code: "c" });
+
+    expect(calls[0].url).toBe(
+      `${baseUrl}/v1/auth/oauth/..%2Fgoogle%2F..%2F..%2Fme/callback?state=s&code=c`,
+    );
+    expect(calls[0].url).not.toContain("/v1/me");
+  });
+});
+
 describe("fieldErrorMessage: the tenancy codes", () => {
   it("says a blank name is required, not invalid", () => {
     // The service keeps these apart because they mean different things to the

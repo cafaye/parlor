@@ -540,21 +540,44 @@ of that file before changing anything in it.
   path that reads a destination from a header, a query string, a path segment or
   a body. `Host`, `X-Forwarded-Host` and `?url=` are all ignored, and there are
   tests that assert each of them by name.
-- **An allow-list, and the upstream path is REBUILT from it.** Twenty-two routes,
-  transcribed from the two clients. identity serves thirty; token introspection,
-  the MFA routes, API keys, OIDC clients, email changes and `/v1/probe/{id}` are
-  refused **before an address is contacted**. Because the path is rebuilt from
-  the table rather than forwarded as received, traversal, an absolute URL in a
-  segment and a doubled slash are not filtered — they are not expressible.
+- **An allow-list, and the upstream path is REBUILT from it.** Twenty-six routes,
+  transcribed from the two clients: twenty-one to identity, five to billing.
+  Token introspection, the MFA routes, API keys, OIDC clients, email changes and
+  `/v1/probe/{id}` are refused **before an address is contacted**. Because the
+  path is rebuilt from the table rather than forwarded as received, traversal, an
+  absolute URL in a segment and a doubled slash are not filtered — they are not
+  expressible.
 - **Wildcard segments are value-matched.** `:accountId` and `:userId` must be
   uuids. The router percent-decodes each segment before the handler sees it, so
   `accounts/%2e%2e%2f%2e%2e` arrives as one segment reading `../../`; a check
   that only counted positions would splice it into the upstream URL.
 - **Header allow-lists in both directions, never deny-lists.** A header this
   file does not name cannot be a smuggling channel.
+- **`location` is relayed only for a route that DECLARES itself a redirect.**
+  `redirect: "manual"` means the forwarder never *follows* a redirect, and the
+  response allow-list means it does not *hand one over* either — so a 302 from
+  an undeclared route reaches the browser as a 302 with nowhere to go, which is
+  the honest dead end. `GET /v1/auth/oauth/{provider}` is the one route whose
+  answer *is* a redirect, and it carries `browserRedirect: true` on its entry in
+  `ROUTES`; `relay` reads that mark to decide whether to pass `Location` on. The
+  decision was taken deliberately against adding `location` to the global list,
+  because the hazard being relaxed is an *undeclared* upstream redirect steering
+  the browser somewhere the allow-list never approved, with a session cookie
+  riding it off-origin. A declared route is the service's own 302 on a path the
+  table already names. `../site` uses the same mechanism and declares nothing
+  with it; if you add a redirect route there, add the mark.
 - **`Set-Cookie` goes through `getSetCookie()`, never `get()`.** The second
   returns values joined with ", ", which lands inside one cookie's `Expires` and
   destroys both. The 202 MFA branch is the case that proves it matters.
+- **Cookies are relayed on a 302, not only on a 200.** The social start leg is
+  the 302 *and* the leg that sets `__Host-oauth-state`, so a relay that treated
+  cookies as a success-response detail would hand the browser a redirect to a
+  provider with no state cookie — and the callback would then refuse the round
+  trip with a 400 that says the flow "did not start in this browser". It did.
+  Three tests in `upstream.test.ts` hold this: the start leg's 302 carrying both
+  `Location` and `Set-Cookie`, a 302 on an *undeclared* route arriving with no
+  `Location`, and the whole round trip walked end to end. All three were proved
+  able to fail by breaking the implementation and watching them go red.
 - **The cookie's attributes are never rewritten.** `__Host-` is a contract the
   *browser* enforces: `Secure`, `Path=/`, and no `Domain`. Adding a `Domain` to
   "make it work" is exactly what makes the browser reject the cookie, and

@@ -8,10 +8,13 @@
  *   DELETE /v1/session  204
  *   GET    /v1/me        200 {id,email} | 401
  *
- * plus the two password-reset routes below, and the tenancy surface the same
- * service exposes under /v1/accounts and /v1/invitations. See "The tenancy
- * surface" below for where those shapes come from, which is not the place you
- * would expect.
+ * plus the two password-reset routes below, the tenancy surface the same
+ * service exposes under /v1/accounts and /v1/invitations, and the two social
+ * routes under /v1/auth/oauth — which are the only two whose request is made by
+ * the browser rather than by this client. See "The tenancy surface" below for
+ * where the tenancy shapes come from, which is not the place you would expect;
+ * the social shapes come from `identity/openapi/v1.yaml`, which does describe
+ * them.
  *
  * Two decisions are worth stating up front, because both will look like
  * accidents otherwise.
@@ -238,6 +241,40 @@ export type IdentityClient = {
   requestEmailVerification(email: string): Promise<RecoveryAccepted>;
   redeemEmailVerification(input: RedeemVerificationInput): Promise<void>;
   verificationStatus(token: string): Promise<VerificationStatus>;
+
+  // ---------------------------------------------------------------------------
+  // The social surface — two routes, and NEITHER ONE IS AN ORDINARY XHR.
+  //
+  // These are the only two operations in this file whose answer is not a body the
+  // caller reads out of a 2xx, and that is why `startSocialLogin` does not use
+  // `send`: a 302 is not `response.ok`, so an implementation that reached the
+  // failure branch first would report a redirect as a malformed answer from a
+  // proxy. The order below is the one identity's own client uses for the same
+  // operation, for the same reason.
+  //
+  // `startSocialLogin` returns the ADDRESS TO GO TO rather than navigating: a
+  // `fetch` cannot perform a top-level navigation to another origin, and one
+  // that tried would be github.com answering a sign-in with an HTML page. What
+  // the browser does with that address is the screen's business — see
+  // `window.location`, which this file deliberately does not touch.
+  //
+  // NEITHER CALL TAKES A TOKEN. Both routes are `security: []`, and the reason
+  // is not only that a credential would be ignored: the start leg READS the
+  // session cookie to record whether this becomes a sign-in or a LINK, and
+  // sending a bearer header as well would make "signed in" ambiguous between two
+  // sources of the same fact. The cookie travels anyway, because the browser
+  // sends it and the forwarder carries it — see the `cookie` entry in
+  // `FORWARDED_REQUEST_HEADERS`.
+  //
+  // The third leg is not here: redeeming a challenge from the `mfa_required`
+  // arm is `POST /v1/session/mfa`, which the forwarder's table deliberately
+  // refuses. See the note on `ROUTES` in `src/lib/upstream.ts`.
+  // ---------------------------------------------------------------------------
+  startSocialLogin(provider: SocialProvider): Promise<string>;
+  completeSocialLogin(
+    provider: SocialProvider,
+    input: SocialCallbackInput,
+  ): Promise<SocialSignIn>;
 };
 
 /**
@@ -287,6 +324,90 @@ export type VerificationStatus = {
   email: string;
   email_verified: boolean;
   email_verified_at?: string;
+};
+
+/**
+ * A provider name, as this file accepts one: ANY string.
+ *
+ * That is not carelessness and it is not the same as saying every name works.
+ * The document's `provider` parameter is `enum: [google, github]`, and a caller
+ * holding a closed union here would be protected from exactly the case that has
+ * to work: a provider this app has never heard of. The service answers 404 both
+ * for a name it has no credentials for and for a name that does not exist, so
+ * "not one of ours" and "not configured here" have to be askable and have to
+ * arrive as the same answer, or this file would be turning one into the other.
+ *
+ * The place the name is checked is `SEGMENT_PATTERNS.provider` in
+ * `src/lib/upstream.ts` — once, at the forwarder, on the way to an address — and
+ * the test named "asks identity about a provider this app does not narrow to the
+ * document's enum" is what holds that line. A string type here and a shape there
+ * is the whole arrangement: this file is allowed to ask, and the gate decides.
+ */
+export type SocialProvider = string;
+
+/**
+ * The 200 from the social callback on the LINK path.
+ *
+ * `SocialLinked` in the document. A flow that started while somebody was signed
+ * in attaches the provider identity to that account instead of signing anybody
+ * in, so this body carries NO `token` — not an empty one, no field at all, which
+ * is the honest signal for "nothing was minted". A client that reads `token` off
+ * this shape finds nothing, and that is the contract rather than an oversight.
+ */
+export type SocialLinked = { linked_provider: string };
+
+/**
+ * The 202 from the social callback: a correct round trip and an UNFINISHED login.
+ *
+ * Typed here rather than left out because `send` returns it as a success — it is
+ * a 2xx — and a type that silently omitted it would be claiming a caller can
+ * read `token` off every successful social sign-in. It cannot.
+ *
+ * `MFAChallenge` in the document, and the same three fields `POST /v1/session`
+ * answers 202 with. There is no `token` and adding one would be the bug that
+ * schema exists to prevent.
+ */
+export type SocialMfaChallenge = {
+  mfa_required: boolean;
+  challenge: string;
+  expires_at: string;
+};
+
+/**
+ * What a finished social round trip can be: a session, a link, or a challenge.
+ *
+ * A DISCRIMINATED union rather than the three bodies, because the whole risk on
+ * this route is reading the wrong one. `token` and `linked_provider` are
+ * mutually exclusive on the wire and a caller that defaults a missing `token` to
+ * `""` would be inventing a signed-in state the service never minted — somebody
+ * who controls a provider account with another person's address would walk into
+ * that account. `kind` makes the caller state which it got, and a body carrying
+ * BOTH keys is refused rather than guessed at.
+ *
+ * Which of the three arrived is decided by the INTENTION recorded when the flow
+ * started, before the code was spent, and not by anything a client asks for.
+ */
+export type SocialSignIn =
+  | { kind: "session"; session: Session }
+  | { kind: "linked"; linked: SocialLinked }
+  | { kind: "mfa_required"; challenge: SocialMfaChallenge };
+
+/**
+ * The query string the provider sends the browser back with.
+ *
+ * All three are parameters of the callback route in the document and in that
+ * order. `state` is required and the other two are alternatives: `code` is
+ * absent when the provider reported a problem, and `error` is absent when it did
+ * not, so "declined consent" and "presented something invalid" are told apart
+ * by their presence rather than by a message. The service collapses the four
+ * refusals it has into one 400 on purpose; this shape is where the difference
+ * between "the provider said no" and "the provider said nothing useful" is still
+ * visible, and dropping `error` here would throw that away.
+ */
+export type SocialCallbackInput = {
+  code?: string;
+  state: string;
+  error?: string;
 };
 
 export class IdentityError extends Error {
@@ -430,7 +551,169 @@ export function createIdentityClient(
       send(transport, `${base}/v1/email-verifications/confirm`, "POST", { body: input }),
     verificationStatus: (token) =>
       send(transport, `${base}/v1/email-verification`, "GET", { token }),
+
+    // -----------------------------------------------------------------------
+    // The social surface.
+    //
+    // Neither of these uses `send`, and both write the failure handling out
+    // rather than sharing a helper, because in each case the interesting case IS
+    // a status `send` would treat as a failure. `startSocialLogin` answers a 302,
+    // which is not `response.ok`; `completeSocialLogin` answers a 202, which is,
+    // and whose body is a challenge rather than a session. Sharing the path would
+    // mean threading a flag through `send` to say "this 3xx is the answer", and
+    // a flag like that is how a 302 stops being handled three calls later.
+    //
+    // What they DO share is `parseError` and `readJson`, so a refusal is still an
+    // `IdentityError` and a body that is not JSON still says so.
+    // -----------------------------------------------------------------------
+
+    startSocialLogin: async (provider) => {
+      const response = await transport({
+        // Encoded because the provider is a PATH SEGMENT and this is the only
+        // thing in this file that puts a caller-supplied string into a URL
+        // rather than reading one out of a route table. `../google/../../me`
+        // becomes `..%2Fgoogle%2F..%2F..%2Fme`: still nonsense, still refused by
+        // the forwarder's shape check, and no longer a path.
+        url: `${base}/v1/auth/oauth/${encodeURIComponent(provider)}`,
+        method: "GET",
+        headers: { Accept: "application/json, application/problem+json" },
+      });
+
+      // THE 3xx BRANCH COMES FIRST, and moving it below `response.ok` is the
+      // regression this method exists to avoid: a 302 is not `ok`, so a version
+      // that checked for a failure first would throw `IdentityError` on a
+      // perfectly good answer and the button would never navigate anywhere.
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get("location");
+        // A redirect with nowhere to go is not a success, and an empty string
+        // here would render as a link pointing at the page it is already on.
+        if (location === null) {
+          throw new IdentityError(
+            `identity answered ${response.status} with no Location header, so the browser has nowhere to be sent`,
+            { status: response.status, code: "internal" },
+          );
+        }
+        return location;
+      }
+
+      // The document promises no 2xx for this operation. One means whatever
+      // answered is not identity, and there is no address to report — so it must
+      // not come back as an empty string either.
+      if (response.ok) {
+        throw new IdentityError(
+          `identity answered ${response.status} to a social sign-in start, which has to be a redirect`,
+          { status: response.status, code: "internal" },
+        );
+      }
+
+      // A provider with no credentials and a provider that does not exist both
+      // land here, and stay indistinguishable: the status and code are the
+      // service's own, and this file adds nothing to either.
+      throw await parseError(response);
+    },
+
+    completeSocialLogin: async (provider, input) => {
+      const response = await transport({
+        url: socialCallbackUrl(base, provider, input),
+        method: "GET",
+        headers: { Accept: "application/json, application/problem+json" },
+      });
+
+      // 400 (declined, forged state, unusable address), 401 (a LINK whose
+      // session no longer resolves), 404 and 409 (an address a local account
+      // already holds) all arrive here and stay failures. The 409 in particular
+      // is the anti-account-takeover refusal and flattening it into a session
+      // would be the worst answer available.
+      if (!response.ok) throw await parseError(response);
+
+      return readSocialSignIn(await readJson(response), response.status);
+    },
   };
+}
+
+/**
+ * The callback's URL, carrying the parameters the provider sent.
+ *
+ * `code`, `state` and `error` are the three the document puts in the query
+ * string, and all three have to be here: `code` is what the round trip spends,
+ * `state` is what it is authenticated by, and `error` is how somebody who
+ * declined at the provider is told that rather than being handed the refusal
+ * reserved for a forged state.
+ *
+ * The order is the CALLER'S, not this file's, and it is deliberately not
+ * normalised. It does not matter to anything — the forwarder rebuilds the query
+ * from its own list in `ROUTES`, so `?state=..&code=..` arrives upstream as
+ * `?code=..&state=..` — and leaving it alone means the URL a caller reads in a
+ * failing test is the URL they wrote.
+ *
+ * A parameter that was not supplied is not sent as an empty one. `?error=` is a
+ * different answer from no `error` at all, and the service reads the difference.
+ */
+function socialCallbackUrl(
+  base: string,
+  provider: SocialProvider,
+  input: SocialCallbackInput,
+): string {
+  const query = new URLSearchParams();
+  for (const [name, value] of Object.entries(input)) {
+    if (value !== undefined) query.set(name, value);
+  }
+  const search = query.toString();
+  const segment = encodeURIComponent(provider);
+  return `${base}/v1/auth/oauth/${segment}/callback${search ? `?${search}` : ""}`;
+}
+
+/**
+ * Reads the callback's 200 or 202 as the one of three things it is.
+ *
+ * The three bodies are mutually exclusive on the wire, and this function is
+ * where that is enforced rather than assumed:
+ *
+ *   * `token` → a session, which is a sign-in that finished;
+ *   * `linked_provider` → a LINK, which minted nothing, and which must never be
+ *     read as a session with an empty token — somebody holding that would treat
+ *     an account as signed in when no session exists;
+ *   * `mfa_required` → an unfinished login and a challenge, which is a 2xx and
+ *     so arrives here like a success and is not one.
+ *
+ * A body with BOTH `token` and `linked_provider` is not a documented shape, and
+ * picking one of the two would be a guess about what the service meant. It is
+ * refused, on the same discipline `readJson` applies to a body that is not JSON.
+ * The status on that refusal is the real one, so a caller can tell "the service
+ * answered something nobody here can read" from "the service refused me".
+ */
+function readSocialSignIn(body: unknown, status: number): SocialSignIn {
+  const record = (body ?? {}) as Record<string, unknown>;
+  const isSession = typeof record.token === "string";
+  const isLinked = typeof record.linked_provider === "string";
+  const isChallenge = record.mfa_required === true;
+
+  if (isChallenge) {
+    return {
+      kind: "mfa_required",
+      challenge: {
+        mfa_required: true,
+        challenge: String(record.challenge ?? ""),
+        expires_at: String(record.expires_at ?? ""),
+      },
+    };
+  }
+
+  if (isSession && isLinked) throw unrecognisableSocialBody(status);
+  if (isSession) return { kind: "session", session: body as Session };
+  if (isLinked) return { kind: "linked", linked: body as SocialLinked };
+
+  // Neither key, which is what an empty body looks like — the case the
+  // forwarder's table-and-client walk hits, because its stub answers every hop
+  // with `200 {}`.
+  throw unrecognisableSocialBody(status);
+}
+
+function unrecognisableSocialBody(status: number): IdentityError {
+  return new IdentityError(
+    `identity's social callback answered ${status} with a body this app does not recognise as a session, a link or a challenge`,
+    { status, code: "internal" },
+  );
 }
 
 async function send<T>(
