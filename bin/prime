@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Prime a fresh checkout of parlor.
 #
-# Four commands on purpose: install EXACTLY the committed lockfile (`npm ci`,
+# Five commands on purpose: install EXACTLY the committed lockfile (`npm ci`,
 # which deletes node_modules and refuses to drift), run the full suite, PROVE
-# THE TREE STILL BUILDS, then check that the tree still says what CI assumes
-# about it. A green `bin/prime` means the checkout reproduces AND the gate is
-# the gate. Run it before touching code, and again before handing work off.
+# THE TREE STILL TYPE CHECKS, PROVE THE TREE STILL BUILDS, then check that the
+# tree still says what CI assumes about it. A green `bin/prime` means the
+# checkout reproduces AND the gate is the gate. Run it before touching code,
+# and again before handing work off.
 #
 # WHY `npm run build` IS HERE AND WAS NOT, which cost a fork months.
 #
@@ -26,6 +27,28 @@
 # So the build is in the gate a developer runs. It costs seconds, and it is the
 # difference between "the local gate is green" and "the tree compiles".
 #
+# WHY `npm run typecheck` IS HERE, which is the same argument one step earlier.
+#
+# `npm test` cannot see a type error either, and for a different reason than the
+# build: vitest transpiles each file it loads and hands it to a runtime. A call
+# with three arguments where the signature takes two, a property that does not
+# exist on a type, an interface implemented with the wrong member — none of them
+# stop the module from executing, so the suite passes and the runner rejects the
+# tree. `tsc --noEmit` is the only thing in this repository that reads a
+# declaration instead of an expression.
+#
+# Cafaye/site — the fork built from this template — carried 29 type errors
+# behind a green local gate for as long as the migration ran. Nothing about the
+# 29 was subtle: they were ordinary drift accumulated by a tree whose only
+# compiler ran in a job nobody opens unless they are already suspicious. The
+# cost of leaving the check on a runner is not the seconds it takes to run it.
+# It is that a developer who trusts the gate they can run has no reason to look,
+# so the errors sit there for weeks.
+#
+# So `tsc` is in the gate a developer runs, in front of the build because it is
+# the cheaper and more specific of the two: a type error should be a sentence
+# about a file and a line, not a bundler error about the same thing.
+#
 # `tests/validate-ci.sh` is here rather than only in the workflow on purpose: it
 # is the check that the runtime pin, the lockfile guard and the gate command
 # have not drifted apart, and a check that only runs on a CI runner is a check
@@ -40,6 +63,9 @@ npm ci
 
 echo "==> npm test"
 npm test
+
+echo "==> npm run typecheck"
+npm run typecheck
 
 echo "==> npm run build"
 npm run build

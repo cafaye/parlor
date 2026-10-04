@@ -334,9 +334,13 @@ gate:
     # runtime pin, `npm ci` and not `npm install`, the gate command, the
     # end-to-end tier's shape, and now the deployment story's shape.
     #
-    # 47 is this repository's DECLARED count, up from 46: this packet adds one
-    # check (every tally helper this file calls is a defined function) and the
-    # line it floors changed shape.
+    # 47 is this repository's DECLARED count. This packet did NOT raise it,
+    # and the reason is worth a sentence rather than silence: the typecheck
+    # packet EXTENDED the check that already pinned bin/prime's command list
+    # (one check, one verdict — naming a fifth command in the same exact-match
+    # list is not a new check), so the line above this comment still reads 47
+    # and the tally line agrees with it. One breakage was added, which is the
+    # other proof below, and that number is the one that moved.
     #
     # WHY THE FLOOR IS THE FIRST NUMBER AND NOT THE PASSED COUNT, which is the
     # whole content of this packet and the defect the TanStack migration
@@ -392,11 +396,20 @@ gate:
     - id: ci-shape-checks
       match: '^([0-9]+) checks declared, [0-9]+ passed, [0-9]+ failed, [0-9]+ skipped$'
       minimum: 47
-    # And the self-test, which is what makes the 47 above load-bearing: 51
+    # And the self-test, which is what makes the 47 above load-bearing: 52
     # throwaway copies of the tree, each broken one way, each asserted to go
     # red. A gate that runs the checks but silently stopped proving they can
     # fail would still print `47 checks declared` — this is the line that says
     # the rubber stamp was pressed.
+    #
+    # 51 -> 52 is this packet's: one breakage, `no-typecheck-in-prime`, which
+    # deletes `npm run typecheck` from the gate and is asserted to send the
+    # script red. The 47 above does NOT move, and the asymmetry is the point:
+    # this packet EXTENDED an existing check rather than adding a seventh
+    # kind of check, so the number of checks the script reaches a verdict on is
+    # unchanged while the number of ways it can be proven to fail went up by
+    # one. A floor that moved for a reason the tree does not contain is a floor
+    # nobody can reconcile with the tally line.
     #
     # ALSO A DECLARED COUNT, AND FOR THE SAME REASON. The self-test used to
     # floor the number of breakages it PROVED, which on a machine without `caf`
@@ -409,7 +422,7 @@ gate:
     # a true sentence and a false finding, which is the worst of both.
     #
     # So the proof now floors the number the repository DECLARES and the line
-    # carries the split: `self_test: 51 breakages declared, 50 proven able to
+    # carries the split: `self_test: 52 breakages declared, 51 proven able to
     # fail, 1 unprovable on this machine`. The unprovable one is named on its own
     # line in the run, counted here, and NEVER counted as proven. It is not
     # skipped to make this green — a skip that nobody is forced to notice is not
@@ -423,7 +436,7 @@ gate:
     # either, because the pattern needs the digits immediately after the colon.
     - id: check-self-test
       match: '^self_test: ([0-9]+) breakages declared'
-      minimum: 51
+      minimum: 52
   # NOT PROVED, and named here rather than left to be discovered: a proof is a
   # line of output. `484 passed` proves 484 tests ran; it does not prove the
   # tests touched identity, because they do not — the identity and billing

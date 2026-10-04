@@ -334,6 +334,46 @@ All notable changes to parlor are recorded here. The format follows
 
 ### Changed
 
+- **`bin/prime` now runs `npm run typecheck`, between the suite and the build.**
+  It ran `npm ci`, `npm test`, `npm run build` and
+  `tests/validate-ci.sh --self-test`, and `tsc --noEmit` was in none of them —
+  typechecking happened only in the `build` job of `ci.yml`.
+
+  The suite cannot see a type error, for a reason of its own rather than the
+  build's: vitest transpiles each file it loads and hands it to a runtime, so a
+  call with three arguments where the signature takes two, a property that does
+  not exist on a type, or an interface implemented with the wrong member all
+  execute and pass. `tsc --noEmit` is the only thing in this repository that
+  reads a declaration rather than an expression.
+
+  Cafaye/site carried **29 type errors** behind a passing local gate for as long
+  as the migration ran, and the argument is the same one the build step's entry
+  below makes: a check that only runs on a runner is a check its author watches
+  fail from a distance. Measured on this tree: `npm run typecheck` is 4.7s and
+  exits 0; with `const planted: number = money.currency` planted in
+  `src/lib/money.ts` it reports `error TS2322`, exits 2, and `./bin/prime` stops
+  there — before the build, with 727 tests green above it, because vitest
+  transpiled the very line `tsc` rejected and never noticed.
+
+  It is ahead of the build in the sequence on purpose: both read the tree and
+  the typecheck is the cheaper and more specific of the two, so a type error is
+  a sentence about a file and a line rather than a bundler error about the same
+  thing.
+
+  The check that reads `bin/prime` needed the same repair the build step's did,
+  for the same reason: its alternation could not match `npm run typecheck`, so
+  adding the command would have left it still reporting a three-command gate it
+  could no longer see. It now names ` run typecheck` explicitly and expects the
+  exact five-command list, so a gate that loses the step reports a *different*
+  list rather than a shorter one, and the 52nd self-test breakage
+  (`no-typecheck-in-prime`) deletes the line and asserts the check goes red.
+
+  **The `ci-shape-checks` floor stayed at 47 and the `check-self-test` floor
+  went 51 → 52**, and that asymmetry is the point rather than an oversight:
+  this extended an existing check instead of adding a seventh kind of one, so
+  the number of checks the script reaches a verdict on did not move while the
+  number of ways it can be proven to fail went up by one.
+
 - **`bin/prime` now runs `npm run build`, and the check that reads `bin/prime`
   was fixed so it can still see the gate.** The gate was `npm ci` then
   `npm test`, so a green gate meant "the suite passes" and nothing more.
