@@ -23,6 +23,7 @@ import { Route as BillingCustomersRouteImport } from './routes/billing/customers
 import { Route as BillingPlansRouteImport } from './routes/billing/plans'
 import { Route as InvitationsTokenRouteImport } from './routes/invitations/$token'
 import { Route as V1SplatRouteImport } from './routes/v1/$'
+import { Route as VerifyEmailIndexRouteImport } from './routes/verify-email.index'
 import { Route as VerifyEmailConfirmRouteImport } from './routes/verify-email/confirm'
 import { Route as V1AuthOauthProviderCallbackRouteImport } from './routes/v1/auth/oauth/$provider/callback'
 
@@ -96,6 +97,11 @@ const V1SplatRoute = V1SplatRouteImport.update({
   path: '/v1/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const VerifyEmailIndexRoute = VerifyEmailIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => VerifyEmailRoute,
+} as any)
 const VerifyEmailConfirmRoute = VerifyEmailConfirmRouteImport.update({
   id: '/confirm',
   path: '/confirm',
@@ -124,6 +130,7 @@ export interface FileRoutesByFullPath {
   '/v1/$': typeof V1SplatRoute
   '/verify-email/confirm': typeof VerifyEmailConfirmRoute
   '/accounts/': typeof AccountsIndexRoute
+  '/verify-email/': typeof VerifyEmailIndexRoute
   '/v1/auth/oauth/$provider/callback': typeof V1AuthOauthProviderCallbackRoute
 }
 export interface FileRoutesByTo {
@@ -134,7 +141,6 @@ export interface FileRoutesByTo {
   '/readyz': typeof ReadyzRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
-  '/verify-email': typeof VerifyEmailRouteWithChildren
   '/accounts/$accountId': typeof AccountsAccountIdRoute
   '/billing/customers': typeof BillingCustomersRoute
   '/billing/plans': typeof BillingPlansRoute
@@ -142,6 +148,7 @@ export interface FileRoutesByTo {
   '/v1/$': typeof V1SplatRoute
   '/verify-email/confirm': typeof VerifyEmailConfirmRoute
   '/accounts': typeof AccountsIndexRoute
+  '/verify-email': typeof VerifyEmailIndexRoute
   '/v1/auth/oauth/$provider/callback': typeof V1AuthOauthProviderCallbackRoute
 }
 export interface FileRoutesById {
@@ -161,6 +168,7 @@ export interface FileRoutesById {
   '/v1/$': typeof V1SplatRoute
   '/verify-email/confirm': typeof VerifyEmailConfirmRoute
   '/accounts/': typeof AccountsIndexRoute
+  '/verify-email/': typeof VerifyEmailIndexRoute
   '/v1/auth/oauth/$provider/callback': typeof V1AuthOauthProviderCallbackRoute
 }
 export interface FileRouteTypes {
@@ -181,6 +189,7 @@ export interface FileRouteTypes {
     | '/v1/$'
     | '/verify-email/confirm'
     | '/accounts/'
+    | '/verify-email/'
     | '/v1/auth/oauth/$provider/callback'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -191,7 +200,6 @@ export interface FileRouteTypes {
     | '/readyz'
     | '/register'
     | '/reset-password'
-    | '/verify-email'
     | '/accounts/$accountId'
     | '/billing/customers'
     | '/billing/plans'
@@ -199,6 +207,7 @@ export interface FileRouteTypes {
     | '/v1/$'
     | '/verify-email/confirm'
     | '/accounts'
+    | '/verify-email'
     | '/v1/auth/oauth/$provider/callback'
   id:
     | '__root__'
@@ -217,6 +226,7 @@ export interface FileRouteTypes {
     | '/v1/$'
     | '/verify-email/confirm'
     | '/accounts/'
+    | '/verify-email/'
     | '/v1/auth/oauth/$provider/callback'
   fileRoutesById: FileRoutesById
 }
@@ -338,6 +348,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof V1SplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/verify-email/': {
+      id: '/verify-email/'
+      path: '/'
+      fullPath: '/verify-email/'
+      preLoaderRoute: typeof VerifyEmailIndexRouteImport
+      parentRoute: typeof VerifyEmailRoute
+    }
     '/verify-email/confirm': {
       id: '/verify-email/confirm'
       path: '/confirm'
@@ -357,10 +374,12 @@ declare module '@tanstack/react-router' {
 
 interface VerifyEmailRouteChildren {
   VerifyEmailConfirmRoute: typeof VerifyEmailConfirmRoute
+  VerifyEmailIndexRoute: typeof VerifyEmailIndexRoute
 }
 
 const VerifyEmailRouteChildren: VerifyEmailRouteChildren = {
   VerifyEmailConfirmRoute: VerifyEmailConfirmRoute,
+  VerifyEmailIndexRoute: VerifyEmailIndexRoute,
 }
 
 const VerifyEmailRouteWithChildren = VerifyEmailRoute._addFileChildren(
