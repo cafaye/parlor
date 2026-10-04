@@ -35,7 +35,7 @@
 #      and pulls its dependencies; so does this file, for `parlor`. But
 #      `identity` and `gateway` carry an `image:` and NO `build:`, so this tier
 #      consumes them as published artifacts rather than rebuilding them from
-#      `../identity` and `../guard` on every run.
+#      `../identity` and `../gateway` on every run.
 #
 #      WHY, because "it is faster" is not the reason and the measured numbers
 #      say so: a warm full build here is 13.81s and invalidating identity costs
@@ -368,7 +368,7 @@ services:
     healthcheck:
       # /healthz, NOT /readyz, and the distinction is gateway's own: a dependency
       # outage is /readyz's to report and must not take the gateway out of
-      # rotation (../guard/docker-compose.yml says this at the same line). A
+      # rotation (../gateway/docker-compose.yml says this at the same line). A
       # container healthcheck on /readyz would restart the gateway every time
       # identity hiccuped. Readiness is the harness's job and it is done from
       # outside, on /readyz, in bin/e2e-stack.
@@ -460,7 +460,7 @@ services:
       # directory onto a file", which is a real message from this run rather
       # than a hypothetical.
       #
-      # The `../identity` / `../guard` build contexts that used to sit beside
+      # The `../identity` / `../gateway` build contexts that used to sit beside
       # this comment are gone from the default document, so the project
       # directory no longer has to be the repository root for THEM — it still
       # is, because bin/e2e-stack pins it that way and the sibling override

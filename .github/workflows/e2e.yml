@@ -7,10 +7,25 @@
 #     stack of containers, three image builds and a browser download do not: a
 #     gate that takes ten minutes is a gate people stop running, and a gate
 #     people stop running is a gate that is not a gate.
-#   * The stack needs sibling checkouts. `e2e/docker-compose.yml` builds
-#     identity's and gateway's images from `../identity` and `../guard`, and this
-#     repository cannot vendor a second copy of a sibling: a copy is a second
-#     thing to keep true. So the job checks out the fleet.
+#   * The stack needs sibling checkouts, and NOT because a compose file names
+#     them as build contexts — `e2e/docker-compose.yml` has no `build:` stanza
+#     for any sibling and consumes identity and gateway as `image:` by tag. It
+#     needs them because of WHERE those tags come from. The registry in the
+#     stack is a `registry:2` container this run starts itself
+#     (`bin/e2e-stack` ensure_registry), so it holds nothing when the run
+#     begins, and nothing in the fleet publishes to it beforehand. The one path
+#     that can fill it is `bin/e2e-stack publish-siblings`, which builds each
+#     sibling from a NAMED REF of its checkout, tags it and pushes it — and
+#     `ensure_sibling_artifacts` refuses to degrade when a checkout is missing:
+#     it exits 1 naming what it could not find. This repository cannot vendor a
+#     second copy of a sibling: a copy is a second thing to keep true. So the
+#     job checks out the fleet.
+#
+#     So the job DOES build the fleet, from checkouts, on the default path, and
+#     the checkouts are what `publish-siblings` reads rather than what compose
+#     reads. `E2E_BUILD_SIBLINGS=1` is the developer's hatch that puts the
+#     `build:` stanzas back (e2e/docker-compose.siblings.yml), and this job does
+#     not set it.
 #   * It is slow and it is not fast-feedback. It runs on push and on pull
 #     requests — not nightly, not pre-release — because a nightly E2E is a
 #     regression nobody reads about.
@@ -62,27 +77,43 @@ jobs:
     # bounded budget and prints the failing container's logs.
     timeout-minutes: 45
     steps:
-      # The fleet. `identity` and `gateway` are built from these checkouts by
-      # e2e/docker-compose.yml, so a job that checked out only this repository
-      # could not build the stack at all.
+      # The fleet. These are READ by bin/e2e-stack publish-siblings, which builds
+      # the sibling images from a named ref of each and pushes them into the
+      # registry this run starts (see the header). A job that checked out only
+      # this repository would start a stack whose sibling images exist nowhere,
+      # and `docker compose up` would fail pulling them.
       #
-      # Three checkout steps rather than one with a `path:` list, because
-      # `ref` differs between them: this repository is tested at the ref being
-      # pushed, and the siblings at master. A stack assembled from mismatched
-      # service versions is a different artifact with the same name, and
-      # pinning the siblings to this ref would mean a green run of a fleet that
-      # does not exist.
+      # THREE checkout steps rather than one with a `path:` list, because `ref`
+      # differs between them: this repository is tested at the ref being pushed,
+      # and the siblings at master. A stack assembled from mismatched service
+      # versions is a different artifact with the same name, and pinning the
+      # siblings to this ref would mean a green run of a fleet that does not
+      # exist.
+      #
+      # `repository:` IS NOT OPTIONAL ON ANY OF THE THREE, and the reason is the
+      # defect this step arrangement carried for its whole life: an
+      # `actions/checkout` with no `repository:` checks out
+      # `${{ github.repository }}` — this repository — into whatever directory
+      # `path:` names. So `path: identity` held a COPY OF PARLOR and `path: guard`
+      # held another copy of parlor in a directory called guard, and the presence
+      # assertion below was satisfied by this repository's own Dockerfile while
+      # proving nothing whatever about the fleet. The job had never checked out a
+      # sibling. A renamed path is not a checkout of a renamed repository, which
+      # is why the guard → gateway rename looked like the whole cause.
       - uses: actions/checkout@v7
         with:
+          repository: cafaye/parlor
           path: parlor
           ref: ${{ github.ref }}
       - uses: actions/checkout@v7
         with:
+          repository: cafaye/identity
           path: identity
           ref: master
       - uses: actions/checkout@v7
         with:
-          path: guard
+          repository: cafaye/gateway
+          path: gateway
           ref: master
 
       - uses: actions/setup-node@v7
@@ -96,15 +127,49 @@ jobs:
         working-directory: parlor
         run: npm ci
 
-      # The sibling checkouts have to exist before the compose file will even be
-      # read, and asserting it here names the two directories in a CI log
-      # instead of leaving a reader to work out why a build context is missing.
-      - name: the sibling checkouts the stack builds from are present
+      # The sibling checkouts have to exist before anything else runs, and
+      # asserting it here names the directories in a CI log instead of leaving a
+      # reader to work out why `publish-siblings` cannot find a ref.
+      #
+      # `working-directory: parlor`, and it is the whole of why this step was red
+      # on every push: without it the step runs from `$GITHUB_WORKSPACE`, so
+      # `../identity` resolves to `/home/runner/work/identity` — BESIDE the
+      # workspace, which is where a `path:` checkout puts nothing. Every other
+      # `run:` step in this job that reads this repository sets it. (The goose
+      # step omits it too and is fine: it reads no file in this repository.)
+      - name: the sibling checkouts the stack publishes its artifacts from are present
+        working-directory: parlor
         run: |
           set -euo pipefail
-          for sibling in identity gateway; do
+          # The list comes out of bin/e2e-stack rather than being restated here.
+          # A second copy of the sibling list is a list that goes quiet when a
+          # sibling is added, and the hand-written list this replaces named two
+          # entries of the fleet while calling one of them `guard` — which is how
+          # a step asserting nothing came to look green. `SIBLING_SERVICES` is the
+          # list publish_siblings, preflight and ensure_sibling_artifacts all
+          # iterate, so a workflow copy could only ever be a claim about it.
+          #
+          # An EMPTY extraction fails here rather than passing over nothing: a
+          # step that can assert zero siblings is a step that can go green
+          # without checking one.
+          siblings=$(sed -n 's/^SIBLING_SERVICES=(\(.*\))$/\1/p' bin/e2e-stack)
+          if [ -z "$siblings" ]; then
+            echo "::error::could not read SIBLING_SERVICES as a single-line list out of bin/e2e-stack, so this step asserts nothing" >&2
+            exit 1
+          fi
+          for sibling in $siblings; do
+            # TWO requirements per sibling, and they fail differently, so they
+            # are two messages. The Dockerfile is what `docker build` reads out
+            # of the exported tree. `.git` is what publish-siblings resolves the
+            # named ref in, and without it the failure surfaces as "ref not
+            # found" — which sends the reader to `git fetch` on a repository
+            # that is not there.
             if [ ! -f "../$sibling/Dockerfile" ]; then
-              echo "::error::../$sibling/Dockerfile is missing; e2e/docker-compose.yml builds that image from there" >&2
+              echo "::error::../$sibling/Dockerfile is missing; bin/e2e-stack publish-siblings builds that image from it, and this stack's registry holds nothing until it does" >&2
+              exit 1
+            fi
+            if [ ! -e "../$sibling/.git" ]; then
+              echo "::error::../$sibling is not a git checkout; publish-siblings builds from a NAMED REF and cannot name one without a repository" >&2
               exit 1
             fi
             echo "  ../$sibling: present"
