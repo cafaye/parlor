@@ -286,9 +286,52 @@ gate:
     # core has `test_the_gate_floor_is_not_below_the_suite_core_claims_to_have`,
     # and parlor has no equivalent, so raising this number when the suite grows
     # is a thing a human has to remember until MD12's machinery lands).
-    # It is 755 today. 727 -> 755, a +28 in two files, and both halves of the
-    # count are there because this is the only place in parlor that writes down
-    # how many tests there are.
+    # It is 798 today. 755 -> 798, a +43 in three new files, and every one of
+    # those tests is here because the failure it guards is invisible in a
+    # rendered string.
+    #
+    #   * 22 in `src/components/social/social-callback-screen.test.tsx`, on the
+    #     four answers `completeSocialLogin` can return plus the refusals. The
+    #     risk on that screen is reading the wrong one of three mutually
+    #     exclusive bodies: a LINK body read as a session, or a 202 MFA challenge
+    #     read as a success, is how a client claims a session nobody minted. Each
+    #     is asserted by what the screen does NOT do -- no token written, no
+    #     navigation -- as much as by its copy. One test exists only for the
+    #     exchange happening EXACTLY ONCE, asserted on the CALL COUNT rather than
+    #     on the result, because a screen that exchanged twice and rendered the
+    #     first answer correctly looks identical to one that exchanged once.
+    #   * 10 in `src/routes/v1/auth/oauth/$provider/callback.test.ts`, on the route
+    #     that took the callback away from the forwarder. The one that matters: a
+    #     document navigation is NOT forwarded, asserted on the returned value
+    #     rather than on a spy -- `createUpstreamForwarder` resolves its `fetch`
+    #     ONCE at construction, so a later `globalThis.fetch = ...` is invisible to
+    #     it and the first version of that assertion passed against a handler that
+    #     forwarded on every request. A page whose own navigation reached identity
+    #     and then fetched the same URL spends a one-shot authorization code twice
+    #     and reports it as a sign-in that did not work. The other half walks the
+    #     round trip through the forwarder and asserts the callback presents the
+    #     cookie the START leg set -- the leg nobody remembers -- and that the
+    #     path `src/lib/social.ts` builds is one the table serves, with the
+    #     segments DERIVED from that path so the two files can actually disagree.
+    #   * 11 in `src/components/social/social-provider-buttons.test.tsx`, run
+    #     against BOTH screens so a control that moved between them goes red. One
+    #     is a guard on the provider list not being empty: the buttons render as
+    #     nothing when it is, and every other assertion in the file would pass
+    #     vacuously.
+    #
+    #     The red proofs for this packet were run before the floor moved, and one of
+    #     the tests had to be REWRITTEN first: deleting the `exchanged` latch left
+    #     "exchanges the code exactly once" green, because it asserted after the
+    #     answer had arrived and the `landing.kind !== "working"` guard was doing
+    #     the work alone. It now holds the request open, which is the window the
+    #     latch exists for. Four named red proofs in all -- forwarding the
+    #     document branch (two tests), forwarding the programmatic branch,
+    #     deleting the latch, and misspelling the last segment of the callback
+    #     path in `src/lib/social.ts`.
+    #
+    # The floor before that, 755, was this: 727 -> 755, a +28 in two files, and
+    # both halves of the count are there because this is the only place in parlor
+    # that writes down how many tests there are.
     #
     #   * 16 in `src/lib/upstream.test.ts`, on the social-login surface. The
     #     packet's whole risk is a redirect and a cookie, and neither of those is
@@ -366,7 +409,7 @@ gate:
     # reconcile with the summary line is a floor nobody is reading.
     - id: suite
       match: '^[ ]*Tests[ ]+([0-9]+)[ ]+passed(?![ ]*\|)'
-      minimum: 755
+      minimum: 798
     # The tally `tests/validate-ci.sh` prints, which is the second half of this
     # gate: the checks that the tree still has the shape CI assumes — one
     # runtime pin, `npm ci` and not `npm install`, the gate command, the

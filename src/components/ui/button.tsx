@@ -55,6 +55,35 @@ const VARIANTS: Record<ButtonVariant, string> = {
 };
 
 /**
+ * The base every button shares, including the focus ring.
+ *
+ * Exported through `buttonClasses` below rather than used only by the component
+ * for the same reason `linkClasses` is exported from `./link`: a call site that
+ * needs a button-shaped control on an element that is NOT a `<button>` — a
+ * provider sign-in link, which is an `<a href>` because the start leg is a
+ * browser navigation — should not have to re-type the classes. Re-typing them
+ * is how a link loses its focus ring and its disabled treatment six months from
+ * now, and the focus ring is measured against the ground colour.
+ */
+const BASE =
+  "focus-ring inline-flex items-center justify-center rounded-md font-medium " +
+  "whitespace-nowrap transition-colors duration-fast motion-reduce:transition-none " +
+  "disabled:cursor-not-allowed disabled:opacity-55";
+
+/**
+ * The classes for a button of a given variant and size, on whatever element.
+ *
+ * An anchor is not disabled, so `:disabled` never applies to one and the
+ * `aria-disabled` spelling would be the honest way to say it — which is why the
+ * social start link does not try to be busy and simply is not rendered while a
+ * navigation is in flight. There is nothing to disable: pressing it starts a
+ * browser navigation, and the browser leaves this document.
+ */
+export function buttonClasses(variant: ButtonVariant = "primary", size: ButtonSize = "md"): string {
+  return `${BASE} ${SIZES[size]} ${VARIANTS[variant]}`;
+}
+
+/**
  * Two sizes, and the heights are explicit rather than left to padding.
  *
  * `min-h` rather than `h`, because a two-line label in a button should grow
@@ -86,14 +115,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
 ) {
   return (
     <button
-      className={cx(
-        "focus-ring inline-flex items-center justify-center rounded-md font-medium",
-        "whitespace-nowrap transition-colors duration-fast motion-reduce:transition-none",
-        "disabled:cursor-not-allowed disabled:opacity-55",
-        SIZES[size],
-        VARIANTS[variant],
-        className,
-      )}
+      className={cx(buttonClasses(variant, size), className)}
       disabled={disabled}
       ref={ref}
       // `button` is the right default: a bare `<button>` inside a `<form>` is a

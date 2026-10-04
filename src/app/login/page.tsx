@@ -1,5 +1,7 @@
 import { Link } from "@tanstack/react-router";
 
+import { SocialProviderButtons } from "@/components/social/social-provider-buttons";
+
 import { LoginForm, PASSWORD_CHANGED_PARAM } from "./login-form";
 
 /**
@@ -43,6 +45,12 @@ export default function LoginPage({
             </Link>
           </p>
         </div>
+        {/* The provider way in. Rendered UNCONDITIONALLY and above the form,
+            for the same reason the "forgot your password" link below is: a
+            control that appeared only after something else had happened would be
+            reporting something. This one reports nothing — it is a link to the
+            forwarder, and whether it leads anywhere is the service's answer. */}
+        <SocialProviderButtons />
         <LoginForm passwordChanged={passwordChanged} />
         {/*
           The way in for somebody who signed up, closed the tab, and never

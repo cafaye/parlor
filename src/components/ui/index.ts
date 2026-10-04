@@ -36,7 +36,13 @@
  * `docs/design-system.md` is the guide: which component to reach for, what the
  * variants mean, and what is deliberately not here.
  */
-export { Button, type ButtonProps, type ButtonSize, type ButtonVariant } from "./button";
+export {
+  Button,
+  buttonClasses,
+  type ButtonProps,
+  type ButtonSize,
+  type ButtonVariant,
+} from "./button";
 export { Field, FieldSummary, type FieldProps } from "./field";
 export { ConfirmDialog, type ConfirmDialogProps } from "./confirm-dialog";
 export { Callout, type CalloutTone } from "./feedback";

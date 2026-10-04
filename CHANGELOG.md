@@ -8,6 +8,66 @@ All notable changes to parlor are recorded here. The format follows
 
 ### Added
 
+- **The social round trip, from a button to a page.** The transport packet made
+  the two routes reachable through the forwarder and that was the whole of it: no
+  screen started a flow, and a browser that completed one landed on identity's
+  JSON body with a `Set-Cookie` beside it that nothing on the page could read.
+  This closes both ends.
+
+  **A provider button on `/login` and `/register`** — one `<a href>` per provider
+  in `SOCIAL_PROVIDERS`, to `/v1/auth/oauth/{provider}` on this origin. A LINK and
+  not a button, and the reason is structural rather than stylistic: the start leg
+  answers a 302 to the provider and sets `__Host-oauth-state` on that same
+  response, so only a document navigation can follow it while the cookie stays in
+  scope for the callback. A `fetch` would resolve the 302 and hand back a
+  provider's HTML; a `<button>` cannot navigate at all. It is `variant="secondary"`
+  because the password field is this app's own way in and stays primary.
+
+  The list is a CONSTANT and its header says why: `registerSocialRoutes` mounts a
+  pair of routes and nothing else, there is no discovery endpoint to ask, and the
+  forwarder's provider segment is deliberately open — so a deployment adding a
+  provider edits one array. Naming providers in the UI is not an enumeration
+  oracle either way: the forwarder already answers 302-or-404 for any slug, so a
+  button tells a prober nothing the URL did not.
+
+  **A page at `/v1/auth/oauth/{provider}/callback`,** served by a route that takes
+  that one URL away from the `/v1/$` splat and gives everything else back. The
+  split is on the REQUEST rather than on the path: `Accept: text/html` is a
+  document and gets the page, and the one programmatic caller in this app sends
+  `application/json, application/problem+json` and gets identity's bytes, so
+  `completeSocialLogin` is untouched. That asymmetry — the start leg is a redirect
+  the browser follows, the callback leg is a 200 with a body — is the service's,
+  and a design that assumed symmetry would render a page waiting for a redirect
+  that never comes.
+
+  **The exchange happens exactly once, and that is what the shape is FOR.** An
+  authorization code is one-shot: spent by the single request identity sees. A
+  page whose own navigation reached identity and then fetched the same URL would
+  spend it twice, and the second attempt fails on a spent code — which reaches a
+  person as "this did not work" for a sign-in that worked. So the document branch
+  makes no hop at all and the screen's effect latches. Three red proofs: forwarding
+  the document branch, forwarding the programmatic branch, deleting the latch.
+
+  **The answers that are 2xx and are not a session.** `completeSocialLogin`
+  returns a discriminated union because the wire carries three mutually exclusive
+  bodies. `linked` (the flow started signed-in, so the provider identity was
+  attached to that account and nothing was minted — the body has no `token` at
+  all) and `mfa_required` (a 202 that is not a session) each get their own state,
+  and each is asserted by what the screen does NOT do: no token written, no
+  navigation. A decline is not short-circuited from `?error=` here — that is
+  identity's answer to give, made with the state cookie in hand, and asking is what
+  clears that one-shot cookie. Every refusal gets a sentence and a way back; none
+  of them renders a status code, and none of them is a dead end.
+
+  **`adoptSession` on the auth context.** A token spent exchanging a code cannot
+  be obtained again, so it is written rather than asked for. It is a method rather
+  than a `createTokenStore()` call at the call site because the store is an
+  INSTANCE: a second one writes the same key without notifying the instance the
+  provider is subscribed to, and the header stays signed out until a reload.
+
+  Suite 755 → 798, and `gate.yml`'s floor moved in the same commit. Three files
+  new: `src/lib/social.ts`, two components under `src/components/social/`, and
+  `src/routes/v1/auth/oauth/$provider/callback.tsx`.
 - **Two gate checks that run on every commit with no caf and no container
   runtime: the local stack's catalog is one `caf dev` can believe, and the
   lockfile's `file:` dependencies name bytes npm can actually produce.** Both
@@ -1178,6 +1238,30 @@ All notable changes to parlor are recorded here. The format follows
 These are gaps in the *services*, found while building against them. Each one is
 recorded so it is not rediscovered from a UI symptom.
 
+- **A social sign-in cannot be FINISHED on any surface of this app, because
+  `POST /v1/session/mfa` is absent from the forwarder's table.** The callback can
+  answer 202 with `{mfa_required, challenge, expires_at}` — identity's own
+  `writeChallenge`, the same writer a password login's challenge uses — and the
+  route that redeems it is deliberately refused by the allow-list, with a test
+  ("does not narrow the allow-list") holding it there. So a provider account with
+  a confirmed second factor reaches `src/components/social/social-callback-screen.tsx`,
+  which says the sign-in is not finished, signs nobody in, and offers the sign-in
+  screen. That is a DEAD END with a way out, which is the honest minimum, and it
+  is not this packet's decision to fix: widening the table is a capability
+  decision (`src/lib/upstream.ts` says so where the social routes arrived beside
+  it) and needs the manager.
+
+  **The same dead end exists on the PASSWORD path, and it is worse there.** This
+  is the finding this packet turned up while following the brief's "reuse the
+  existing MFA path" instruction — there is no existing MFA path. `identity.login`
+  is `send(transport, "/v1/session", "POST")`, and `send` reads a 202 as `ok` and
+  returns its body typed as `Session`. A challenge body therefore arrives at
+  `store.set(result.token)` with `token` UNDEFINED: `localStorage` gets
+  `{"token":undefined}`, `get()` reads it back as `null`, and the person is
+  signed out having been told nothing. **Reported, not fixed** — it is a
+  `src/lib/identity.ts` contract question with its own test surface, and a
+  security-relevant one that belongs in its own packet rather than smuggled in
+  behind a UI change. `HANDOFF-parlor-02-social-ui.md` names it.
 - **A browser cannot call `identity` from this app: `identity` serves no CORS
   headers.** Measured on a running stack, and it is the first thing this
   repository's end-to-end tier found. The client bundle does the fetching

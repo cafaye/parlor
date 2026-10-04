@@ -340,6 +340,42 @@ or in `src/`.
   work, and until it lands an XSS on this origin still reads it. See README,
   "Sessions".
 
+## Social login
+
+`/login` and `/register` each render `SocialProviderButtons`, and
+`/v1/auth/oauth/$provider/callback` renders `SocialCallbackScreen`. Three rules
+hold the flow together, and each of them is a place where the obvious
+implementation is wrong.
+
+- **The two legs are not the same shape, and that is the service's, not ours.**
+  The START leg answers a 302 that the browser follows. The CALLBACK leg answers
+  200 with a JSON body and a `Set-Cookie` — identity does **not** redirect onward.
+  So the start control is a plain `<a href>` to this origin and nothing else: a
+  `fetch` resolves the 302 and hands back a provider's HTML, and a `<button>`
+  cannot navigate at all. It is not the router's `Link`, either — that URL is the
+  forwarder, not a route this app renders.
+- **A document request gets the page and everything else gets the forwarder.**
+  `src/routes/v1/auth/oauth/$provider/callback.tsx` takes that one URL away from
+  the `/v1/$` splat and branches on `Accept: text/html`, which is what a top-level
+  navigation sends and a `fetch` does not. This is what makes the exchange happen
+  **exactly once**: the authorization code is one-shot, so a document navigation
+  that also reached identity would spend it and then the page's own request would
+  fail on a spent code. Do not "simplify" that branch into forwarding.
+- **Three of the four answers are not a sign-in.** `completeSocialLogin` returns a
+  discriminated union and `linked` and `mfa_required` are both 2xx that minted no
+  token. Each gets its own state, and each is asserted by what the screen does not
+  do. `adoptSession` exists because the token cannot be fetched again — it was
+  spent on the code. A decline is **not** short-circuited from `?error=` locally:
+  identity's answer clears the one-shot state cookie, and it is the only party that
+  can tell a decline from a forged state.
+
+`SOCIAL_PROVIDERS` in `src/lib/social.ts` is a constant because identity mounts
+only the two routes and offers no discovery endpoint; a deployment adding a
+provider edits that array. `redirect_uri` remains a deployment fact this
+repository does not own: identity builds it from its own configured public base,
+and if that is not **this app's origin** the round trip completes on the wrong
+origin, where the state cookie is not in scope. No test here can see that — see
+`HANDOFF-parlor-02-social-ui.md`.
 ## Recovery
 
 `POST /v1/password-resets` and `POST /v1/password-resets/confirm` are **anonymous**.
@@ -670,12 +706,15 @@ e2e/                the whole-stack end-to-end tier: the compose topology, the
                     something
 src/lib/            identity.ts (identity contract), roles.ts (role vocabulary),
                     accounts.ts (tenancy queries), credentials.ts (what to check
-                    before asking the service), money.ts, billing.ts,
+                    before asking the service), money.ts, billing.ts, social.ts
+                    (the provider list and the start path),
                     upstream.ts (the forwarder's allow-list and the only code that
                     names a service address at run time),
                     billing-context.tsx, token-store.ts, auth.tsx (session)
 src/components/ui/  primitives: one per file, re-exported from index.ts
 src/components/shell/  session-aware chrome (header)
+src/components/social/  the two provider controls: the start buttons and the
+                     callback landing screen
 src/styles/         tokens.css — the theme
 src/test/           vitest setup + support/ (stubs, render helper)
 ```
