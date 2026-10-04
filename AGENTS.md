@@ -67,7 +67,8 @@ e2e/docker-compose.yml   the stack: identity + gateway PULLED BY TAG from
                          parlor itself built from this tree (`context: .`).
                          E2E_BUILD_SIBLINGS=1 layers
                          e2e/docker-compose.siblings.yml to put the sibling
-                         `build:` stanzas back
+                         `build:` stanzas back. The Postgres is provisioned by
+                         kit's script, MOUNTED from ../kit — see below
 e2e/edge.conf            the same-origin edge. WHY IT EXISTS is in the file
 bin/e2e-stack            build / up / wait / down — the lifecycle, the bounded
                          readiness poll, and the logs on a failed bring-up
@@ -99,6 +100,54 @@ e2e/no-token-artifacts.ts global teardown: no artifact holds a session token,
   is inside the block, collides with nothing the workspace owns, and matches
   the fallbacks in `playwright.config.ts`. `bin/e2e` reads the real numbers out
   of the compose file rather than restating them.
+- **`../kit` is a REQUIRED CHECKOUT, and it is a different kind of requirement
+  from `../identity` and `../gateway`.** Nothing is built from it, nothing is
+  pushed from it, and it is NOT in `SIBLING_SERVICES` — adding it there would
+  send `publish_siblings` looking for a build recipe and kill the default path.
+  It is required because `e2e/docker-compose.yml` MOUNTS
+  `../kit/templates/compose/postgres/initdb` over `/docker-entrypoint-initdb.d`,
+  and that script is the only thing in the fleet that creates the two roles per
+  service: `identity` (owner) and `identity_app` (a LOGIN that owns nothing).
+
+  **The consequence of not having it is a silent healthy cluster**, and that is
+  the sentence worth keeping. Docker mounts a missing bind source as an EMPTY
+  DIRECTORY rather than failing, so initdb runs no script, the cluster comes up
+  with the superuser the image created and nothing else, and `pg_isready` says it
+  is fine. Sixty seconds later identity's `migrations/00016_account_isolation.sql`
+  dies at `select cafaye.protect_table('account_users')` with
+
+  ```
+  ERROR:  cafaye.protect_table(account_users, identity_app):
+          identity_app is not a LOGIN role on this cluster. (SQLSTATE 42704)
+  ```
+
+  which names a missing ROLE rather than a missing CHECKOUT. So TWO assertions
+  guard it and the duplication is deliberate: the e2e job's presence step checks
+  the directory is non-empty, and `bin/e2e-stack`'s `check_cluster_initdb` reads
+  the mount **out of the compose document** and checks the same thing before
+  anything starts. Reading it out of the document is what stops the two from
+  drifting into disagreeing about where the script lives. The measurement, and
+  why the failure took this shape, is in
+  `HANDOFF-parlor-e2e-protect-table-01.md`.
+- **`POSTGRES_USER` is `postgres` and it cannot be `identity`.** The official
+  image creates `POSTGRES_USER` as a superuser BEFORE initdb runs, and kit's
+  script then does `CREATE ROLE <name>` per `KIT_POSTGRES_DATABASES`; with
+  `POSTGRES_USER: identity` the cluster refuses to start with `role "identity"
+  already exists` at initdb. `postgres` is the one name that is not in that list.
+  **This also changed what `identity` IS:** it was a superuser, and kit's script
+  creates it `NOSUPERUSER NOCREATEDB NOCREATEROLE`. A superuser bypasses
+  row-level security, so the previous shape had the policies and **no
+  enforcement** — the same defect as having no policies, and harder to notice
+  because the catalog reads as correct. Because that password is the cluster's
+  `POSTGRES_PASSWORD`, identity's `DATABASE_URL` and `bin/e2e-stack`'s migrate
+  DSN both carry it; kit hands every role it creates the same one, which is its
+  stated position that isolation here is by privilege and never by secret.
+- **The known gap, stated rather than left to be discovered:** identity's
+  `DATABASE_URL` names the **owner** role rather than `identity_app`, so the
+  process serving the browser holds the one privilege the substrate exists to
+  remove — it could `ALTER TABLE … DISABLE ROW LEVEL SECURITY`. What `FORCE` still
+  buys is real and is measured in the handoff. The residual gap needs a change in
+  **identity's** repository, which this one may not edit.
 - **A service in the stack with no `healthcheck:` must have a `FINDING` in its
   own block**, and the gate checks for both. identity is the one: a distroless
   image has no HTTP client, so nothing inside it can answer a probe, and the
@@ -122,6 +171,15 @@ boilerplate: `actions/checkout` with only `path:` checks out
 whole life `../identity` held a copy of *parlor* and the sibling assertion below
 was satisfied by this repository's own Dockerfile. The job had never checked out
 a sibling, and a renamed path is not a checkout of a renamed repository.
+**There are FOUR checkouts and the fourth is `../kit`, which is not a sibling**:
+no image is built from it, nothing is pushed from it, it is not in
+`SIBLING_SERVICES` (adding it there would send `publish_siblings` looking for a
+build recipe and kill the default path), and it is required purely by the initdb
+bind mount described above. The presence step asserts it separately from the
+sibling loop, and by DIRECTORY rather than by Dockerfile, because a Dockerfile is
+what a build reads and this is what a mount reads — `find … -print -quit` rather
+than `[ -f 10-cluster.sh ]`, so a kit that renames or splits its script is
+picked up rather than going red on a rename while the mount keeps working.
 **The mechanism is `bin/e2e-stack publish-siblings`, not a compose build
 stanza**: `e2e/docker-compose.yml` carries `image:` and no `build:` for either
 sibling, so the checkouts are load-bearing because of *where the tags come

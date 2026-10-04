@@ -200,6 +200,67 @@ compose_timed() {
 
 elapsed_since() { echo $(($(date +%s) - $1)); }
 
+# --- the cluster's init script -----------------------------------------------
+# WHY THIS CHECK IS SEPARATE FROM `preflight`'s sibling checkouts, and it is the
+# more interesting half of the pair. A missing `../identity` is caught by
+# `docker build` naming a path that is not there. A missing `../kit` is not caught
+# by anything at all, and that is the reason this function exists.
+#
+# `e2e/docker-compose.yml` mounts `../kit/templates/compose/postgres/initdb` over
+# `/docker-entrypoint-initdb.d`. Two things follow from a bind mount, and both are
+# silent:
+#
+#   1. A MISSING BIND SOURCE IS NOT AN ERROR TO DOCKER. It becomes an empty
+#      directory, the mount succeeds, and initdb runs no script at all. The
+#      cluster comes up with the superuser the image made and NOTHING else — no
+#      `identity` role, no `identity_app`, no database owned by anything, and none
+#      of the per-database `REVOKE ALL … FROM PUBLIC` that is the isolation. The
+#      `healthcheck` on this service (`pg_isready -U identity -d identity`) does
+#      not fire either, because the image created `identity` as `POSTGRES_USER`
+#      before kit's script was ever consulted.
+#   2. So the failure lands somewhere else entirely: `migrate` fires sixty
+#      seconds later with a 42704 about `identity_app`, which is true, and which
+#      a reader has no way to connect to a missing sibling checkout. The role is
+#      the symptom. The checkout is the cause.
+#
+# The check therefore reads the mount OUT OF THE COMPOSE DOCUMENT rather than
+# asserting a path, so it cannot disagree with the file that does the mounting, and
+# it is called unconditionally: the mount is not behind `E2E_BUILD_SIBLINGS`, so
+# neither is the checkout it needs.
+check_cluster_initdb() {
+  local src
+  src=$(compose config --format json 2>/dev/null \
+    | node -e '
+      let raw = "";
+      process.stdin.on("data", (chunk) => (raw += chunk));
+      process.stdin.on("end", () => {
+        const doc = JSON.parse(raw);
+        const svc = (doc.services || {}).identity_postgres || (doc.services || {})["identity-postgres"] || {};
+        const list = svc.volumes || [];
+        const mount = list.find((v) => String(v.target || "").indexOf("/docker-entrypoint-initdb.d") === 0);
+        process.stdout.write(String((mount && mount.source) || ""));
+      });
+    ') || die "cannot read the initdb mount of the postgres service out of $COMPOSE_FILE"
+
+  [ -n "$src" ] \
+    || die "the postgres service in $COMPOSE_FILE mounts nothing over /docker-entrypoint-initdb.d, so nothing will provision this cluster: no service roles, no bounded owner, and no REVOKE. identity's migration 00016 will then fail at cafaye.protect_table with 'identity_app is not a LOGIN role on this cluster' — which is a statement about the missing mount and reads like a statement about the migration."
+
+  # `compose config` resolves the bind source to an absolute path, so this is the
+  # directory Docker will mount rather than the string in the file.
+  [ -d "$src" ] \
+    || die "the initdb bind source $src does not exist. It is a ../kit checkout: docker compose mounts a missing bind source as an EMPTY DIRECTORY rather than failing, so a healthy cluster would come up with no roles and no isolation. Check out cafaye/kit beside this repository."
+
+  # An existing but EMPTY directory is the same failure reached a different way,
+  # and it is the one a plain `-d` test cannot see. Kit's directory is either
+  # there or it is not, so "empty" means the checkout is the wrong repository, or
+  # a partial one — and it is checked separately rather than folded into the test
+  # above because the two failures have different fixes.
+  [ -n "$(find "$src" -maxdepth 1 -type f -print -quit 2>/dev/null)" ] \
+    || die "the initdb directory $src is empty, which means it was created rather than found — the same missing-checkout failure as above, and equally silent. Check out cafaye/kit beside this repository, at master."
+
+  log "the cluster's init script is present: $src"
+}
+
 # --- preflight --------------------------------------------------------------
 # Everything this script needs, checked before anything is started, so the
 # failure is "curl is not installed" rather than "the stack did not come up"
@@ -226,6 +287,25 @@ preflight() {
   need goose "Install it the way ../identity documents: mise, or 'go install github.com/pressly/goose/v3/cmd/goose@<pinned version>'."
 
   [ -f "$COMPOSE_FILE" ] || die "no compose file at $COMPOSE_FILE"
+
+  # kit, for the cluster's init script, and UNCONDITIONALLY rather than in the
+  # hatch. That asymmetry with the sibling checkouts below is the whole of this
+  # function: a missing sibling checkout costs a slower run or a failed pull, both
+  # of which name themselves, while a missing `../kit` costs a cluster that comes
+  # up HEALTHY holding one superuser and no service roles — because Docker mounts a
+  # missing bind source as an empty directory rather than refusing, initdb runs no
+  # script, and nothing until the migration step sixty seconds later says so. The
+  # failure that did happen is the record:
+  #
+  #   goose run: ERROR 00016_account_isolation.sql: failed to run SQL migration:
+  #   failed to execute SQL query "select cafaye.protect_table('account_users');":
+  #   ERROR: cafaye.protect_table(account_users, identity_app): identity_app is not
+  #   a LOGIN role on this cluster. (SQLSTATE 42704)
+  #
+  # which names a missing ROLE rather than a missing CHECKOUT, sixty seconds and
+  # three services away from the cause. So it is checked here, by name, before
+  # anything starts.
+  check_cluster_initdb
 
   # The sibling checkouts are required ONLY in the hatch. While every image was
   # built from a sibling checkout they were unconditionally required, and that
@@ -680,8 +760,23 @@ up() {
 migrate() {
   local port dsn
   port=$(host_port identity-postgres)
-  dsn="postgres://identity:identity@127.0.0.1:${port}/identity?sslmode=disable"
-  log "applying identity's migrations (../identity/migrations)"
+  # AS `identity`, THE OWNER, and not as the cluster's superuser. That is
+  # unchanged from before kit's script was mounted, and it is a decision rather
+  # than an inheritance: `00016_account_isolation.sql` builds every policy with
+  # `to <current_user>, <login>`, so the role that APPLIES the migration is part
+  # of what the migration means. Migrating as `postgres` would have written
+  # `postgres` into all twenty policies and named the cluster administrator as the
+  # owner of identity's tables — a different isolation, applied by a test
+  # harness, in a repository this one may not edit the answer to.
+  #
+  # THE PASSWORD IS THE CLUSTER'S, and it is a consequence of kit's script rather
+  # than a choice: it hands `$POSTGRES_PASSWORD` to every role it creates, so
+  # `identity`'s password is the `POSTGRES_PASSWORD` in e2e/docker-compose.yml.
+  # That is kit's stated position — isolation here is by privilege and never by
+  # secret — and it is what lets the boundary be demonstrated by somebody who
+  # knows every password in the cluster.
+  dsn="postgres://identity:postgres@127.0.0.1:${port}/identity?sslmode=disable"
+  log "applying identity's migrations (../identity/migrations) as identity"
   local started elapsed status
   started=$(date +%s)
   set +e
