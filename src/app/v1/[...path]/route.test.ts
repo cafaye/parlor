@@ -13,6 +13,18 @@
  *      unit test would notice — the forwarder's own tests pass either way,
  *      because they inject both addresses.
  *
+ *      The name in that sentence is the one the repository used, and the check
+ *      keeps it: `SERVICE_ENV_VARS` below still searches for `NEXT_PUBLIC_` on
+ *      purpose, so a value that was ever inlined cannot come back quietly. But
+ *      the mechanism that would inline it is gone — `vite build` does not
+ *      substitute a `NEXT_PUBLIC_` prefix, it does not have one. In this build
+ *      the same hazard is a value read through `import.meta.env` (Vite's
+ *      `VITE_` prefix, or a `define` in the config), and `vite.config.mts`
+ *      declares neither, so `grep -rn "import.meta.env" src/` is empty. The two
+ *      tests below are what would notice if that changed, and the second is the
+ *      one that matters: it searches the built bytes, so it holds whatever the
+ *      config does.
+ *
  *   2. **The four verbs exist and nothing else does.** A missing `POST` is a
  *      sign-in that 405s; an extra catch-all export is a method this file never
  *      meant to expose.
@@ -86,10 +98,10 @@ describe("the service addresses are server-only", () => {
    *
    * THE BUILD IS UNCONDITIONAL, and that is a decision rather than a
    * convenience. The first version of this file ran the two bundle assertions
-   * only when `.next/static` happened to exist and skipped them otherwise —
-   * which reads as an honest "not applicable here" and is in fact the exact
-   * shape the gate refuses. `gate.yml`'s `suite` proof carries a negative
-   * lookahead, `[ ]+passed(?![ ]*\|)`, so a vitest line reading
+   * only when the client build had happened to exist and skipped them
+   * otherwise — which reads as an honest "not applicable here" and is in fact
+   * the exact shape the gate refuses. `gate.yml`'s `suite` proof carries a
+   * negative lookahead, `[ ]+passed(?![ ]*\|)`, so a vitest line reading
    * `Tests  660 passed | 2 skipped (662)` is `gate.proof-missing` rather than a
    * smaller green. The repository's rule is that a skipped test is not a passing
    * test, and a check that only runs on some machines is a check that has

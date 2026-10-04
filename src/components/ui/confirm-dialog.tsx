@@ -11,28 +11,37 @@
  * about the *idea* and wrong about the *module*, and being wrong about the
  * module cost this template a class of bug the test suite cannot see.
  *
- * `ConfirmDialog` calls `useId`, `useEffect` and `useCallback`. That makes it a
- * Client Component. `Callout` calls no hooks at all — it is a `<div>` with a
- * `role` — so it is perfectly good as a Server Component. One file holding both
- * can only be one or the other:
+ * `ConfirmDialog` calls `useId`, `useEffect` and `useCallback`. `Callout` calls
+ * no hooks at all. Under the previous framework one file could not be both: a
+ * file whose components had to run on a server and a file whose components had
+ * to run in a browser were different modules, and this one had members of each.
  *
- *   - Left without a directive, the file is a Server Component that calls
- *     hooks, and any Server Component importing it through the
- *     `@/components/ui` barrel fails `next build`. It builds today only because
- *     every app-code importer happens to be a Client Component already. It is
- *     one Server Component away from being broken, and nothing in `npm test`
- *     would say so, because jsdom has no server/client boundary to cross.
- *   - Given a file-level `"use client"`, `Callout` becomes a Client Component
- *     too — shipping hydration JavaScript for a presentational `<div>` in every
- *     server-rendered page that uses one, which is most of them.
+ *   - Left without a directive, the file was a server module calling hooks, and
+ *     any server module importing it through the `@/components/ui` barrel was
+ *     rejected by the compiler.
+ *   - Given a file-level `"use client"`, `Callout` was marked as a browser
+ *     component too — for markup that needed none of it.
  *
- * Splitting the file is the only option that is correct rather than merely
- * green, so the two are separate files and the barrel re-exports both. A caller
- * reaching for either one still imports from `@/components/ui` and does not
- * learn from the import that one of them costs a client bundle.
+ * That is why this is its own file, and the split is still worth keeping: the
+ * marker on it is descriptive, so it says "these components need the browser",
+ * and it is true. Note what the split is NOT buying in this tree, because the
+ * old comment here claimed it and it is not true here: there is no server/client
+ * split for `vite build` to enforce, and no RSC configuration anywhere in `src/`,
+ * so a hook-free `Callout` reaches `dist/client/assets/ui-BseiPOyp.js` anyway —
+ * `login-form.tsx` and `register-form.tsx` render it and both are client
+ * components. Marking this file costs nothing and saves nothing; what it buys is
+ * an accurate marker.
  *
- * The check that keeps this from drifting back is
- * `no-hooks-without-use-client` in `tests/validate-ci.sh`.
+ * A caller reaching for either this or `Callout` still imports from
+ * `@/components/ui`, which is the point of the barrel: the split is invisible at
+ * the call site and enforced where the facts are.
+ *
+ * The check that keeps the markers honest is
+ * `src/components/ui/client-boundary.test.ts` — the three tests in it, one per
+ * direction, plus the one that names these two files. It used to be named
+ * `no-hooks-without-use-client` in `tests/validate-ci.sh`, and that name now
+ * points at nothing: `grep -n "no-hooks-without-use-client" tests/validate-ci.sh`
+ * is empty.
  */
 
 import { useCallback, useEffect, useId, useRef, type KeyboardEvent } from "react";

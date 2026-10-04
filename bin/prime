@@ -10,12 +10,35 @@
 #
 # WHY `npm run build` IS HERE AND WAS NOT, which cost a fork months.
 #
-# The suite cannot see this class of error at all. `src/components/ui/feedback.tsx`
-# calls useCallback/useEffect/useId/useRef with no `"use client"` directive, so
-# a Server Component that reaches it through the `@/components/ui` barrel cannot
-# compile. Every test renders in jsdom, and jsdom has no server/client boundary
-# to cross, so the suite is green on a tree that does not build. The only thing
-# that catches it is `next build`.
+# The suite cannot see this class of error at all. `npm test` is vitest: it
+# transpiles each file it loads and hands it to a runtime, in jsdom, one module
+# at a time. Nothing in it resolves a relative URL inside a stylesheet, walks
+# the module graph a bundler walks, or produces the `dist/` that
+# `server/index.mjs` loads — so the suite is green on a tree that does not
+# bundle.
+#
+# This tree has the receipts, and they are written down where the build config
+# lives. `vite.config.mts`'s `copyFontFiles` header records a build that printed
+# sixteen lines about a `./files/geist-*.woff2` it had not resolved, emitted a
+# stylesheet pointing at a directory the build never creates, and left a 404 on
+# every font request — while every page rendered, every route answered and
+# `/healthz` was green. `find dist/client -name '*.woff2'` returned nothing. The
+# build is the only command in this repository that sees that, and it saw it as
+# a warning rather than a failure, which is the argument for running it on every
+# commit instead of in a job nobody opens.
+#
+# WHAT THE BUILD IS *NO LONGER* PROVING, STATED HERE SO NOBODY INHERITS IT.
+# The paragraph this replaced said the build was here because
+# `src/components/ui/feedback.tsx` once called `useCallback`/`useEffect`/
+# `useId`/`useRef` with no `"use client"` directive, and that only `next build`
+# could catch that. Both halves are history now. The file is hook-free —
+# `ConfirmDialog` lives in `./confirm-dialog`, carrying the directive with it —
+# and the build is `vite build`, which enforces no server/client split, so a
+# missing directive is not an error it is able to raise. What catches that class
+# of error today is a source scan, and it is in the suite:
+# `src/components/ui/client-boundary.test.ts`, which reads every `.tsx` under
+# `src`. Its own header is where the reasoning for a scan rather than a compiler
+# is written down; start there before changing anything under it.
 #
 # CI DID catch it — there is a `typecheck + build` job and it went red. That is
 # not the same as catching it. cafaye/site forked this template and inherited
@@ -24,8 +47,10 @@
 # no reason to open a browser tab and read CI. A check that only runs on a
 # runner is a check its author watches fail from a distance.
 #
-# So the build is in the gate a developer runs. It costs seconds, and it is the
-# difference between "the local gate is green" and "the tree compiles".
+# So the build is in the gate a developer runs. It costs a few seconds
+# (`npm run build` measured at 5.2s wall on this tree, 150ms of it vite's own),
+# and it is the difference between "the local gate is green" and "the tree
+# bundles".
 #
 # WHY `npm run typecheck` IS HERE, which is the same argument one step earlier.
 #

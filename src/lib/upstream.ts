@@ -7,9 +7,14 @@
  * A browser on a deployed `parlor` could not sign in, and the cause was not in
  * either repository's code:
  *
- *   * `parlor` called `identity` from the BROWSER, at `NEXT_PUBLIC_IDENTITY_URL`,
- *     which `next build` inlines into the client bundle. The caller of identity
- *     was a person's browser, on the app's own origin.
+ *   * `parlor` called `identity` from the BROWSER, at a build-time-substituted
+ *     address. The caller of identity was a person's browser, on the app's own
+ *     origin. The variable was named `NEXT_PUBLIC_IDENTITY_URL` and the build
+ *     that inlined it was `next build`, neither of which exists in this
+ *     repository any more; the hazard did not go with them, and it has a name in
+ *     this build too — a value read through `import.meta.env`, which Vite
+ *     substitutes into client code for its `VITE_` prefix, plus anything an
+ *     explicit `define` in the vite config names.
  *   * `identity` serves no CORS headers at all. There is no `Access-Control-*`
  *     anywhere in `identity/internal/`, and `OPTIONS /v1/session` answers 405
  *     because the route implements POST and a preflight is not that.
@@ -39,10 +44,13 @@
  *      route handler. They are not read from a header, a query string, a path
  *      segment or the request body, and there is no code path that could.
  *
- *      `NEXT_PUBLIC_*` inlining is what made the old arrangement a trap in the
+ *      Build-time substitution is what made the old arrangement a trap in the
  *      other direction: a value the browser can read is a value the browser can
- *      change. These two values are read on the server, at request time, and are
- *      not in the bundle at all — see `src/app/v1/[...path]/route.ts`.
+ *      change. These two values are read in a server-only module and are not in
+ *      the bundle at all — see `src/app/v1/[...path]/route.ts`, whose header says
+ *      what this build's substitution mechanism is and proves it is unused
+ *      (`grep -rn "import.meta.env" src/` is empty, and `vite.config.mts`
+ *      declares neither a `define` nor a widened `envPrefix`).
  *
  *   2. FORWARD ONLY THE PATHS THAT ARE NEEDED, AND REJECT THE REST. The table
  *      below holds every operation `src/lib/identity.ts` and `src/lib/billing.ts`
