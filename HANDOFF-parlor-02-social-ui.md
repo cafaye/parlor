@@ -92,6 +92,30 @@ is not sent by every browser, so a check that only some clients satisfy
 degrades to "everything is programmatic", which is a JSON blob for the one person
 who pressed the button.
 
+**MEASURED against the built server**, since it is the only thing here that a
+unit test cannot establish — the framework's own contract is that a route with
+both a handler and a component treats the handler as a middleware, and `next()`
+is how it defers:
+
+```
+$ PORT=16777 node server/index.mjs &
+$ curl -H 'Accept: text/html,…' …/v1/auth/oauth/github/callback?code=the-code&state=st_1
+status=200 type=text/html; charset=utf-8      # and the body carries "Signing you in",
+                                              # "Finishing your sign in" and the noscript
+$ curl -H 'Accept: application/json, application/problem+json' …same URL
+status=502 type=application/problem+json      # the forwarder's own answer (no identity running)
+$ curl -H 'Accept: text/html' …/v1/auth/oauth/github
+status=502 type=application/problem+json      # the start leg is still the forwarder's, unchanged
+$ curl …/healthz
+{"status":"ok"}
+```
+
+The 502s are `upstream_unavailable` from identity not running, which is the
+expected answer for both and not a defect. The thing being proven is the
+**content type**: a document gets HTML and everything else gets the forwarder's
+bytes, from the same URL, with no identity running. Both providers resolve, so
+the route ranks above `/v1/$` in the committed tree rather than only in theory.
+
 ## 5. Deliberately not done, and why
 
 - **No e2e spec.** The brief forbids touching the harness, and the tier could not
