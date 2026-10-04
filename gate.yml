@@ -286,7 +286,45 @@ gate:
     # core has `test_the_gate_floor_is_not_below_the_suite_core_claims_to_have`,
     # and parlor has no equivalent, so raising this number when the suite grows
     # is a thing a human has to remember until MD12's machinery lands).
-    # It is 727 today. 710 -> 727, a +17, all of them in
+    # It is 755 today. 727 -> 755, a +28 in two files, and both halves of the
+    # count are there because this is the only place in parlor that writes down
+    # how many tests there are.
+    #
+    #   * 16 in `src/lib/upstream.test.ts`, on the social-login surface. The
+    #     packet's whole risk is a redirect and a cookie, and neither of those is
+    #     visible in a hop assertion: a forwarder can forward the request
+    #     perfectly and hand the browser a 302 with no `Location`, which looks
+    #     like a working sign-in until a person presses the button and lands on a
+    #     blank page. So the section asserts on the headers crossing BACK. The
+    #     three that matter are the start leg's 302 carrying both `Location` and
+    #     `Set-Cookie`, a 302 on a route that did NOT declare itself a redirect
+    #     arriving with no `Location`, and both legs of a round trip walked
+    #     through the forwarder to assert that the state cookie identity SET on
+    #     leg one is the cookie identity RECEIVES on leg two. The other thirteen
+    #     are the allow-list's ordinary properties applied to the two new routes:
+    #     the provider segment value-matched rather than wildcarded, a forged
+    #     provider refused on both routes before an address is contacted, the
+    #     callback's `code`/`state`/`error` surviving and an undeclared
+    #     `redirect_uri` being dropped, a wrong verb refused with no hop, and no
+    #     credential invented on a `security: []` route.
+    #   * 12 in `src/lib/identity.test.ts`, on the two client methods. They are
+    #     the only two in this file whose answer is not a body read out of a 2xx,
+    #     so `send`'s contract is wrong for both and each writes its own status
+    #     handling out. The cases are the ones a lazy reader gets wrong: a 302 is
+    #     a success and not a malformed answer, a 302 with no `Location` is a
+    #     failure rather than an empty string, a 2xx on a redirect operation is a
+    #     contract violation, `{}` is a failure for BOTH methods, and the link
+    #     body — which has `linked_provider` and no `token` at all — must never
+    #     become a session with an empty token.
+    #
+    # ALL THREE of the forwarder's redirect tests were proved able to fail before
+    # that floor moved: dropping the route's `browserRedirect` mark, putting
+    # `location` back on the global allow-list, and conditioning the `Set-Cookie`
+    # relay on a 2xx each turned named tests red. The third is the one worth
+    # naming here, because it is the failure that passes every test written
+    # against the callback leg and fails in the browser at the first real sign-in.
+    #
+    # It is 727 by the next account. 710 -> 727, a +17, all of them in
     # `server/adapter.test.mjs` — the Node-to-Web adapter that binds the built
     # fetch handler to a socket and serves the built client assets. Both of those
     # are things the built server does not do: it exports `{ fetch(request) }` and
@@ -328,7 +366,7 @@ gate:
     # reconcile with the summary line is a floor nobody is reading.
     - id: suite
       match: '^[ ]*Tests[ ]+([0-9]+)[ ]+passed(?![ ]*\|)'
-      minimum: 727
+      minimum: 755
     # The tally `tests/validate-ci.sh` prints, which is the second half of this
     # gate: the checks that the tree still has the shape CI assumes — one
     # runtime pin, `npm ci` and not `npm install`, the gate command, the
