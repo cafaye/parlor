@@ -1,108 +1,45 @@
-import { cp, mkdir } from "node:fs/promises";
-import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
-
-import tailwindPostcss from "@tailwindcss/postcss";
+import { cloudflare } from "@cloudflare/vite-plugin";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig } from "vite";
 
-const require = createRequire(import.meta.url);
-
-/**
- * The `@fontsource` packages this app self-hosts its two families from,
- * named here rather than globbed so that dropping a family from
- * `src/app/globals.css` and forgetting this file is a loud build failure
- * instead of a page that quietly loses its typeface.
- */
-const FONT_PACKAGES = ["@fontsource-variable/geist", "@fontsource/geist-mono"];
+import { copyFontFiles, sharedConfig } from "./vite.shared";
 
 /**
- * Copies the webfont binaries into the emitted client assets.
+ * THE CLOUDFLARE BUILD. This is the default `npm run build`, the one `bin/prime`
+ * runs and the one `wrangler deploy` consumes. It emits a Worker.
  *
- * ---------------------------------------------------------------------------
- * WHY THIS EXISTS, MEASURED RATHER THAN ASSUMED
- * ---------------------------------------------------------------------------
- * Without it, `npm run build` prints sixteen lines of
+ * `cloudflare()` FIRST, and the order is not a preference — it is what the
+ * framework's own deployment guide spells and what the plugin pair requires:
+ * `cloudflare()` installs the `ssr` environment's build hook (and the
+ * workerd-backed dev runtime) BEFORE `tanstackStart()` decides what to build
+ * into it, so a reversed array is a `tanstackStart()` that has already
+ * configured an environment nothing is going to run in. The shape is read out of
+ * `node_modules/@tanstack/start-client-core/skills/start-core/deployment/SKILL.md`
+ * rather than guessed.
  *
- *   ./files/geist-latin-wght-normal.woff2 referenced in
- *   ./files/geist-latin-wght-normal.woff2 didn't resolve at build time,
- *   it will remain unchanged to be resolved at runtime
+ * It replaces nothing this tree had: `server/index.mjs` and
+ * `server/adapter.mjs` existed only to bind the built fetch handler to a Node
+ * socket, and Cloudflare supplies the server. Same routes, same BFF, same
+ * health endpoints — this changes where the server runs, not what it does.
  *
- * and emits `dist/client/assets/index-*.css` whose `@font-face` blocks point at
- * `./files/geist-*.woff2` — a directory the build never creates. Measured on the
- * inherited tree: `find dist/client -name '*.woff2'` returned nothing, and a
- * request for one of those URLs was a **404** while every page rendered, every
- * route answered and `/healthz` was green.
+ * WHAT IS DELIBERATELY NOT HERE, because a static build would be a security
+ * regression rather than a simplification. `src/app/v1/[...path]/route.ts`
+ * reads `process.env.IDENTITY_URL` / `BILLING_URL` on the server and rebuilds
+ * the upstream path from an allow-list of twenty-six routes. No server means the
+ * browser calls `identity` and `billing` directly with the address baked into the
+ * client bundle, and that file's own header says why that is the trap: "a value
+ * the browser can read is a value the browser can change, and for a forwarder
+ * that is the difference between a fixed destination and an attacker's." So: no
+ * `prerender`, no `ssr: false`, no SPA mode, no `defaultSsr`.
  *
- * The cause is the shape of the input, not the framework. `@fontsource`
- * references its own `files/` directory relative to the stylesheet that
- * imports it; that stylesheet lives in `node_modules`, and the one that pulls it
- * in lives in `src/app/globals.css`. Nothing rewrites a relative URL inside a
- * third party's CSS, so the bundler says so and leaves it — which is correct
- * behaviour and a broken page.
- *
- * ---------------------------------------------------------------------------
- * WHY COPY AND NOT INLINE
- * ---------------------------------------------------------------------------
- * The alternative is base64 in the stylesheet, which puts several hundred kB of
- * font into a file every screen loads and blocks text paint on the critical path
- * to avoid eleven files. These are immutable, content-stable and served with a
- * long `max-age` by `server/adapter.mjs`, which is exactly what a separate file
- * is for.
- *
- * `apply: "build"` so `vite dev` is untouched — the dev server resolves those
- * URLs through its own module graph and has never needed this.
+ * The Node/Docker build is `vite.node.config.mts`, not a flag on this file — see
+ * that file's header for why it is a second config rather than a mode. What the
+ * two share (the tsconfig-path resolution, the postcss/Tailwind pair and the
+ * webfont copy) is imported from `vite.shared.ts` rather than restated, because
+ * each of those three fails in a way no rendered string shows.
  */
-function copyFontFiles(): Plugin {
-  return {
-    name: "parlor:copy-font-files",
-    apply: "build",
-    async closeBundle() {
-      for (const pkg of FONT_PACKAGES) {
-        // Resolved rather than hardcoded, so a version bump that moves the
-        // files fails here with a clear message instead of emitting a
-        // stylesheet that points at nothing.
-        const manifest = require.resolve(`${pkg}/package.json`);
-        const from = join(dirname(manifest), "files");
-        const to = join(process.cwd(), "dist/client/assets/files");
-
-        await mkdir(to, { recursive: true });
-        await cp(from, to, { recursive: true });
-      }
-    },
-  };
-}
-
 export default defineConfig({
-  // `@/*` -> `./src/*`, declared once in tsconfig.json and consumed here.
-  //
-  // WITHOUT THIS LINE `vite dev` DOES NOT WORK, and `vite build` is green
-  // anyway, which is what let the defect survive a migration and a full gate.
-  // Measured on this tree before the line existed:
-  //
-  //   $ npx vite dev --port 3997 --strictPort
-  //   (!) Failed to run dependency scan. ... @/app/verify-email/page
-  //       (imported by src/routes/verify-email.tsx) could not be resolved
-  //   $ curl -o- http://[::1]:3997/          -> 500
-  //   $ curl -o- http://[::1]:3997/healthz   -> 500  {"status":500,...}
-  //
-  // Every route, including the health check. The build resolves the alias
-  // because `tanstackStart()` carries a resolve plugin that reads tsconfig
-  // paths, and that plugin is registered for the build; the dev server's own
-  // dependency scan runs outside it. So the two halves of `vite` disagree, and
-  // only one of them is exercised by `npm run build`.
-  //
-  // Vite 8.3.2 has this natively — `resolve.tsconfigPaths`, default **false**.
-  // Declaring it here rather than in `vitest.config.mts` is the point: vitest
-  // already reads the alias from tsconfig on its own, so the alias was working
-  // in the suite and in the build and in neither dev, and nothing in the gate
-  // starts a dev server to notice.
-  resolve: { tsconfigPaths: true },
-  plugins: [tanstackStart(), viteReact(), copyFontFiles()],
-  css: { postcss: { plugins: [tailwindPostcss()] } },
-  // Without this a font above some size threshold would be inlined into the
-  // stylesheet as base64 rather than emitted as a file, which is the outcome
-  // `copyFontFiles` exists to avoid.
-  build: { assetsInlineLimit: 0 },
+  ...sharedConfig,
+  plugins: [cloudflare({ viteEnvironment: { name: "ssr" } }), tanstackStart(), viteReact(), copyFontFiles()],
 });

@@ -135,36 +135,65 @@ jobs:
           npm run typecheck
       - name: build
         run: npm run build
-      # The Dockerfile copies `dist/` and `server/` and runs
-      # `node server/index.mjs`. A build that exits 0 without producing them is a
-      # green job over a broken image, and this is not belt-and-braces on the
-      # build's exit code: `vite build` does not fail because the font binaries
-      # under `dist/client/assets/files/` were never copied, and it does not fail
-      # when a route fails to prerender.
+      # The Dockerfile copies `.output/` and runs `node .output/server/index.mjs`.
+      # A build that exits 0 without producing them is a green job over a broken
+      # image, and this is not belt-and-braces on the build's exit code: `vite
+      # build` does not fail because the font binaries were never copied, and it
+      # does not fail when a route fails to prerender.
       #
-      # The two artefacts named here are the ones whose absence the previous
-      # build made invisible. `vite build` printed 41 lines saying the webfonts
-      # "didn't resolve at build time, it will remain unchanged to be resolved at
-      # runtime" and emitted a stylesheet pointing at a directory it never
-      # created — so every page rendered unstyled, `/healthz` was green, and
-      # nothing failed. `server/index.mjs` is here for the same class of reason:
-      # the built module exports a fetch handler, so an image missing the adapter
-      # starts, prints nothing and exits 0.
+      # BOTH TARGETS ARE ASSERTED, because this repository now builds two and a
+      # check that names only one is a check that cannot notice the other
+      # regressing:
+      #
+      #   * `npm run build` (the `build` step above) emits the CLOUDFLARE WORKER.
+      #     `dist/server/index.mjs` is the Worker module — it replaced
+      #     `dist/server/server.mjs` when the `cloudflare()` plugin took over the
+      #     `ssr` environment — and `dist/server/wrangler.json` is the plugin's own
+      #     generated config, whose `main` is that file. Asserting the module
+      #     without the config would accept a tree where the Worker cannot be
+      #     bundled.
+      #   * `npm run build:node` (below) emits the NODE SERVER the Dockerfile
+      #     ships. `.output/server/index.mjs` is what the CMD runs; a Node build
+      #     that emits everything else is a container that exits 0 and answers
+      #     nothing.
+      #
+      # The webfont binaries are asserted by CONTENT rather than by the build log,
+      # and in BOTH outputs, because the two builds put them in different
+      # directories and getting that wrong is invisible in a rendered string: the
+      # log prints a warning and exits 0, and a stylesheet whose `@font-face`
+      # blocks name 118 files that are not there is an app that renders, answers
+      # every route and cannot be read. This is not hypothetical — the Node build
+      # shipped exactly that once already, because Nitro populates `.output/public`
+      # before the copy hook runs. See `copyFontFiles` in `vite.config.mts`.
       - name: the output the Dockerfile ships exists
         run: |
           set -euo pipefail
-          for artefact in dist/server/server.mjs dist/client/assets server/index.mjs; do
+          for artefact in dist/server/index.mjs dist/server/wrangler.json dist/client/assets; do
             if [ ! -e "$artefact" ]; then
-              echo "::error::$artefact is missing; the Dockerfile copies it" >&2
+              echo "::error::$artefact is missing; it is the Cloudflare Worker's build output" >&2
               exit 1
             fi
           done
-          # The webfont binaries, by CONTENT rather than by the build log. The log
-          # prints a warning and exits 0; a stylesheet whose `@font-face` blocks
-          # name eleven files that are not there is an app that renders and cannot
-          # be read.
           if [ -z "$(find dist/client -name '*.woff2' -print -quit)" ]; then
             echo "::error::no webfont binaries under dist/client; the emitted stylesheet names them" >&2
             exit 1
           fi
-          echo "build output present"
+          echo "cloudflare worker build output present"
+      - name: the node build the Dockerfile runs
+        run: npm run build:node
+      - name: the output the Dockerfile runs exists
+        run: |
+          set -euo pipefail
+          if [ ! -e .output/server/index.mjs ]; then
+            echo "::error::.output/server/index.mjs is missing; the Dockerfile's CMD runs it" >&2
+            exit 1
+          fi
+          # Same class of failure as the Cloudflare half above, and the reason it
+          # is asserted against `.output/public` rather than `dist/client`: the
+          # Node target serves from `.output/public`, so fonts sitting in
+          # `dist/client/assets/files/` are fonts nothing will ever be asked for.
+          if [ -z "$(find .output/public -name '*.woff2' -print -quit)" ]; then
+            echo "::error::no webfont binaries under .output/public; the served stylesheet names them" >&2
+            exit 1
+          fi
+          echo "node build output present"

@@ -19,10 +19,13 @@ you are looking at a later packet — see CHANGELOG "Known gaps" for the five
 service-side gaps this build works around.
 
 There is no Next.js here. `grep -rn "from 'next" src/ e2e/` is empty,
-`package.json` has no `next` dependency, and `dev`/`build`/`start` are
-`vite dev`, `vite build` and `node server/index.mjs`. Text below that explains a
-Next-era decision as *history* is doing so on purpose; text that tells you how to
-add a screen describes `src/routes/` and `src/app/`.
+`package.json` has no `next` dependency, and `dev`/`build` are `vite dev` and
+`vite build`. There is no `start` script and there is no `server/` directory:
+this app deploys to Cloudflare Workers, Cloudflare supplies the server, and the
+hand-rolled Node-to-Web adapter that used to bind the built fetch handler to a
+socket is deleted. Text below that explains a Next-era decision as *history* is
+doing so on purpose; text that tells you how to add a screen describes
+`src/routes/` and `src/app/`.
 
 ## Setup
 
@@ -106,8 +109,10 @@ e2e/no-token-artifacts.ts global teardown: no artifact holds a session token,
 `.github/workflows/ci.yml` — `ci` (kit's shared `node` job), `prime`
 (`./bin/prime` plus the `git diff --exit-code -- package-lock.json` guard) and
 `build` (`rm -rf dist && npm run typecheck`, then `npm run build`, then an
-assertion that `dist/server/server.mjs`, `dist/client/assets` and
-`server/index.mjs` exist and that a `.woff2` was emitted).
+assertion that the Cloudflare Worker output exists — `dist/server/index.mjs`,
+the plugin's own `dist/server/wrangler.json` and `dist/client/assets`, with a
+`.woff2` under `dist/client` — then `npm run build:node` and the same assertion
+for the Node target, against `.output/server/index.mjs` and `.output/public`).
 
 `.github/workflows/e2e.yml` — the whole-stack tier, its own workflow and its own
 required job. It checks out `../identity` and `../guard` beside this repository
@@ -139,6 +144,49 @@ unfixed — the escape hatch for a developer who needs it is
   verified nothing. The end-to-end tier is the same rule with one fewer moving
   part: it has no skip mechanism at all, and two readers of its report fail the
   run when fewer than two tests passed.
+
+## Deploying to Cloudflare Workers
+
+- **`npm run build` emits a Worker. `npm run build:node` emits a Node server.**
+  They are two configs because `cloudflare()` and `nitro()` each take over the
+  `ssr` environment: `vite.config.mts` is the default and produces
+  `dist/server/index.mjs` plus the plugin's generated
+  `dist/server/wrangler.json`, and `vite.node.config.mts` produces `.output/`.
+  The Dockerfile ships the second; `wrangler deploy` consumes the first.
+  `vite.shared.ts` holds what they must agree on — the `@/*` tsconfig-path
+  resolution, postcss/Tailwind, and the webfont copy — imported by both rather
+  than restated, because each of those three fails invisibly.
+- **`wrangler.jsonc` is the deployment config and it is committed.** `main` is
+  the framework's `@tanstack/react-start/server-entry`, and
+  `compatibility_flags: ["nodejs_compat"]` is what keeps `process.env` working
+  at all — those two names are the BFF's only source of where identity lives.
+  `.wrangler/` is gitignored; `.output/` and `dist/` are gitignored.
+- **`process.env` AT MODULE SCOPE IS A LIVE QUESTION, and it was measured rather
+  than assumed.** `src/app/v1/[...path]/route.ts` builds its forwarder at module
+  scope (the `const forward = createUpstreamForwarder({ identityUrl: identityUrl(),
+  billingUrl: billingUrl() })` at the top of the file), so `identityUrl()` and
+  `billingUrl()` read `process.env` at module scope, NOT per request — its own
+  header says so ("read once, when this module is first imported"). The
+  framework's deployment guide warns that `process.env.X` at module scope
+  evaluates to `undefined` even on the server. Measured on the built Worker
+  under `wrangler dev --local` with `nodejs_compat`: it **works** —
+  `--var IDENTITY_URL:http://127.0.0.1:16980` sent `GET /v1/me` to exactly that
+  fake identity, and with no var the same build fell back to
+  `DEFAULT_IDENTITY_URL` and answered 502. So the warning does not bite here,
+  but the read IS a module-scope read, and that is a fact the next person needs
+  rather than one this comment can settle for them. It is deliberately NOT
+  converted to a `cloudflare:workers` import, because that would break the Node
+  target this tree still ships and is a larger decision than this packet.
+- **The BFF's allow-list is unaffected and was re-checked on the Worker.** With
+  the fake identity running, `GET /v1/probe/abc` — a route identity serves and
+  the table refuses — answered 404 and never reached it. That is the property
+  worth having proven on the new runtime rather than only in jsdom.
+- **Static was not an option**, and the reason is in the BFF's own header: a
+  browser-readable service address is a browser-changeable one, and for a
+  forwarder that is the difference between a fixed destination and an attacker's.
+  No `prerender`, no `ssr: false`, no SPA mode, no `defaultSsr` — and
+  `/healthz` and `/readyz` are runtime checks that could not be prerendered in
+  any case.
 
 ## The gate is declared, not guessed
 
@@ -553,7 +601,13 @@ Non-negotiable, because it is the property the screen exists to protect:
 - Both are `no-store`. If you change either shape, change the tests and
   `cafaye.yml` in the same commit.
 
-## Deploying
+## Deploying to Node with Kamal
+
+This is the SECOND target, not the default one. The default deploy is Cloudflare
+Workers (see "Deploying to Cloudflare Workers" above); `config/deploy.yml` and
+the Dockerfile are kept because `e2e/docker-compose.yml` builds this
+repository's `Dockerfile` on every run of the whole-stack tier, and that tier is
+the only thing here that proves the app against a real `identity` and `billing`.
 
 `config/deploy.yml` is a copy of kit's template with five differences, and the
 file says all five in its own header. The three worth carrying in your head:
@@ -688,8 +742,14 @@ src/app/              NOT the Next.js app router and NOT scanned by the
                       `*-form.tsx` they are split into, providers.tsx (the
                       client provider stack, mounted by __root.tsx),
                       globals.css, favicon.ico
-server/               index.mjs (binds dist/server/server.mjs to a port) and
-                      adapter.mjs (the listener; it has its own tests)
+wrangler.jsonc         the Cloudflare Workers deployment config, committed:
+                      `main` is the framework's server entry, `nodejs_compat`
+                      is what keeps `process.env` working, and its comments say
+                      which field earns its place. `.wrangler/` is gitignored.
+vite.shared.ts         the half of the build config the Cloudflare target and
+                      the Node target must agree on — the `@/*` tsconfig-path
+                      resolution, postcss/Tailwind, and `copyFontFiles` —
+                      imported by both configs rather than restated in each
 config/deploy.yml   the Kamal configuration, copied from kit's template with
                     five differences. NO accessories key: parlor keeps no
                     database, and the reason is written where the template
