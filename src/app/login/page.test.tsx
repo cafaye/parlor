@@ -26,14 +26,19 @@ async function alertText() {
 }
 
 /**
- * The page component is async — it awaits `searchParams` to decide whether to
- * announce a completed reset — so every render below goes through this helper
- * rather than through `<LoginPage />` directly. JSX cannot hold a promise, and a
- * test that wrote `<LoginPage />` would render a thenable and find nothing on the
- * screen.
+ * Every render below goes through this helper rather than through
+ * `<LoginPage />` directly.
+ *
+ * It used to be async: the page component was async, because it awaited
+ * `searchParams` to decide whether to announce a completed reset, and JSX
+ * cannot hold a promise. That is no longer true — the route resolves the
+ * location and hands a plain object down, so the page is a synchronous
+ * function and this helper is synchronous with it. Nothing below had to change
+ * when that happened, which is the point of the page taking an object rather
+ * than reaching for the router itself.
  */
-async function loginPage(query: Record<string, string> = {}) {
-  return LoginPage({ searchParams: Promise.resolve(query) });
+function loginPage(query: Record<string, string> = {}) {
+  return LoginPage({ searchParams: query });
 }
 
 /**

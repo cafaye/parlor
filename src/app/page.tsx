@@ -25,19 +25,19 @@ export default function Home() {
       </div>
 
       <nav aria-label="Sections" className="grid gap-3 sm:grid-cols-2">
-        <Card to="/accounts" name="Accounts" body="The accounts you belong to, your role in each, and who else is in them." />
+        <Card href="/accounts" name="Accounts" body="The accounts you belong to, your role in each, and who else is in them." />
         <Card
-          to="/billing/plans"
+          href="/billing/plans"
           name="Plans"
           body="The plan catalogue: what can be bought, at what price, on what cadence."
         />
         <Card
-          to="/billing/customers"
+          href="/billing/customers"
           name="Customers"
           body="Billing's customer records, and the identity user or account each is for."
         />
         <Card
-          to="/healthz"
+          href="/healthz"
           name="Health"
           body="The liveness and readiness probes the platform reads."
         />

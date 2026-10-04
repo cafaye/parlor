@@ -13,6 +13,15 @@
 # testing
 /coverage
 
+# TanStack Start's build output. Same slot the `.next/` line above had: this is
+# what `npm run build` writes and the Dockerfile copies, so it is an artifact and
+# never source. The route tree is the deliberate exception — `src/routeTree.gen.ts`
+# IS committed, because CI typechecks before it builds and `tsc --noEmit` has to
+# resolve the router's import on a clean checkout. See `src/router.tsx`.
+/dist/
+/.output/
+/.tanstack/
+
 # next.js
 /.next/
 /out/
