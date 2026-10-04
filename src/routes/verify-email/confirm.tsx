@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useLocation } from "@tanstack/react-router";
 
 import VerifyEmailConfirmPage from "@/app/verify-email/confirm/page";
 import { searchParamsOf } from "@/lib/search-params";
@@ -26,7 +26,7 @@ export const Route = createFileRoute("/verify-email/confirm")({
 });
 
 function VerifyEmailConfirm() {
-  const { searchStr } = Route.useLocation();
+  const { searchStr } = useLocation();
 
   return <VerifyEmailConfirmPage searchParams={searchParamsOf(searchStr)} />;
 }

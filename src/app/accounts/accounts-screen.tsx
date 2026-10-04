@@ -95,7 +95,8 @@ function AccountList({ accounts }: { accounts: UseQueryResult<AccountListItem[]>
         <li key={account.id}>
           <Link
             className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface-raised px-4 py-3 hover:border-cafaye-300"
-            to={`/accounts/${account.id}`}
+            to="/accounts/$accountId"
+            params={{ accountId: account.id }}
           >
             <span className="flex min-w-0 flex-col">
               <span className="truncate font-medium">{account.name}</span>

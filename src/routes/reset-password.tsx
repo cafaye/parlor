@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useLocation } from "@tanstack/react-router";
 
 import ResetPasswordPage from "@/app/reset-password/page";
 import { searchParamsOf } from "@/lib/search-params";
@@ -24,7 +24,7 @@ export const Route = createFileRoute("/reset-password")({
 });
 
 function ResetPassword() {
-  const { searchStr } = Route.useLocation();
+  const { searchStr } = useLocation();
 
   return <ResetPasswordPage searchParams={searchParamsOf(searchStr)} />;
 }

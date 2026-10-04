@@ -527,7 +527,8 @@ function InviteForm({ role, accountId }: { role: Role; accountId: string }) {
             <p className="mt-2">
               <Link
                 className="font-mono break-all underline underline-offset-2 hover:no-underline"
-                to={`/invitations/${sent.token}`}
+                to="/invitations/$token"
+                params={{ token: sent.token }}
               >
                 {sent.token}
               </Link>

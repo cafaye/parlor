@@ -181,7 +181,8 @@ function Accepted({ membership }: { membership: Membership }) {
       <p className="text-sm">
         <Link
           className="font-medium underline underline-offset-2 hover:no-underline"
-          to={`/accounts/${membership.account_id}`}
+          to="/accounts/$accountId"
+          params={{ accountId: membership.account_id }}
         >
           Go to the account
         </Link>

@@ -28,6 +28,12 @@ import {
  * 405 from the framework before the forwarder is reached. `OPTIONS` in
  * particular is never answered, which is what makes this a non-CORS endpoint.
  *
+ * The handler receives ONE argument — an object carrying `request` and the
+ * already-resolved `params` — not a positional `(request, context)` pair. That
+ * is not a detail: taking two positional arguments is a type error, and a type
+ * error here is the thing that proves the forwarder's own signature was not
+ * quietly widened.
+ *
  * ---------------------------------------------------------------------------
  * WHY THE ALLOW-LIST IS STILL CODE AND NOT CONFIGURATION
  * ---------------------------------------------------------------------------
@@ -48,10 +54,10 @@ import {
 export const Route = createFileRoute("/v1/$")({
   server: {
     handlers: {
-      GET: (request, context) => forward(forwardGet, request, context.params),
-      POST: (request, context) => forward(forwardPost, request, context.params),
-      PATCH: (request, context) => forward(forwardPatch, request, context.params),
-      DELETE: (request, context) => forward(forwardDelete, request, context.params),
+      GET: ({ request, params }) => forward(forwardGet, request, params),
+      POST: ({ request, params }) => forward(forwardPost, request, params),
+      PATCH: ({ request, params }) => forward(forwardPatch, request, params),
+      DELETE: ({ request, params }) => forward(forwardDelete, request, params),
     },
   },
 });

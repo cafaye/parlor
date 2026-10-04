@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useLocation } from "@tanstack/react-router";
 
 import LoginPage from "@/app/login/page";
 import { searchParamsOf } from "@/lib/search-params";
@@ -16,7 +16,7 @@ export const Route = createFileRoute("/login")({
 });
 
 function Login() {
-  const { searchStr } = Route.useLocation();
+  const { searchStr } = useLocation();
 
   return <LoginPage searchParams={searchParamsOf(searchStr)} />;
 }
