@@ -254,9 +254,9 @@ gate:
     #
     # NOTHING IN THIS FILE SKIPS, and that is not an accident. The two
     # build-level cases in `route.test.ts` were first written to run only when
-    # `.next/static` already existed, and this floor is what caught it: with two
-    # skips, vitest prints `Tests  662 passed | 2 skipped (664)`, and the `suite`
-    # proof's negative lookahead — `[ ]+passed(?![ ]*\|)` — refuses exactly that
+    # a framework's build output already existed, and this floor is what caught
+    # it: with two skips, vitest prints `Tests  662 passed | 2 skipped (664)`,
+    # and the `suite` proof's negative lookahead — `[ ]+passed(?![ ]*\|)` — refuses exactly that
     # line. The gate reported `gate.proof-missing` and was RIGHT to: a check that
     # silently does not run on a fresh clone is a check that has verified nothing
     # on that machine. The fix was to make the build unconditional rather than to
@@ -264,7 +264,7 @@ gate:
     #
     # That history repeated itself once more, one framework later, which is why
     # the sentence above is phrased the way it is. The migration moved those two
-    # assertions from `.next/static` to `dist/client/assets`, and they run again —
+    # assertions from the old build output to `dist/client/assets`, and they run —
     # but the suite had been reporting them as SKIPPED, because the `beforeAll`
     # that builds and reads the directory threw before either assertion was
     # reached. A search of a directory no build produces finds nothing and passes;
@@ -475,7 +475,7 @@ ci:
   #
   # Note what is NOT declared here and should not be: that ci.yml also has a
   # `ci` job running kit's reusable workflow and a `build` job running
-  # typecheck + next build. They are not the gate. `bin/prime` is the gate, and
+  # typecheck + build. They are not the gate. `bin/prime` is the gate, and
   # core's checker asks one question of a workflow — does it invoke the argv
   # this declaration names — so a declaration that listed the build job as the
   # gate would be checked against a job that is not one.

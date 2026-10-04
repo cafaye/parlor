@@ -141,7 +141,7 @@ async function writeResponse(res, response, method) {
  * hydration, which means the sign-in form submits into nothing. `bin/e2e` is the
  * tier that would measure it, and it is not in `bin/prime`.
  *
- * The previous framework served these itself from `.next/static`, which is why
+ * The previous framework served these itself from its own `static/` output, which is why
  * nothing in this repository had to think about it and why the Dockerfile copied
  * that directory into the image separately. The equivalent here is below.
  *

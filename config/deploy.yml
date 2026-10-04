@@ -55,7 +55,7 @@
 #   BFF packet. The argument it made was measured, not suspected:
 #
 #   `src/lib/identity.ts` fetched from the BROWSER, at a `NEXT_PUBLIC_IDENTITY_URL`
-#   that `next build` inlined into the client bundle, so the caller of identity
+#   that the previous framework inlined into the client bundle, so the caller of identity
 #   was a person on `parlor`'s origin. identity serves no CORS headers at all —
 #   there is no `Access-Control-Allow-*` anywhere in `identity/internal/` — so
 #   the preflight failed, the response was unreadable, and `/login` rendered
@@ -276,7 +276,7 @@ deploy_timeout: 180
 # `src/app/v1/[...path]/route.ts` at request time. They were
 # `NEXT_PUBLIC_IDENTITY_URL` and `NEXT_PUBLIC_BILLING_URL`, read by the two
 # browser clients, and the `NEXT_PUBLIC_` prefix is why they could not be set
-# here: `next build` text-substitutes every `NEXT_PUBLIC_*` into the client bundle
+# here: the previous framework text-substituted every `NEXT_PUBLIC_*` into the client bundle
 # BEFORE the image exists, so setting one at run time changes nothing — the string
 # is already inside a file. That is the whole of what "Next is a Node service"
 # means for a deploy config, and it is why they used to have to be `builder.args`.
@@ -376,7 +376,7 @@ builder:
   # NO `args:` BLOCK, AND THAT IS DIFFERENCE 4 OF 5.
   #
   # It used to carry the two service addresses, and the comment above it argued
-  # at length why they could not go anywhere else: `next build` substitutes every
+  # at length why they could not go anywhere else: that framework substituted every
   # `NEXT_PUBLIC_*` into the client bundle, so the value had to exist when the
   # image was BUILT or the bundle would carry a default and the app would quietly
   # talk to `localhost` in production.
@@ -409,7 +409,7 @@ builder:
   # NOTHING IN CI PUBLISHES AN IMAGE YET, and the paragraph above is therefore
   # aspirational for this repository. Measured, not assumed: `.github/workflows/
   # ci.yml` has three jobs — kit's `node` job, `./bin/prime`, and
-  # typecheck + `next build` — and none of them runs `docker build`, `docker push`
+  # typecheck + build — and none of them runs `docker build`, `docker push`
   # or `kamal build`; the only place this image is built is
   # `e2e/docker-compose.yml`, which tags it `cafaye/e2e-parlor:local` for the
   # end-to-end stack and pushes it nowhere. So on a real host `kamal deploy` will
