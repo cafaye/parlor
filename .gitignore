@@ -23,6 +23,12 @@
 # it is the one piece of generated source in the tree. See `src/router.tsx`.
 /dist/
 /.tanstack/
+# wrangler's scratch space: the plugin's generated per-build state and anything
+# `wrangler dev` / `deploy --dry-run` leaves behind. `wrangler.jsonc` IS
+# committed for the same reason `caf.dev.json` is — it is the configuration the
+# deploy reads, not a build artifact. `wrangler.jsonc`'s own comments say which
+# of the three fields earn their place.
+/.wrangler/
 
 # production
 /build

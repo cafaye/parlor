@@ -1,0 +1,44 @@
+{
+  // parlor on Cloudflare Workers.
+  //
+  // The shape of this file is the framework's own deployment guide's, read out
+  // of `node_modules/@tanstack/start-client-core/skills/start-core/deployment/SKILL.md`
+  // rather than guessed. Three fields, each earning its place:
+  //
+  //   * `main` is the framework's server entry, not a path in this repository.
+  //     The Worker is built by `vite build` (the `cloudflare()` plugin in
+  //     `vite.config.mts`); `wrangler deploy` bundles the result. There is no
+  //     `dist/server/server.mjs` to point at and no `server/index.mjs` to run —
+  //     both of which existed only to bind a fetch handler to a Node socket, and
+  //     Cloudflare supplies the server.
+  //   * `compatibility_flags: ["nodejs_compat"]` is what keeps `process.env`
+  //     working AT ALL. Without it a Node API call throws at runtime, and
+  //     `process.env.IDENTITY_URL` / `BILLING_URL` — read on the server by
+  //     `src/app/v1/[...path]/route.ts` — are two `undefined`s.
+  //   * `compatibility_date` pins the runtime the Worker is written against, so a
+  //     Cloudflare-side change cannot silently alter what this build does.
+  //
+  // `assets` is absent HERE on purpose, and it is worth being precise about why,
+  // because it is NOT absent from the deployed Worker. The `cloudflare()` plugin
+  // reads this file, resolves `@tanstack/react-start/server-entry` through the
+  // Vite build, and writes its OWN `dist/server/wrangler.json` with
+  // `"main": "index.mjs"` and `"assets": { "directory": "../client" }` — so the
+  // emitted client chunks and the 118 webfont binaries under
+  // `dist/client/assets/files/` are served through an asset binding, and
+  // `npx wrangler deploy --dry-run` reports reading 258 files from that
+  // directory. Hand-writing an `assets.directory` here would restate a path the
+  // plugin derives from the built entry, in the one file a reader is most likely
+  // to trust about deployment.
+  //
+  // What is genuinely NOT here is any claim about prerendered HTML. There is
+  // none: every route is server-rendered, `/healthz` and `/readyz` are runtime
+  // checks, and the asset binding carries CSS/JS/fonts rather than pages.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "parlor",
+  "compatibility_date": "2025-09-02",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "@tanstack/react-start/server-entry",
+  "observability": {
+    "enabled": true
+  }
+}

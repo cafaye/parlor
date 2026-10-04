@@ -2,6 +2,7 @@ import { cp, mkdir } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 
+import { cloudflare } from "@cloudflare/vite-plugin";
 import tailwindPostcss from "@tailwindcss/postcss";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
@@ -99,7 +100,28 @@ export default defineConfig({
   // in the suite and in the build and in neither dev, and nothing in the gate
   // starts a dev server to notice.
   resolve: { tsconfigPaths: true },
-  plugins: [tanstackStart(), viteReact(), copyFontFiles()],
+  // `cloudflare()` FIRST, and the order is not a preference — it is what the
+  // framework's own deployment guide spells and what the plugin pair requires:
+  // `cloudflare()` installs the `ssr` environment's build hook (and the
+  // workerd-backed dev runtime) BEFORE `tanstackStart()` decides what to build
+  // into it, so a reversed array is a `tanstackStart()` that has already
+  // configured an environment nothing is going to run in.
+  //
+  // It replaces nothing this tree had: `server/index.mjs` and
+  // `server/adapter.mjs` existed to bind the built fetch handler to a Node
+  // socket, and Cloudflare supplies the server. Same routes, same BFF, same
+  // health endpoints — this changes where the server runs, not what it does.
+  //
+  // WHAT IS DELIBERATELY NOT HERE, because a static build would be a security
+  // regression rather than a simplification. `src/app/v1/[...path]/route.ts`
+  // reads `process.env.IDENTITY_URL` / `BILLING_URL` on the server and rebuilds
+  // the upstream path from an allow-list. No server means the browser calls
+  // `identity` and `billing` directly with the address baked into the bundle —
+  // and that file's own header says why that is the trap: "a value the browser
+  // can read is a value the browser can change, and for a forwarder that is the
+  // difference between a fixed destination and an attacker's." So: no
+  // `prerender`, no `ssr: false`, no SPA mode, no `defaultSsr`.
+  plugins: [cloudflare({ viteEnvironment: { name: "ssr" } }), tanstackStart(), viteReact(), copyFontFiles()],
   css: { postcss: { plugins: [tailwindPostcss()] } },
   // Without this a font above some size threshold would be inlined into the
   // stylesheet as base64 rather than emitted as a file, which is the outcome
