@@ -121,9 +121,9 @@ manager disagrees, the revert is those two hunks and nothing else.
 
 ## 7. State of the tree when this was written
 
-`npx vitest run` → 796 passed / 34 files. `npx tsc --noEmit` → clean, with no
+`npx vitest run` → 798 passed / 34 files. `npx tsc --noEmit` → clean, with no
 build. `tests/validate-ci.sh` → 47 declared, 47 passed. `gate.yml`'s `suite` floor
-was raised 755 → 796 in the same commit as the tests, as AGENTS.md requires.
+was raised 755 → 798 in the same commit as the tests, as AGENTS.md requires.
 
 Three red proofs were run before the floor moved, and one test had to be REWRITTEN
 first — see the commit message: deleting the `exchanged` latch left
@@ -132,3 +132,12 @@ arrived and the `landing.kind !== "working"` guard was doing the work alone. It
 now holds the request open, which is the window the latch exists for. A guard that
 passes against a broken implementation is worse than no guard, and the one that was
 vacuous here looked entirely reasonable.
+
+A second one was vacuous for a subtler reason and is worth the sentence: the
+"spends nothing" assertion was a `globalThis.fetch` spy, and
+`createUpstreamForwarder` resolves `options.fetchImpl ?? fetch` ONCE when it is
+constructed — so the spy recorded zero hops whether the branch forwarded or not.
+It now asserts on the handler's RETURNED VALUE instead, which distinguishes a
+deferred render from the forwarder's 502 by identity. **Any test in this repository
+that tries to intercept the forwarder's transport by replacing a global will be
+vacuous for the same reason.** Inject it, or do not assert on it.

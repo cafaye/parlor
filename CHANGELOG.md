@@ -65,7 +65,7 @@ All notable changes to parlor are recorded here. The format follows
   INSTANCE: a second one writes the same key without notifying the instance the
   provider is subscribed to, and the header stays signed out until a reload.
 
-  Suite 755 → 796, and `gate.yml`'s floor moved in the same commit. Three files
+  Suite 755 → 798, and `gate.yml`'s floor moved in the same commit. Three files
   new: `src/lib/social.ts`, two components under `src/components/social/`, and
   `src/routes/v1/auth/oauth/$provider/callback.tsx`.
 - **Two gate checks that run on every commit with no caf and no container

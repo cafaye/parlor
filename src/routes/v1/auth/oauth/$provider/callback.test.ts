@@ -24,6 +24,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
 import { createUpstreamForwarder } from "@/lib/upstream";
+import { socialCallbackPath } from "@/lib/social";
 
 import { Route } from "./callback";
 
@@ -61,6 +62,11 @@ const DOCUMENT_HEADERS = { accept: "text/html,application/xhtml+xml,application/
 const JSON_HEADERS = { accept: "application/json, application/problem+json" };
 
 type Hop = { url: string; headers: Headers; method: string };
+
+/** What the router hands the forwarder for a path: its segments after `/v1`. */
+function segmentsOf(path: string): string[] {
+  return path.replace(/^\/v1\//, "").split("/");
+}
 
 function identityReturning(hops: Hop[]) {
   return createUpstreamForwarder({
@@ -208,6 +214,56 @@ describe("a programmatic request to the callback", () => {
     // page, and it is the forwarder's failure rather than this route's.
     expect(result).toBeInstanceOf(Response);
     expect((result as Response).status).toBe(502);
+  });
+});
+
+describe("the path this app builds and the path the table serves", () => {
+  it("agrees, for the provider this app offers", async () => {
+    // Two files know this path: `socialCallbackPath` in `src/lib/social.ts`, which
+    // builds what the browser and the client ask for, and the `ROUTES` table in
+    // `src/lib/upstream.ts`, which decides whether anything is forwarded at all.
+    // They are separate by construction — one is a screen's URL and the other is
+    // the security property of the deployment — so nothing makes them agree except
+    // a test that asks. A path the table refuses is a callback that renders this
+    // app's own 404 while a person waits to be signed in.
+    //
+    // THE SEGMENTS COME FROM THE URL rather than being written out beside it,
+    // which is the only version of this that can fail. A first version passed the
+    // segments as a literal and asserted on the hop the forwarder built FROM those
+    // segments, so a `socialCallbackPath` that spelled the last segment wrongly
+    // passed: the forwarder never saw the URL, and the hop it built agreed with
+    // itself. Deriving one from the other is what makes the two files comparable.
+    const hops: Hop[] = [];
+    const forward = identityReturning(hops);
+    const path = socialCallbackPath("github");
+
+    const response = await forward(
+      new Request(`https://parlor.test${path}?code=the-code&state=st_1`, { headers: JSON_HEADERS }),
+      segmentsOf(path),
+    );
+
+    expect(response.status, `${path} is not a route the table serves`).toBe(200);
+    expect(hops).toHaveLength(1);
+    expect(hops[0].url).toContain("/v1/auth/oauth/github/callback");
+  });
+
+  it("refuses a provider name that is not a name at all", async () => {
+    // The screen accepts whatever the URL says and the TABLE decides. A callback
+    // for `..%2Fme` reaches the forwarder, which rebuilds the path from its own
+    // shapes rather than forwarding what it was handed — so a traversal is not
+    // filtered here, it is not expressible.
+    const hops: Hop[] = [];
+    const forward = identityReturning(hops);
+
+    const response = await forward(
+      new Request("https://parlor.test/v1/auth/oauth/..%2Fme/callback?code=c&state=st_1", {
+        headers: JSON_HEADERS,
+      }),
+      ["auth", "oauth", "..%2Fme", "callback"],
+    );
+
+    expect(response.status).toBe(404);
+    expect(hops, "refused before an address is contacted").toHaveLength(0);
   });
 });
 
