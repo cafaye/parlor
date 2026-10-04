@@ -61,16 +61,20 @@ before changing the topology; the file states the measured reason the stack has
 a reverse proxy in it, which is not a stylistic choice.
 
 ```
-e2e/docker-compose.yml   the stack: identity + gateway PULLED BY TAG from
-                         ${E2E_REGISTRY:-localhost:16010} (a registry:2 in the
-                         same file), one Postgres, one Redis, one edge proxy, and
-                         parlor itself built from this tree (`context: .`).
+e2e/docker-compose.yml   the stack: identity + gateway + oauth-stub PULLED BY
+                         TAG from ${E2E_REGISTRY:-localhost:16010} (a registry:2
+                         in the same file), one Postgres, one Redis, one edge
+                         proxy, TWO instances of the fake provider (one per
+                         client pair), and parlor itself built from this tree
+                         (`context: .`).
                          E2E_BUILD_SIBLINGS=1 layers
                          e2e/docker-compose.siblings.yml to put the sibling
                          `build:` stanzas back
 e2e/edge.conf            the same-origin edge. WHY IT EXISTS is in the file
-bin/e2e-stack            build / up / wait / down — the lifecycle, the bounded
-                         readiness poll, and the logs on a failed bring-up
+bin/e2e-stack            build / publish-siblings / up / wait / down /
+                         verify-sibling-images — the lifecycle, the named-ref
+                         publish, the bounded readiness poll, and the logs on a
+                         failed bring-up
 bin/e2e                  the tier: stack up, browser installed, suite run, the
                          report checked, stack down
 playwright.config.ts     trace OFF, video OFF, retries 0, one worker
@@ -115,20 +119,23 @@ the plugin's own `dist/server/wrangler.json` and `dist/client/assets`, with a
 for the Node target, against `.output/server/index.mjs` and `.output/public`).
 
 `.github/workflows/e2e.yml` — the whole-stack tier, its own workflow and its own
-required job. It checks out `../identity` and `../gateway` beside this
-repository — **every checkout names a `repository:`**, and that is not
-boilerplate: `actions/checkout` with only `path:` checks out
+required job. It checks out `../identity`, `../gateway` and `../oauth-stub`
+beside this repository — **every checkout names a `repository:`**, and that is
+not boilerplate: `actions/checkout` with only `path:` checks out
 `${{ github.repository }}` into the directory `path:` names, so for this job's
 whole life `../identity` held a copy of *parlor* and the sibling assertion below
 was satisfied by this repository's own Dockerfile. The job had never checked out
 a sibling, and a renamed path is not a checkout of a renamed repository.
 **The mechanism is `bin/e2e-stack publish-siblings`, not a compose build
-stanza**: `e2e/docker-compose.yml` carries `image:` and no `build:` for either
+stanza**: `e2e/docker-compose.yml` carries `image:` and no `build:` for any
 sibling, so the checkouts are load-bearing because of *where the tags come
 from* — the stack's registry is a `registry:2` container the run starts itself
 with no volume, so on a fresh runner it holds nothing, and
 `ensure_sibling_artifacts` can only fill it by building each sibling from a
-named ref of its checkout. The same two checkouts supply
+named ref of its checkout. The `oauth-stub` checkout is at the pinned tag and
+carries `fetch-depth: 0`, because a shallow single-branch clone has no tags and
+`publish-siblings` resolves the pin with `git rev-parse <tag>^{commit}`; the pin
+itself lives in `bin/e2e-stack`, not in the workflow. The same checkouts supply
 `../identity/migrations`, which `migrate()` reads from the host. The assertion
 step sets `working-directory: parlor` (it was the only `run:` step that did not,
 so `../identity` resolved *beside* the workspace, where a `path:` checkout puts
@@ -137,18 +144,71 @@ restating it, failing loudly on an empty extraction.
 `E2E_BUILD_SIBLINGS=1` is the developer's hatch that puts the `build:` stanzas
 back, and this job does not set it.
 
-- **`SIBLING_SERVICES=(identity gateway)` is TWO entries and that is decided,
-  not inherited.** The list is not a wish list: it is what four loops in
+- **`SIBLING_SERVICES=(identity gateway oauth-stub)` is THREE entries and that is
+  decided, not inherited.** The list is not a wish list: it is what four loops in
   `bin/e2e-stack` iterate — `preflight`'s Dockerfile check, `publish_siblings`'
   build and push, and `ensure_sibling_artifacts`' probe, pull and checkout test.
   `pantry` appears nowhere in this tree, and adding it is not a widening but a
-  red build: `publish_siblings`' `case` has recipes for identity and gateway and
-  a `*)` arm that dies with "no build recipe for sibling pantry", on the default
-  path, in CI. (`cafaye/site`'s list has three entries and that is right for
-  `site`.) Adding a service to this tier is three edits in one commit — a
+  red build: `publish_siblings`' `case` has recipes for identity, gateway and
+  oauth-stub and a `*)` arm that dies with "no build recipe for sibling pantry",
+  on the default path, in CI. (`cafaye/site`'s list has four entries and that is
+  right for `site`.) Adding a service to this tier is four edits in one commit — a
   `publish_siblings` recipe, a `build:` context in
-  `e2e/docker-compose.siblings.yml`, and the entry in `SIBLING_SERVICES` — and
-  never the last one alone.
+  `e2e/docker-compose.siblings.yml`, the entry in `SIBLING_SERVICES`, and a
+  `repository:` checkout in `.github/workflows/e2e.yml` — and never the last one
+  alone.
+
+- **`oauth-stub` is PINNED to `v0.1.0` and `identity`/`gateway` are not, and
+  that asymmetry is the whole design.** A test double is a dependency of this
+  tier's *assertions* rather than of the product: if `oauth-stub`'s `/github/user`
+  starts answering an address inline, the GitHub test in `social.e2e.spec.ts`
+  stops exercising the `/user/emails` fallback and still passes, so a double that
+  moves under the harness changes what a green run means without changing a line
+  of this repository. `identity` and `gateway` are the product under test,
+  released continuously; a pin would mean a security fix in either could not reach
+  the tier until somebody edited `bin/e2e-stack`. A pin is right for a fixture and
+  wrong for a service. The pin lives in `sibling_default_ref` (a `case`, because
+  macOS ships bash 3.2 and `declare -A` is 4.0 — a second parallel array indexed
+  against `SIBLING_SERVICES` is a thing where a sibling added at the front
+  silently takes the first sibling's pin), and `E2E_SIBLING_REF_OAUTH_STUB` still
+  overrides it for a developer testing an unmerged double.
+
+- **`publish_siblings` builds from a NAMED REF, not from the checkout directory,
+  and `verify-sibling-images` is how you find out.** This is `cafaye/site`'s
+  measured defect, not a preference: a stack built from a sibling checkout parked
+  on another agent's unmerged branch came up green with every readiness probe
+  passing, and the one request the tier exists to prove answered 401. The build
+  context is `git archive <sha> | tar -x` into a temp directory (not
+  `git worktree add`, which would leave a trace in another session's repository),
+  and the image carries `cafaye.e2e.source`/`.revision`/`.dirty` — not
+  `org.opencontainers.*`, which on gateway's image belongs to bun and satisfies
+  `--verify` with a confident false answer. `ensure_sibling_artifacts`' fast path
+  runs the check too: "published and cached" is not "right".
+
+- **`oauth-stub` runs TWICE, one instance per provider, and the reason is the
+  stub's own configuration.** `OAUTH_STUB_CLIENT_ID` is "the only `client_id` this
+  server accepts" and identity holds two providers under two different ids, as two
+  real providers would be, so one instance cannot serve both — whichever id it was
+  not given gets `invalid_client` on every authorization and the browser stalls
+  with an error naming the variable. The two escapes are both unavailable here:
+  pointing identity at the stub's defaults makes the fixture agree with itself
+  about a credential nothing independently holds, and loosening the check is a
+  change to a sibling this repository may not make. So there are two compose
+  services (`oauth-stub` on 16004, `oauth-stub-github` on 16005), both in
+  `READY_SERVICES` because one entry for two services is a silent gap in an array
+  keyed on service name. Neither has a `healthcheck:` — distroless, no HTTP client
+  — so both say `FINDING` in their own block, which `tests/validate-ci.sh`
+  requires per block rather than by reference.
+
+- **The endpoint overrides are in TWO DIALECTS and that is not redundant.** The
+  AUTHORIZE url is browser-context (`127.0.0.1` and a published port, because a
+  browser cannot resolve a compose service name); the TOKEN and USERINFO urls are
+  identity-context (service name, because a deploy reaches a sibling by name). The
+  token paths are asymmetric on purpose: `/google/token` and
+  `/github/access_token`, each provider's real last segment per `oauth-stub`'s
+  `routes()`. `OAUTH_REDIRECT_BASE_URL` is derived from the EDGE's port, because
+  the browser is on the edge and the `__Host-oauth-state` cookie is scoped to the
+  origin the 302 arrived on.
 
 - **The gate is `bin/prime`, and CI runs that script, not a list of `npm run`
   commands.** If the two can disagree, one of them is lying. Adding a check
@@ -449,8 +509,16 @@ only the two routes and offers no discovery endpoint; a deployment adding a
 provider edits that array. `redirect_uri` remains a deployment fact this
 repository does not own: identity builds it from its own configured public base,
 and if that is not **this app's origin** the round trip completes on the wrong
-origin, where the state cookie is not in scope. No test here can see that — see
-`HANDOFF-parlor-02-social-ui.md`.
+origin, where the state cookie is not in scope. **No unit test here can see
+that** — see `HANDOFF-parlor-02-social-ui.md` — but the end-to-end tier now
+does, and that is the return on `parlor-e2e-social-01`: `social.e2e.spec.ts`
+drives a real browser through a real identity and a real provider, and
+`OAUTH_REDIRECT_BASE_URL` is the edge's published port. Point it at identity's
+own address and the whole round trip completes — 302, code, exchange,
+userinfo — and then fails, or sets the cookie where the app is not. The link
+case is asserted there too: attaching a provider must not mint a second
+session, and the callback decides that from a record the start route left, not
+from the session cookie.
 ## Recovery
 
 `POST /v1/password-resets` and `POST /v1/password-resets/confirm` are **anonymous**.

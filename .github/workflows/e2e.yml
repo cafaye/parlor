@@ -9,7 +9,8 @@
 #     people stop running is a gate that is not a gate.
 #   * The stack needs sibling checkouts, and NOT because a compose file names
 #     them as build contexts — `e2e/docker-compose.yml` has no `build:` stanza
-#     for any sibling and consumes identity and gateway as `image:` by tag. It
+#     for any sibling and consumes identity, gateway and oauth-stub as `image:`
+#     by tag. It
 #     needs them because of WHERE those tags come from. The registry in the
 #     stack is a `registry:2` container this run starts itself
 #     (`bin/e2e-stack` ensure_registry), so it holds nothing when the run
@@ -70,8 +71,9 @@ jobs:
     name: whole stack, in a browser
     runs-on: ubuntu-latest
     # Generous, and it is a ceiling rather than a target: a cold run builds
-    # three images from three toolchains, which is most of the time. A timeout
-    # that is too tight turns a slow cold cache into a red build that says
+    # FOUR images from three toolchains (oauth-stub is the second Go build, and
+    # `COMPOSE_PARALLEL_LIMIT` is 1 on purpose), which is most of the time. A
+    # timeout that is too tight turns a slow cold cache into a red build that says
     # nothing; a timeout that is too loose is only paid when something is
     # already wrong, and every long command inside bin/e2e-stack has its own
     # bounded budget and prints the failing container's logs.
@@ -83,12 +85,23 @@ jobs:
       # this repository would start a stack whose sibling images exist nowhere,
       # and `docker compose up` would fail pulling them.
       #
-      # THREE checkout steps rather than one with a `path:` list, because `ref`
+      # FOUR checkout steps rather than one with a `path:` list, because `ref`
       # differs between them: this repository is tested at the ref being pushed,
-      # and the siblings at master. A stack assembled from mismatched service
-      # versions is a different artifact with the same name, and pinning the
-      # siblings to this ref would mean a green run of a fleet that does not
-      # exist.
+      # identity and gateway at master, and oauth-stub at the tag
+      # `bin/e2e-stack` pins. A stack assembled from mismatched service versions is
+      # a different artifact with the same name, and pinning the service siblings
+      # to this ref would mean a green run of a fleet that does not exist.
+      #
+      # `oauth-stub` IS THE ONE THAT IS NOT `master`, and this checkout is where
+      # that decision becomes concrete. `bin/e2e-stack`'s `sibling_default_ref`
+      # pins it because it is a TEST DOUBLE — a dependency of this tier's
+      # assertions rather than of the product — and a double that moves under the
+      # harness changes what a green run means without changing a line of this
+      # repository. `fetch-depth: 0` is load-bearing for exactly that reason:
+      # `publish-siblings` resolves the PINNED TAG, and a shallow single-branch
+      # clone carries no tags, so `sibling_revision` would fail with "oauth-stub
+      # has no ref v0.1.0" and send the reader to `git fetch` on a repository the
+      # workflow itself chose not to fetch.
       #
       # `repository:` IS NOT OPTIONAL ON ANY OF THE THREE, and the reason is the
       # defect this step arrangement carried for its whole life: an
@@ -115,6 +128,20 @@ jobs:
           repository: cafaye/gateway
           path: gateway
           ref: master
+      # The fake provider, at the PINNED TAG rather than at master. `ref:` alone
+      # is not enough here: `git rev-parse v0.1.0^{commit}` is how
+      # `publish-siblings` names the source it is about to build, and a
+      # single-branch clone of the tag's commit does not carry the tag itself.
+      # So `fetch-depth: 0`. The pin lives in `bin/e2e-stack`
+      # (`sibling_default_ref`), NOT here — restating the number in this file
+      # would make it a second place to keep true, and the two would drift
+      # silently in whichever direction a human last edited.
+      - uses: actions/checkout@v7
+        with:
+          repository: cafaye/oauth-stub
+          path: oauth-stub
+          ref: v0.1.0
+          fetch-depth: 0
 
       - uses: actions/setup-node@v7
         with:

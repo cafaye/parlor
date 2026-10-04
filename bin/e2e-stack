@@ -1319,20 +1319,32 @@ case "${1:-}" in
   # one. With two, the second is any image reference — a developer's own local
   # `cafaye/oauth-stub:e2e`, say — because the question is about the image rather
   # than about a name this harness chose.
+  # The one-argument form resolves the image itself, to
+  # `$REGISTRY/$(sibling_tag "$1")` — the same expression the loop over
+  # SIBLING_SERVICES builds — so naming a sibling is enough and the answer cannot
+  # name an image the rest of the harness does not mean. The TWO-argument form is
+  # kept for the case it is always for: an image that is NOT the registry one,
+  # which is what a developer pointing this at their own `cafaye/oauth-stub:e2e`
+  # after `E2E_BUILD_SIBLINGS=1` needs.
   verify-sibling-images)
-    case "${2:-}" in
-      "") verify_sibling_images ;;
-      *)
-        shift 2
-        [ $# -le 1 ] || die "usage: bin/e2e-stack verify-sibling-images [<service> [<image>]]"
-        service=${1:-}
+    shift
+    case $# in
+      0) verify_sibling_images ;;
+      1)
+        # An unknown name is refused HERE rather than reported as an unverified
+        # image. `sibling_tag` will happily name a tag for a service that does not
+        # exist, and the check would then print a confident FAILURE about a missing
+        # label on an image nobody ever published — which is a very confusing way to
+        # say "you typed the name wrong", and it is a check that fails for a reason
+        # other than the one it exists to catch.
         case " ${SIBLING_SERVICES[*]} " in
-          *" $service "*) ;;
-          *) die "no sibling called '$service'; this tier consumes ${SIBLING_SERVICES[*]}. 'verify-sibling-images' with no arguments checks all of them." ;;
+          *" $1 "*) ;;
+          *) die "no sibling called '$1'; this tier consumes ${SIBLING_SERVICES[*]}. 'verify-sibling-images' with no arguments checks all of them." ;;
         esac
-        image=${2:-"$REGISTRY/$(sibling_tag "$service")"}
-        verify_sibling_image "$service" "$image"
+        verify_sibling_image "$1" "$REGISTRY/$(sibling_tag "$1")"
         ;;
+      2) verify_sibling_image "$1" "$2" ;;
+      *) die "usage: bin/e2e-stack verify-sibling-images [<service> [<image>]]" ;;
     esac
     ;;
   logs) shift; compose logs --no-color "$@" ;;
