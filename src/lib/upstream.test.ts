@@ -723,6 +723,25 @@ describe("the table and the clients agree", () => {
     await client.requestEmailVerification("kaka@example.com");
     await client.redeemEmailVerification({ token: "tok" });
     await client.verificationStatus("t");
+    // The two social routes, walked through the same door as everything else.
+    //
+    // Both are `.catch`ed, and the reason is specific rather than defensive: this
+    // stub answers every hop with `200 "{}"`, and for BOTH of these methods a 200
+    // is deliberately a failure — `startSocialLogin` throws because the document
+    // promises no 2xx for a redirect operation and there is no `Location` to
+    // report, and `completeSocialLogin` throws because `{}` carries neither
+    // `token` nor `linked_provider`. So the calls throw by design here, and a
+    // walk that asserted they resolved would be asserting something untrue.
+    //
+    // What the walk actually proves is the thing this test exists for: each
+    // method's URL reached an upstream through the table rather than being
+    // refused. A 404 or 405 from `checked` would have thrown with the URL named,
+    // and `checked` runs BEFORE the method's own response handling — so a table
+    // missing either route is still a failure here, which is the whole safety net.
+    await client.startSocialLogin("github").catch(() => undefined);
+    await client
+      .completeSocialLogin("github", { state: "st_1", code: "the-code" })
+      .catch(() => undefined);
 
     await billing.listPlans({ limit: 2 });
     await billing.getPlanBySlug("pro");
@@ -1061,5 +1080,493 @@ describe("the account boundary at the forwarder", () => {
       expect(response.status, route.id).toBe(404);
       expect(hops, route.id).toHaveLength(0);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 7. The social surface — the one place in this table whose success is a
+//    REDIRECT.
+//
+// `GET /v1/auth/oauth/{provider}` answers 302 with a `Location` and no body
+// (`identity/internal/httpapi/oauth.go`, `oauthRedirect`), and sets
+// `__Host-oauth-state` for the callback to compare against. The provider then
+// brings the browser back to `/v1/auth/oauth/{provider}/callback`, which is a
+// TOP-LEVEL NAVIGATION rather than a `fetch` from this app: it arrives carrying
+// cookies and it leaves carrying `Set-Cookie`.
+//
+// That makes this section different from every other one, in one specific way.
+// Every other route in the table can be proved by asserting on the hop and the
+// body. This one cannot: the header that IS the answer is a response header, and
+// a forwarder that forwarded the request perfectly and dropped `Location` would
+// return a 302 to nowhere. The browser would sit on a blank page and nothing
+// would say why. So the tests below assert on the headers crossing back, not on
+// the request reaching identity.
+//
+// `location` is NOT on `FORWARDED_RESPONSE_HEADERS`, and one route declares
+// itself a browser redirect with `browserRedirect: true`. Both halves of that
+// are asserted here: the start leg's `Location` crossing, and a 302 on a route
+// that did not declare itself one arriving at the browser with no `Location` at
+// all. A test for the first alone would pass on a forwarder that forwards every
+// upstream redirect, which is the arrangement the omission exists to prevent.
+// ---------------------------------------------------------------------------
+
+describe("the social surface", () => {
+  it("forwards a social-start GET to identity under the provider the caller named", async () => {
+    const { forward, hops } = forwarder();
+
+    const response = await forward(new Request("https://parlor.test/v1/auth/oauth/github"), [
+      "auth",
+      "oauth",
+      "github",
+    ]);
+
+    expect(response.status).toBe(200);
+    expect(hops).toHaveLength(1);
+    expect(hops[0].url).toBe(`${IDENTITY_URL}/v1/auth/oauth/github`);
+    expect(hops[0].method).toBe("GET");
+  });
+
+  it("delivers the start leg's redirect and its state cookie", async () => {
+    // THE FIRST HALF OF THE TRAP. A 302 is the whole success of this route, and
+    // `Location` is the only thing in the answer that says where to go — so a
+    // forwarder whose response allow-list named `content-type` and `x-trace-id`
+    // and nothing else would relay a perfect 302 with no destination on it. The
+    // `oauth-state` cookie matters for the same test because the callback
+    // compares `state` against it and a flow with no cookie cannot finish.
+    const { forward } = forwarder(
+      () =>
+        new Response(null, {
+          status: 302,
+          headers: {
+            Location: "https://accounts.google.com/o/oauth2/v2/auth?client_id=abc&state=xyz",
+            "Set-Cookie": "__Host-oauth-state=st_1; Path=/; Max-Age=600; Secure; HttpOnly; SameSite=Lax",
+          },
+        }),
+    );
+
+    const response = await forward(new Request("https://parlor.test/v1/auth/oauth/google"), [
+      "auth",
+      "oauth",
+      "google",
+    ]);
+
+    // The status survives, because `relay` passes it through untouched.
+    expect(response.status).toBe(302);
+    // The destination survives, which is the assertion that fails without
+    // `browserRedirect` on the route's entry in the table.
+    expect(response.headers.get("location")).toBe(
+      "https://accounts.google.com/o/oauth2/v2/auth?client_id=abc&state=xyz",
+    );
+    const cookie = response.headers.get("set-cookie");
+    expect(cookie).toContain("__Host-oauth-state=st_1");
+    expect(cookie).toContain("Secure");
+    expect(cookie).toContain("HttpOnly");
+    // The attribute a forwarder adds to "make it work" and which makes the
+    // browser reject the whole thing. Same rule as `__Host-session`, same test.
+    expect(cookie).not.toContain("Domain=");
+  });
+
+  it("relays no Location on a route that did not declare itself a redirect", async () => {
+    // THE TEST THAT HOLDS THE RULE THE MARK RELAXES, and the reason this section
+    // is not simply "`location` is forwarded now". A 302 from a route the table
+    // does NOT declare as a browser redirect reaches the browser as a 302 with
+    // nowhere to go: the status survives, the `Location` does not, and nothing is
+    // followed.
+    //
+    // It is written as an upstream that REDIRECTS rather than as one that answers
+    // normally, because that is the case the omission exists for. `POST
+    // /v1/session` is not a route any service should ever answer with a 302 — a
+    // redirect there is a misconfiguration — and the point is that a
+    // misconfiguration on the far side of this hop cannot become a move the
+    // browser makes on a stranger's behalf, with `__Host-session` riding it.
+    // A version of this that asserted on a 200 would pass with `location` on the
+    // global allow-list and would prove nothing at all.
+    //
+    // The sibling test is `../site`'s, by almost this name: "does not follow a
+    // redirect, and does not hand its Location to the browser". Same assertion,
+    // reached from the other side of the declaration.
+    const { forward } = forwarder(
+      () =>
+        new Response(null, {
+          status: 302,
+          headers: {
+            Location: "https://elsewhere.test/steal",
+            "Set-Cookie": "__Host-session=someone-elses; Path=/; Secure; HttpOnly; SameSite=Lax",
+          },
+        }),
+    );
+
+    const response = await forward(
+      new Request("https://parlor.test/v1/session", { method: "POST", body: "{}" }),
+      ["session"],
+    );
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBeNull();
+    // And the refusal is not "drop everything on an unusual status": the cookie
+    // still crosses, because `Set-Cookie` is not conditioned on either the route's
+    // mark or the status. That is the other half of the trap, and a version of
+    // this test that only asserted the status would have let it regress silently.
+    expect(response.headers.get("set-cookie")).toContain("__Host-session=");
+  });
+
+  it("relays no Location it was not given", async () => {
+    // The complement of the test above, because a header allow-list is only a
+    // claim about what crosses if something asserts what does NOT cross. A 200
+    // from `POST /v1/session` has no `Location`, and this file does not invent
+    // one.
+    const { forward } = forwarder(
+      () =>
+        new Response(JSON.stringify({ token: "t" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+
+    const response = await forward(
+      new Request("https://parlor.test/v1/session", { method: "POST", body: "{}" }),
+      ["session"],
+    );
+
+    expect(response.headers.get("location")).toBeNull();
+  });
+
+  it("hands no Location to the browser on the CALLBACK, which is the other half of the flow", async () => {
+    // The callback route carries no `browserRedirect`, and this is what that
+    // omission buys. The provider's trip to this path happened inside the
+    // `Location` the START leg handed over, so anything arriving here as a 302 is
+    // a move upstream proposed AFTER the browser had already been handed the
+    // provider's page — and this table has no opinion about it. Dropping it is
+    // the same dead end as above, and it is the correct dead end here.
+    const { forward } = forwarder(
+      () =>
+        new Response(null, {
+          status: 302,
+          headers: { Location: "https://elsewhere.test/steal" },
+        }),
+    );
+
+    const response = await forward(
+      new Request("https://parlor.test/v1/auth/oauth/github/callback?state=s&code=c"),
+      ["auth", "oauth", "github", "callback"],
+    );
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBeNull();
+  });
+
+  it("forwards the callback's code and state, in the route's declared order", async () => {
+    // WITHOUT the route's `query` declaration, `buildQuery` returns "" and the
+    // callback arrives at identity with no `state` at all — which the service
+    // answers with a 400 that deliberately does not say why. So this asserts the
+    // parameter SURVIVED, because a social sign-in that cannot finish looks
+    // exactly like a social sign-in the person never started.
+    const { forward, hops } = forwarder();
+
+    await forward(
+      new Request("https://parlor.test/v1/auth/oauth/github/callback?state=st_1&code=the-code"),
+      ["auth", "oauth", "github", "callback"],
+    );
+
+    expect(hops[0].url).toBe(
+      `${IDENTITY_URL}/v1/auth/oauth/github/callback?code=the-code&state=st_1`,
+    );
+  });
+
+  it("forwards the callback's error parameter, which is a refusal and not a missing code", async () => {
+    // Somebody who said no at the provider is sent back with `error` and no
+    // `code`. identity answers that as a 400 refusal precisely so the client can
+    // say "you declined" rather than "you presented something invalid" — which is
+    // only possible if `error` survives the hop.
+    const { forward, hops } = forwarder();
+
+    await forward(
+      new Request(
+        "https://parlor.test/v1/auth/oauth/google/callback?error=access_denied&state=st_1",
+      ),
+      ["auth", "oauth", "google", "callback"],
+    );
+
+    expect(hops[0].url).toContain("error=access_denied");
+  });
+
+  it("drops a callback parameter the route does not declare", async () => {
+    // The same rule every other route obeys, and the one that matters most here:
+    // `redirect_uri` and `client_id` are parameters the PROVIDER sends to
+    // identity, and this app is not the provider. Forwarding a caller's
+    // `redirect_uri` is how a code would be delivered somewhere the caller chose.
+    const { forward, hops } = forwarder();
+
+    await forward(
+      new Request(
+        "https://parlor.test/v1/auth/oauth/github/callback?state=st_1&redirect_uri=https%3A%2F%2Fevil.example%2Fsteal",
+      ),
+      ["auth", "oauth", "github", "callback"],
+    );
+
+    expect(hops[0].url).not.toContain("redirect_uri");
+    expect(hops[0].url).not.toContain("evil.example");
+  });
+
+  it("delivers the callback leg's session cookie, with its attributes untouched", async () => {
+    // THE SECOND HALF OF THE TRAP, and the one the brief names: on the sign-in
+    // path the callback's 200 sets `__Host-session` exactly as `POST /v1/session`
+    // does, and that cookie is the entire result of the round trip. A browser
+    // that got a 200 and no cookie has signed in to nothing.
+    const { forward } = forwarder(
+      () =>
+        new Response(
+          JSON.stringify({ token: "tok_social", expires_at: "2026-10-30T12:00:00Z" }),
+          {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+              "Set-Cookie": "__Host-session=tok_social; Path=/; Secure; HttpOnly; SameSite=Lax",
+            },
+          },
+        ),
+    );
+
+    const response = await forward(
+      new Request("https://parlor.test/v1/auth/oauth/github/callback?state=st_1&code=c"),
+      ["auth", "oauth", "github", "callback"],
+    );
+
+    expect(response.status).toBe(200);
+    const cookie = response.headers.get("set-cookie");
+    expect(cookie).toContain("__Host-session=tok_social");
+    expect(cookie).toContain("Path=/");
+    expect(cookie).toContain("Secure");
+    expect(cookie).toContain("HttpOnly");
+    expect(cookie).toContain("SameSite=Lax");
+    expect(cookie).not.toContain("Domain=");
+    // And the body is not dropped on the way, because the client reads the
+    // `token` out of it.
+    expect(await response.json()).toMatchObject({ token: "tok_social" });
+  });
+
+  it("carries both cookies of a round trip without folding them together", async () => {
+    // THE WHOLE ROUND TRIP AS THE BROWSER EXPERIENCES IT, and the single test
+    // that would catch the silent failure. It walks the two legs through the
+    // forwarder and asserts three things a per-leg test cannot see at once:
+    //
+    //   * the `__Host-oauth-state` cookie identity SET on leg one reaches the
+    //     caller (and so can be sent back), because a flow whose state cookie
+    //     never arrived cannot finish at all;
+    //   * that same cookie is what identity RECEIVES on leg two, so the round
+    //     trip identity compares is the round trip this forwarder proxied;
+    //   * the `__Host-session` cookie from leg two reaches the caller as its own
+    //     header value.
+    //
+    // `headers.get("set-cookie")` would return "a, b" for two cookies — the
+    // joined value that lands inside one cookie's `Expires` and destroys both,
+    // which is the same trap the MFA test above is written for. This asserts on
+    // `getSetCookie()` and on the string the browser would actually parse.
+    let jar = "";
+    const { forward, hops } = forwarder((hop) => {
+      // `includes`, not `endsWith`: the callback's URL carries a query string,
+      // so it ends in `…&state=st_1` rather than in `/callback`. A predicate that
+      // only looked at the tail answered leg two with the start leg's 302 — which
+      // is a reminder that the query string is part of the route, and that the
+      // tests below are as dependent on it surviving as the browser is.
+      if (hop.url.includes("/callback")) {
+        return new Response(
+          JSON.stringify({ token: "tok_social", expires_at: "2026-10-30T12:00:00Z" }),
+          {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+              "Set-Cookie": "__Host-session=tok_social; Path=/; Secure; HttpOnly; SameSite=Lax",
+            },
+          },
+        );
+      }
+      return new Response(null, {
+        status: 302,
+        headers: {
+          Location: "https://github.com/login/oauth/authorize?state=st_1",
+          "Set-Cookie": "__Host-oauth-state=st_1; Path=/; Max-Age=600; Secure; HttpOnly",
+        },
+      });
+    });
+
+    // Leg one: the button.
+    const started = await forward(new Request("https://parlor.test/v1/auth/oauth/github"), [
+      "auth",
+      "oauth",
+      "github",
+    ]);
+    expect(started.status).toBe(302);
+    expect(started.headers.get("location")).toBe(
+      "https://github.com/login/oauth/authorize?state=st_1",
+    );
+
+    // What the browser stored from leg one.
+    const stateCookie = started.headers.getSetCookie();
+    expect(stateCookie).toHaveLength(1);
+    const state = stateCookie[0].split(";")[0];
+    expect(state).toBe("__Host-oauth-state=st_1");
+    jar = state;
+
+    // Leg two: the provider sends the browser back, with that cookie.
+    const finished = await forward(
+      new Request(
+        `https://parlor.test/v1/auth/oauth/github/callback?code=the-code&state=st_1`,
+        { headers: { Cookie: jar } },
+      ),
+      ["auth", "oauth", "github", "callback"],
+    );
+
+    expect(hops).toHaveLength(2);
+    // The state cookie crossed to identity on the leg that compares against it.
+    expect(hops[1].headers.cookie).toBe("__Host-oauth-state=st_1");
+    // And the session came back as its own cookie, unjoined.
+    const session = finished.headers.getSetCookie();
+    expect(session).toHaveLength(1);
+    expect(session[0]).toContain("__Host-session=tok_social");
+    expect(finished.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("refuses a provider segment that is not one, before any address is contacted", async () => {
+    // The value check on the new wildcard, written as attacks for the same
+    // reason the tenancy ones are. `matchesShape`'s comment explains why the
+    // segment is value-matched at all: the router has already percent-decoded it,
+    // so `oauth/%2e%2e%2f%2e%2e` arrives as ONE segment reading `../../`, and a
+    // check that only counted positions would splice it into the upstream URL.
+    // `Google` is in the list because the pattern is lower-case: the enum in the
+    // document is `[google, github]` and a case-insensitive match here would be
+    // this app guessing at a service's configuration.
+    for (const forged of ["../../me", "Google", "goo gle", "", "google/callback", "google%2Fme"]) {
+      const { forward, hops } = forwarder();
+
+      const response = await forward(
+        new Request(`https://parlor.test/v1/auth/oauth/${forged}`),
+        ["auth", "oauth", forged],
+      );
+
+      expect(response.status, JSON.stringify(forged)).toBe(404);
+      expect(hops, JSON.stringify(forged)).toHaveLength(0);
+    }
+  });
+
+  it("refuses a callback whose provider segment is forged, on both social routes", async () => {
+    // The callback is a wildcard route too, so the same traversal reaches it. Two
+    // routes, both refused before a hop: a `/callback` that answered for a forged
+    // provider would be a second door into whatever identity does with a
+    // mismatched provider and state.
+    for (const [route, segments] of [
+      ["/v1/auth/oauth/github/callback", ["auth", "oauth", "../../me", "callback"]],
+      ["/v1/auth/oauth/github/callback", ["auth", "oauth", "", "callback"]],
+      ["/v1/auth/oauth/google", ["auth", "oauth", "a/b"]],
+    ] as const) {
+      const { forward, hops } = forwarder();
+
+      const response = await forward(new Request(`https://parlor.test${route}`), [
+        ...segments,
+      ]);
+
+      expect(response.status, `${route} ${JSON.stringify(segments)}`).toBe(404);
+      expect(hops, `${route} ${JSON.stringify(segments)}`).toHaveLength(0);
+    }
+  });
+
+  it("asks identity about a provider this app does not narrow to the document's enum", async () => {
+    // THE ENUMERATION DEFENCE IS IDENTITY'S, AND THIS FILE MUST NOT WIDEN IT.
+    // The document says a name this deployment has no credentials for and a name
+    // that does not exist are BOTH 404, "because telling them apart is a way to
+    // enumerate a deployment's configuration". So `:provider` is value-matched
+    // against a shape and the request is forwarded: whatever identity answers is
+    // the answer, and this table holds no list of which providers exist. Narrowing
+    // it here to `[google, github]` would not be wrong in isolation — but it would
+    // make the two answers distinguishable at the forwarder, and the whole point
+    // is that they are not distinguishable anywhere.
+    const { forward, hops } = forwarder(
+      () =>
+        new Response(JSON.stringify({ code: "not_found", title: "Not found." }), {
+          status: 404,
+          headers: { "Content-Type": "application/problem+json" },
+        }),
+    );
+
+    const response = await forward(new Request("https://parlor.test/v1/auth/oauth/gitlab"), [
+      "auth",
+      "oauth",
+      "gitlab",
+    ]);
+
+    // It reached identity, and identity's own 404 came back untouched.
+    expect(hops).toHaveLength(1);
+    expect(hops[0].url).toBe(`${IDENTITY_URL}/v1/auth/oauth/gitlab`);
+    expect(response.status).toBe(404);
+    expect(await response.json()).toMatchObject({ code: "not_found" });
+  });
+
+  it("never relays a Location that names an upstream address", async () => {
+    // The response allow-list grew by one header, and a header that crosses is a
+    // header that can leak. This is the assertion that `Location` is safe to
+    // relay: identity writes it in exactly two places in the whole service —
+    // `oauthRedirect` in `internal/httpapi/oauth.go` (the route above) and the
+    // OIDC authorization endpoint in `internal/httpapi/oidc.go`, which is not in
+    // this table — and both write a PROVIDER's public address, never their own.
+    // So the one header that could name a host is not one either route can emit.
+    const { forward } = forwarder(
+      () =>
+        new Response(null, {
+          status: 302,
+          headers: { Location: "https://accounts.google.com/o/oauth2/v2/auth?state=xyz" },
+        }),
+    );
+
+    const response = await forward(new Request("https://parlor.test/v1/auth/oauth/google"), [
+      "auth",
+      "oauth",
+      "google",
+    ]);
+
+    expect(response.headers.get("location")).not.toContain(IDENTITY_URL);
+    expect(response.headers.get("location")).not.toContain(BILLING_URL);
+  });
+
+  it("refuses a method on either social route, and does not contact upstream", async () => {
+    // Both routes are GET and nothing else. A `POST` to either is a 405 with an
+    // `Allow` that names only GET — and, as with every other method refusal in
+    // this file, with no request leaving this process.
+    for (const segments of [
+      ["auth", "oauth", "github"],
+      ["auth", "oauth", "github", "callback"],
+    ]) {
+      const { forward, hops } = forwarder();
+
+      const response = await forward(
+        new Request(`https://parlor.test/${segments.join("/")}`, {
+          method: "POST",
+          body: "{}",
+        }),
+        segments,
+      );
+
+      expect(response.status, segments.join("/")).toBe(405);
+      expect(response.headers.get("allow"), segments.join("/")).toBe("GET");
+      expect(hops, segments.join("/")).toHaveLength(0);
+    }
+  });
+
+  it("sends neither a session token nor a cookie it was not given on the start leg", async () => {
+    // `GET /v1/auth/oauth/{provider}` is `security: []`. It reads a session
+    // cookie, but only to record an INTENTION — if the caller happens to hold one
+    // that resolves, the flow becomes a LINK rather than a sign-in. That is the
+    // service's decision to make from the credential, so the forwarder relays
+    // whatever the browser sent and invents nothing; what it must not do is ADD
+    // one, which is the same property the billing test above asserts.
+    const { forward, hops } = forwarder();
+
+    await forward(new Request("https://parlor.test/v1/auth/oauth/github"), [
+      "auth",
+      "oauth",
+      "github",
+    ]);
+
+    expect(hops[0].headers.authorization).toBeUndefined();
+    expect(hops[0].headers.cookie).toBeUndefined();
   });
 });

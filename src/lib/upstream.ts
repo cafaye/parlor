@@ -45,12 +45,21 @@
  *      not in the bundle at all — see `src/app/v1/[...path]/route.ts`.
  *
  *   2. FORWARD ONLY THE PATHS THAT ARE NEEDED, AND REJECT THE REST. The table
- *      below is transcribed from the two clients. `identity` serves thirty
- *      routes; twenty-two are reachable from here, and the eight that are not
- *      (`/v1/introspections`, the MFA routes, API keys, OIDC clients, email
- *      changes, `/v1/probe/{id}`) are refused before an address is contacted.
- *      A route being reachable from the internet is a decision somebody makes,
- *      not a side effect of a client existing.
+ *      below holds every operation `src/lib/identity.ts` and `src/lib/billing.ts`
+ *      can perform and nothing else, so the twenty-one identity routes in it are
+ *      a transcription with a test that reads it back ("the table and the clients
+ *      agree" in `upstream.test.ts`). Everything identity serves that is not
+ *      there — token introspection, the MFA routes, API keys, OIDC clients,
+ *      email changes, `/v1/probe/{id}` — is refused before an address is
+ *      contacted. A route being reachable from the internet is a decision
+ *      somebody makes, not a side effect of a client existing.
+ *
+ *      This paragraph used to carry counts ("thirty routes, twenty-two
+ *      reachable, eight not") and they were wrong twice over: they did not match
+ *      the table, and `identity/openapi/v1.yaml` describes no tenancy route at
+ *      all, so there was never anything to check them against. A number that
+ *      cannot be re-derived from a file is a number that rots, and this is the
+ *      one place in the codebase that must not rot quietly.
  *
  *      The upstream path is REBUILT from the table rather than forwarded as
  *      received. That is the property that makes traversal structurally
@@ -162,6 +171,41 @@ export const FORWARDED_REQUEST_HEADERS = [
  * destroys both. `headers.getSetCookie()` is the only correct spelling, and
  * identity's 202 MFA branch is the case that proves it matters.
  *
+ * `location` is NOT on this list, and its absence is a decision rather than an
+ * oversight. `redirect: "manual"` further down already refuses to FOLLOW a
+ * redirect, and this list refuses to hand one over: between them, a 302 from any
+ * upstream reaches the browser as a 302 with nowhere to go. That is the honest
+ * dead end for every route that has one, and a forwarder that relayed an
+ * arbitrary upstream `Location` would be handing the browser a move to somewhere
+ * this table never approved — with `__Host-session` riding it off-origin, which
+ * is the hazard the omission exists for.
+ *
+ * THE ONE EXCEPTION IS DECLARED PER ROUTE, and never as a header on this list.
+ * A route that means its 302 to be followed says so with `browserRedirect: true`
+ * on its entry in `ROUTES`, and `relay` reads it from there. There is one:
+ * `GET /v1/auth/oauth/{provider}`, whose answer is a redirect rather than a body.
+ * Dropping its `Location` is the quietest possible way to break social login —
+ * the hop still answers and the browser still gets a 302, and it follows a
+ * `Location` that is not there, so a person presses "Continue with GitHub" and
+ * lands on a blank page with no error anywhere.
+ *
+ * A DECLARED ROUTE IS THE OPPOSITE OF THE HAZARD, and the difference is where
+ * the value comes from. The hazard was an UNDECLARED upstream redirect steering
+ * the browser to an address the allow-list never approved. A declared route is
+ * the service's own 302, on a path this file already names, and the destination
+ * in it is a provider's public authorization endpoint rather than anything a
+ * caller chose. Nothing rides off-origin with it either: the `__Host-oauth-state`
+ * cookie is set by this app's own origin during the start leg, and a cookie is
+ * origin-scoped, so the browser does not present it to the provider it is being
+ * sent to.
+ *
+ * The sibling app at `../site` holds the same rule from the other side: its table
+ * declares no route this way, and its suite asserts the consequence by name — "does
+ * not follow a redirect, and does not hand its Location to the browser". One of
+ * these two repositories is the template the other is built from, so what has to
+ * agree is the MECHANISM (a per-route declaration, never an entry on the global
+ * list) rather than which routes happen to carry it.
+ *
  * Everything else is dropped. An upstream's `Server` or `X-Powered-By` names the
  * internal service and its version, and there is no client in this repository
  * that reads either.
@@ -178,7 +222,7 @@ export const FORWARDED_RESPONSE_HEADERS = ["content-type", "x-trace-id"] as cons
  * deliberately loose: those are base64url and the alphabet is not this
  * repository's to narrow.
  */
-type SegmentKind = "uuid" | "slug" | "token";
+type SegmentKind = "uuid" | "slug" | "token" | "provider";
 
 /** A route in the table: a method, a path shape, and where it goes. */
 type Route = {
@@ -192,24 +236,58 @@ type Route = {
    * not written against.
    */
   query?: readonly string[];
+  /**
+   * TRUE WHEN THIS ROUTE'S ANSWER IS A REDIRECT THE BROWSER IS MEANT TO FOLLOW.
+   *
+   * It is one flag for exactly one reason: `location` is not on the response
+   * header allow-list, so a route whose success IS a redirect has to say that
+   * here for `relay` to hand its `Location` over. There is currently one such
+   * route — `GET /v1/auth/oauth/{provider}` — and the declaration is the whole
+   * of the exception, so the set of routes that can send a browser off this
+   * origin is readable in one place and is as small as the table allows.
+   *
+   * IT DOES NOT MEAN THE FORWARDER FOLLOWS ANYTHING. `redirect: "manual"` below
+   * stays for every route including this one; what a declared route changes is
+   * only who does the following. The browser does, from its own address bar,
+   * having been handed a `Location` the service wrote.
+   *
+   * `true` and not a boolean on purpose. `browserRedirect: false` would be a
+   * route declaring that it does not redirect, which is every other route, and a
+   * table where "no" is spellable is a table where somebody eventually writes
+   * the wrong one.
+   */
+  browserRedirect?: true;
 };
 
 /**
  * The allow-list, transcribed from `src/lib/identity.ts` and `src/lib/billing.ts`.
  *
- * Read those two files to see the twenty-two operations this covers, and read
+ * Read those two files to see the operations this covers, and read
  * `upstream.test.ts`'s "the table and the clients agree" to see the check that
  * keeps the transcription honest — it calls every method on both clients and
  * asks this table about each URL, so a route added to a client and not to this
  * table is a red suite rather than a 404 nobody sees.
  *
- * The eight routes identity serves that are deliberately absent:
- * `/v1/introspections`, `/v1/session/mfa`, `/v1/mfa` and its four children,
+ * The identity surfaces deliberately absent: `/v1/introspections`,
+ * `/v1/session/mfa`, `/v1/mfa` and its four children,
  * `/v1/accounts/{id}/api-keys` and its delete, `/v1/accounts/{id}/oidc-clients`,
  * `/v1/email-changes` and its two children, and `/v1/probe/{accountID}`. None is
  * in `src/lib/identity.ts`. The MFA routes in particular would be a real
  * capability change: reaching them from a browser turns a second factor into a
  * thing this origin can drive.
+ *
+ * The social-login pair is the mirror image of that list and was on it until
+ * this packet: the service has served it the whole time, and this app simply
+ * could not reach it, which is a decision nobody took rather than one somebody
+ * made. It is now here because `src/lib/identity.ts` can perform both
+ * operations, which is the same bar every other entry in this table answers to.
+ *
+ * The consequence of the MFA routes staying absent is worth stating next to the
+ * social routes arriving: the social CALLBACK can answer 202 with a challenge,
+ * and this origin cannot finish that login, because the route that redeems a
+ * challenge is still refused here. A provider account with a confirmed second
+ * factor reaches a dead end rather than a wrong answer. Widening the table is a
+ * capability decision and is not one this packet makes.
  */
 const ROUTES: readonly Route[] = [
   // --- identity: the four session and user routes -------------------------
@@ -242,6 +320,53 @@ const ROUTES: readonly Route[] = [
   },
   { method: "POST", path: ["invitations", "accept"], upstream: "identity" },
 
+  // --- identity: social login ----------------------------------------------
+  //
+  // THE ONLY TWO REDIRECT-FACING ROUTES IN THIS TABLE, and the only two whose
+  // contract is about a BROWSER rather than about a caller: `/v1/auth/oauth/
+  // {provider}` answers a 302 to a provider and `/v1/auth/oauth/{provider}/
+  // callback` is where the provider sends the browser back. Everything else in
+  // this file is same-origin XHR.
+  //
+  // They are declared together because they are one flow, and identity mounts
+  // them as a pair or not at all — `registerSocialRoutes` returns before either
+  // is registered when no provider is configured — so half of this exists
+  // nowhere.
+  //
+  // `browserRedirect` is on the START LEG ONLY, and `relay` reads it from here to
+  // decide whether to hand the `Location` over. The callback does not carry it,
+  // and that asymmetry is the rule rather than an omission: the callback is where
+  // the browser arrives AFTER the provider has already been visited, it answers
+  // 200 with a body, and a `Location` on it would be an upstream move this table
+  // never approved. The provider's trip to the callback is inside the `Location`
+  // the start leg hands over, so the browser makes that hop by itself.
+  //
+  // The callback declares `code`, `state` and `error` because those are the three
+  // parameters the document puts in the query string, in that order. It has to
+  // declare all three and not just `state`: `code` is what the flow spends and
+  // `error` is how a person who declined at the provider is told so rather than
+  // being answered as an invalid request. A `query` list missing any one of them
+  // does not fail loudly here — `buildQuery` drops what is not declared — it
+  // drops the parameter and lets the service refuse the round trip, which is the
+  // 400 that says "this social sign-in did not start in this browser".
+  //
+  // `redirect_uri` and `client_id` are deliberately NOT declared. Those are what
+  // the PROVIDER sends to identity, this app is not the provider, and forwarding
+  // a caller's `redirect_uri` is how an authorization code gets delivered to an
+  // address the caller chose.
+  {
+    method: "GET",
+    path: ["auth", "oauth", ":provider"],
+    upstream: "identity",
+    browserRedirect: true,
+  },
+  {
+    method: "GET",
+    path: ["auth", "oauth", ":provider", "callback"],
+    upstream: "identity",
+    query: ["code", "state", "error"],
+  },
+
   // --- identity: recovery and verification --------------------------------
   { method: "POST", path: ["password-resets"], upstream: "identity" },
   { method: "POST", path: ["password-resets", "confirm"], upstream: "identity" },
@@ -263,6 +388,7 @@ const SEGMENT_KINDS: Record<string, SegmentKind> = {
   userId: "uuid",
   id: "uuid",
   slug: "slug",
+  provider: "provider",
 };
 
 /**
@@ -278,11 +404,36 @@ const SEGMENT_KINDS: Record<string, SegmentKind> = {
  * negative case still holds, which is what matters: no `/`, no `.`, no `?`, no
  * `#`, no `%` and no control character can appear, so a token segment cannot
  * introduce a new path segment, a traversal, or a query of its own.
+ *
+ * The provider shape is the one wildcard in this file that is deliberately NOT
+ * closed, and that is worth more than a paragraph: `google`, `github` and any
+ * other name a deployment might add are all FORWARDED, and the only question
+ * this file asks of the segment is whether it is a name at all.
+ *
+ * The closed reading is tempting and it is wrong here. The document says a
+ * provider a deployment has no credentials for and a name that does not exist
+ * are BOTH 404, "because telling them apart is a way to enumerate a
+ * deployment's configuration" — and narrowing the segment to the document's
+ * `[google, github]` would put a third answer in front of both of them: this
+ * file's own 404, whose problem document reads differently from identity's. The
+ * difference between "this app has never heard of that provider" and "identity
+ * knows that name and has not configured it" is exactly the bit an attacker
+ * enumerating a deployment's configuration wants, and a forwarder is the last
+ * place to leak it. So the enumeration defence stays where the service put it:
+ * one 404, from one service, for both cases.
+ *
+ * The shape is the slug's, so what it rules out is a traversal, a second path
+ * segment, a percent sign, a space, an empty segment and an upper-case name —
+ * which is what makes the segment safe to splice, not which providers exist. The
+ * test "asks identity about a provider this app does not narrow to the document's
+ * enum" is the one that holds this in place, and the one that would go red if
+ * somebody helpfully closed it.
  */
 const SEGMENT_PATTERNS: Record<SegmentKind, RegExp> = {
   uuid: /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/,
   slug: /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
   token: /^[A-Za-z0-9_-]{1,256}$/,
+  provider: /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
 };
 
 export type UpstreamForwarder = (
@@ -368,6 +519,27 @@ export function createUpstreamForwarder(options: UpstreamOptions): UpstreamForwa
         body,
         // identity's own errors are its own: a 401 stays a 401 so the sign-in
         // form can say "those are wrong" rather than "we could not find out".
+        //
+        // AND THE SOCIAL START'S OWN 302 IS NOT FOLLOWED, which is the second
+        // reason this line is here rather than left at the default. `GET
+        // /v1/auth/oauth/{provider}` answers 302 to a provider's HTTPS endpoint;
+        // at the default `redirect: "follow"` the transport would chase it,
+        // hand identity's `__Host-oauth-state` cookie and the whole request to
+        // github.com, and return github's HTML as this app's answer to a
+        // sign-in. Measured on Node 22.22.2, that is exactly what happens.
+        //
+        // One honest caveat, because it is the kind of thing that breaks on an
+        // upgrade rather than on an edit. `redirect: "manual"` is SPECIFIED to
+        // yield an opaque redirect — status 0, no headers, `type: "opaqueredirect"`
+        // — which would make `relay()` throw on `new Response(body, { status: 0 })`
+        // and turn the start leg into a 500. undici does not implement that
+        // clause: measured on 22.22.2 it returns a `type: "basic"` response with
+        // status 302 and a readable `Location` and `Set-Cookie`, which is the
+        // behaviour `relay()` needs and the whole reason the hop works. So this
+        // file depends on a deviation of the runtime it ships on. If a future
+        // runtime implements the spec faithfully, `redirect: "manual"` is the
+        // first thing to look at, and the symptom to recognise is a 500 on the
+        // social start with no `Location` anywhere in the logs.
         redirect: "manual",
       });
     } catch {
@@ -377,7 +549,7 @@ export function createUpstreamForwarder(options: UpstreamOptions): UpstreamForwa
       return problem(502, "upstream_unavailable", "The service is not reachable.");
     }
 
-    return relay(upstream);
+    return relay(upstream, match);
   };
 }
 
@@ -489,12 +661,35 @@ function buildQuery(route: Route, requestUrl: string): string {
  * `Cache-Control: no-store` is the one header ADDED rather than forwarded,
  * because a 200 carrying somebody's email and a `Set-Cookie`, held in any cache
  * between here and the browser, is a credential at rest.
+ *
+ * `Location` crosses only for a route that declared `browserRedirect`, and that
+ * is the whole of the exception. Two things are deliberately NOT conditioned on
+ * the status code, because both would be wrong in a way this file cannot repair:
+ *
+ *   * `Set-Cookie` is relayed on a 302 exactly as it is on a 200. The social start
+ *     leg is a 302 AND it is the leg that sets `__Host-oauth-state`, so a relay
+ *     that treated cookies as a success-response detail would hand the browser a
+ *     redirect to a provider with no state cookie, and the callback would then
+ *     refuse the round trip with a 400 that says the flow "did not start in this
+ *     browser". It did. The cookie never arrived.
+ *   * `Location` is relayed on whatever status the upstream wrote it with. The
+ *     route declared that its answer is a redirect; the service decides whether
+ *     that is a 302 or a 303, and second-guessing it here would be this file
+ *     inventing a contract it is not the authority for.
+ *
+ * The route is passed in rather than looked up again because the caller has
+ * already matched it, and matching twice would be a second reading of "which
+ * route is this" — the thing property 1 is built on not having.
  */
-function relay(upstream: Response): Response {
+function relay(upstream: Response, route: Route): Response {
   const headers = new Headers();
   for (const name of FORWARDED_RESPONSE_HEADERS) {
     const value = upstream.headers.get(name);
     if (value !== null) headers.set(name, value);
+  }
+  if (route.browserRedirect === true) {
+    const location = upstream.headers.get("location");
+    if (location !== null) headers.set("location", location);
   }
   for (const cookie of upstream.headers.getSetCookie()) {
     headers.append("set-cookie", cookie);
