@@ -5,12 +5,18 @@
  * ---------------------------------------------------------------------------
  * WHY A ROUTE HANDLER AND NOT A REWRITE
  * ---------------------------------------------------------------------------
- * `next.config.ts` can express the same routing in four lines, and that is the
- * reason to reject it rather than adopt it. A rewrite is a string
- * substitution the framework performs before this app sees the request:
+ * A rewrite can express the same routing in a handful of lines, and that is the
+ * reason to reject it rather than adopt it. A rewrite is a substitution the
+ * server performs before this app sees the request. In the previous framework
+ * that was `next.config.ts` and a `source:` pattern; in this one the equivalent
+ * is `createMiddleware({ type: "request" })` — exported from
+ * `@tanstack/react-start`, receiving the `Request` and a `next` function
+ * (`RequestServerNextFn` in `@tanstack/start-client-core/dist/esm/createMiddleware.d.ts`).
+ * Neither is configuration; both are code, and the argument below is about the
+ * limits of the shape rather than about who writes it:
  *
- *   * it cannot refuse a path, so `source: "/v1/:path*"` forwards everything
- *     under `/v1` — including `/v1/introspections`, `/v1/session/mfa` and
+ *   * it cannot refuse a path, so a `/v1/*` pattern forwards everything under
+ *     `/v1` — including `/v1/introspections`, `/v1/session/mfa` and
  *     `/v1/accounts/{id}/api-keys`, which no client here calls;
  *   * it cannot choose between two upstreams on the same prefix, and both
  *     services live under `/v1`;
@@ -20,7 +26,8 @@
  * A rewrite is the right tool when the thing in front is trusted to be the only
  * caller. That is not this situation: the caller is a browser on the internet,
  * and the packet's central requirement is that this must not be an open proxy.
- * The allow-list has to be code with tests on it, and that means a handler.
+ * The allow-list has to be code with tests on it, and a handler is where that
+ * code ends up.
  *
  * ---------------------------------------------------------------------------
  * WHY `/v1/*` AND NOT `/api/identity/*`
@@ -38,13 +45,37 @@
  * place a reader can see every path this app exposes and where it goes.
  *
  * ---------------------------------------------------------------------------
- * WHERE THE TWO ADDRESSES COME FROM, AND WHY THEY ARE NOT `NEXT_PUBLIC_*`
+ * WHERE THE TWO ADDRESSES COME FROM, AND WHY THEY ARE NOT IN THE CLIENT BUNDLE
  * ---------------------------------------------------------------------------
  * `process.env.IDENTITY_URL` and `process.env.BILLING_URL`, read here, on the
- * server, at request time. Not `NEXT_PUBLIC_*`, which `next build` substitutes
- * into the client bundle before the image exists — a value the browser can read
- * is a value the browser can change, and for a forwarder that is the difference
- * between a fixed destination and an attacker's.
+ * server, by `identityUrl()` and `billingUrl()` at the bottom of this file.
+ * Ordinary run-time variables, with nothing standing between them and the
+ * browser except that no bundler in this tree substitutes them.
+ *
+ * That last clause is a claim about this tree's build, so here is where it
+ * comes from. `package.json` `scripts.build` is `vite build`, and the only
+ * mechanism by which a Vite build puts an environment variable into client code
+ * is `import.meta.env` — Vite exposes exactly the names carrying its `envPrefix`
+ * (`VITE_` by default; `vite.config.mts` does not widen it) — plus whatever an
+ * explicit `define` in the config names. This repository uses neither:
+ * `vite.config.mts` declares no `define` and no `envPrefix`, and
+ * `grep -rn "import.meta.env" src/` returns nothing. There is no build-time
+ * substitution of a service address into anything, and no `NEXT_PUBLIC_`
+ * convention to reach for, because the framework that had one is not run here.
+ *
+ * The argument the old paragraph made is unchanged and is the reason this is
+ * worth a paragraph: a value the browser can read is a value the browser can
+ * change, and for a forwarder that is the difference between a fixed
+ * destination and an attacker's. Under this build that value is not merely kept
+ * out of the bundle — it is read on a machine the browser cannot reach, on
+ * every request, which is strictly stronger than being absent from a
+ * substitution list.
+ *
+ * It is also asserted rather than assumed: `route.test.ts` below this directory
+ * builds the client and byte-searches `dist/client/assets` for these two names
+ * and for the upstreams' hostnames. `tests/validate-ci.sh` refuses a
+ * `NEXT_PUBLIC_` name anywhere in `src/` or in the Dockerfile, on the reasoning
+ * that a name nobody should reintroduce is worth a standing check.
  *
  * Because they are ordinary variables they can also be set at RUN time, which is
  * why `config/deploy.yml` no longer builds this image per environment: the same
@@ -67,9 +98,14 @@ const DEFAULT_BILLING_URL = "http://localhost:3000";
  * The forwarder, built once per process.
  *
  * Module scope rather than per-request, because it closes over the two
- * addresses and reading them per request would be a way for the value to change
- * under a deployment. `export const dynamic` below is what stops Next from
- * evaluating this at build time and freezing the result into a static route.
+ * addresses and re-reading them per request would be a way for the value to
+ * change under a deployment. Note the honest consequence, because the file
+ * header says "at request time" and that phrase is doing two jobs: the read is
+ * a `process.env` call in a module only the server loads, so the value is never
+ * in a browser bundle at all — which is the property every assertion about this
+ * rests on — but it is read once, when this module is first imported, rather
+ * than on each request. Both are safe; they are not the same claim, and
+ * `route.test.ts` checks the bundle, not the timing.
  */
 const forward = createUpstreamForwarder({
   identityUrl: identityUrl(),
@@ -79,26 +115,69 @@ const forward = createUpstreamForwarder({
 /**
  * Never cached, and never statically rendered.
  *
- * Without this Next will happily treat a `GET` route handler with no dynamic
- * input as a static route and answer it from a file it wrote at BUILD time — a
- * `/v1/me` frozen to whoever was signed in when the image was built, served to
- * everybody. The parameters are read from the request, which is what marks this
- * dynamic, and the export states it so the intent does not depend on Next's
- * inference surviving a future refactor.
+ * WHY THIS IS TRUE OF THIS TREE, MEASURED RATHER THAN ASSUMED. The two exports
+ * below were written for the previous framework and the comment above them used
+ * to explain what Next did with them. Nothing here reads them: `grep -rn
+ * "force-dynamic" node_modules/@tanstack/` finds no reference, and no
+ * `revalidate` either. They are kept because `route.test.ts` asserts they are
+ * here, and because a reader who has just been told they are inert deserves to
+ * find that written down rather than have to rediscover it.
+ *
+ * What actually keeps `/v1/me` from being answered out of a build artifact is
+ * two things, and neither is this file:
+ *
+ *   * the build does not prerender unless asked. `@tanstack/start-plugin-core`/
+ *     dist/esm/prerender.js gates the whole pass on
+ *     `if (startConfig.prerender?.enabled)`, and this repository configures no
+ *     Start prerender, so `vite build` writes no HTML for any route.
+ *   * the handler is called per request. `@tanstack/start-server-core/dist/esm/
+ *     createStartHandler.js` sets the terminal handler for each incoming
+ *     `Request`, so a response can only exist once a request has arrived.
+ *
+ * `route.test.ts`'s own test name for this pair overstates what the two strings
+ * prove; that is a finding, not something this comment pretends to settle.
  */
 export const dynamic = "force-dynamic";
 
-/** And the answer is never stored, by Next or by anything downstream. */
+/** And the answer is never stored, by this tree's build or by anything downstream. */
 export const revalidate = 0;
 
 /**
  * `GET`. Three verbs and no more.
  *
  * Each is the same one line, and the repetition is the point: there is no
- * catch-all `handler` export, so a method this file does not name is a 405 from
- * the framework before it reaches the forwarder. `OPTIONS` in particular is
- * never answered, which is what makes this a non-CORS endpoint — there is no
- * preflight to satisfy, because a same-origin request never sends one.
+ * catch-all `handler` export and no `ANY` key, so nothing here answers a method
+ * the table in `src/lib/upstream.ts` does not approve.
+ *
+ * WHAT AN UNNAMED METHOD ACTUALLY GETS, MEASURED RATHER THAN ASSUMED, because
+ * the comment this replaces said it was "a 405 from the framework" and it is
+ * not. `npm run build`, `PORT=16739 node server/index.mjs`, then one
+ * `curl -X <method>` per verb against `/v1/me`:
+ *
+ *   GET      502  reached the forwarder; identity was not running
+ *   POST     405  reached the forwarder; `/v1/me` is a GET route (upstream.ts)
+ *   PATCH    405  reached the forwarder, same reason
+ *   DELETE   405  reached the forwarder, same reason
+ *   PUT      200  the rendered app shell — NOT a 405
+ *   OPTIONS  200  the rendered app shell — NOT a 405
+ *
+ * The mechanism is in the toolchain: `createStartHandler.js` reads
+ * `handlers[METHOD] ?? handlers["ANY"]`, and with no `ANY` declared an unnamed
+ * method simply leaves the terminal handler as the SSR renderer, which answers
+ * the matched route — whose shell is the document `src/routes/__root.tsx`
+ * renders, because this route declares no component.
+ *
+ * So the guarantee this section exists to state is structural, not a status
+ * code: an unnamed method never reaches the forwarder, so it can never reach an
+ * upstream. What it gets instead is this app's own shell, which is a much less
+ * interesting thing to be handed and is not a reason to add an `ANY`.
+ *
+ * AND WHY THIS IS STILL NOT A CORS ENDPOINT. Not because `OPTIONS` goes
+ * unanswered — it is answered, with the shell. Because no response from this
+ * app carries an `Access-Control-*` header: `upstream.test.ts` reads every
+ * response header name to prove it, and a cross-origin preflight needs one. A
+ * same-origin request sends no preflight at all, which is the whole of what
+ * makes the BFF work.
  */
 export function GET(request: Request, context: RouteContext): Promise<Response> {
   return handle(request, context);
@@ -117,9 +196,20 @@ export function DELETE(request: Request, context: RouteContext): Promise<Respons
 }
 
 /**
- * Next's catch-all context. `params` is a Promise in this version of the App
- * Router, and typing it as anything else is a type error rather than a runtime
- * one, which is the better of the two failure modes.
+ * The forwarder's own context, kept as the previous framework spelled it: a
+ * Promise of the segments.
+ *
+ * WHAT THE ROUTER ACTUALLY HANDS OVER, MEASURED RATHER THAN ASSUMED. Not a
+ * Promise. `createStartHandler.js` builds `params` with
+ * `Object.assign(Object.create(null), ctx.params)` and passes it down as a plain
+ * object; for a splat route the key is `_splat`, one string, and
+ * `src/routes/v1/$.ts` splits it. So `await context.params` above awaits an
+ * object, which resolves to itself — harmless, and deliberately not changed
+ * here because changing it is a change to a signature rather than to a
+ * comment. The typing is load-bearing for the reason the old comment gave and
+ * that reason survives: `src/routes/v1/$.ts` wraps the real value in
+ * `Promise.resolve` to satisfy it, so the shape of what the forwarder accepts is
+ * asserted at the seam rather than assumed by both sides.
  */
 type RouteContext = { params: Promise<{ path?: string[] }> };
 
@@ -140,12 +230,12 @@ function notFound(): Response {
   );
 }
 
-/** The identity address, read at request time. See the file header. */
+/** The identity address. Read on the server, once, when this module loads. */
 function identityUrl(): string {
   return (process.env.IDENTITY_URL?.trim() || DEFAULT_IDENTITY_URL).replace(/\/+$/, "");
 }
 
-/** The billing address, read at request time. See the file header. */
+/** The billing address. Read on the server, once, when this module loads. */
 function billingUrl(): string {
   return (process.env.BILLING_URL?.trim() || DEFAULT_BILLING_URL).replace(/\/+$/, "");
 }

@@ -24,9 +24,25 @@ import {
  * resolved Promise the forwarder awaits, and `GET`/`POST`/`PATCH`/`DELETE` are
  * named one by one with no catch-all — which is the property
  * `src/app/v1/[...path]/route.test.ts` asserts, and it is asserted here too, by
- * this file having no `ANY` handler. A method this route does not name gets a
- * 405 from the framework before the forwarder is reached. `OPTIONS` in
- * particular is never answered, which is what makes this a non-CORS endpoint.
+ * this file having no `ANY` handler.
+ *
+ * "No `ANY`" is the whole of the guarantee, and it is worth being precise about
+ * what it buys, because the comment here used to say a method this route does
+ * not name "gets a 405 from the framework before the forwarder is reached" and
+ * that is not what happens. `@tanstack/start-server-core/dist/esm/
+ * createStartHandler.js` reads `handlers[METHOD] ?? handlers["ANY"]`; with no
+ * `ANY` here, an unnamed method leaves the terminal handler as the SSR
+ * renderer, which answers this route's shell. Measured with `curl -X <method>`
+ * against a built server: `PUT` and `OPTIONS` return 200 with the rendered app
+ * shell, while `POST`/`PATCH`/`DELETE` reach the forwarder and get its own 405
+ * with an `allow` header, because `/v1/me` is a GET route.
+ *
+ * So the property is structural rather than a status code — an unnamed method
+ * never reaches the forwarder, so it can never reach an upstream — and the same
+ * is true of `OPTIONS`. What makes this a non-CORS endpoint is not that
+ * `OPTIONS` goes unanswered but that no response from this app carries an
+ * `Access-Control-*` header, which `upstream.test.ts` proves by reading every
+ * response header name. A same-origin request sends no preflight at all.
  *
  * The handler receives ONE argument — an object carrying `request` and the
  * already-resolved `params` — not a positional `(request, context)` pair. That
