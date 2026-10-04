@@ -31,15 +31,22 @@
  *    different transport rather than a rewrite of every screen.
  *
  * 3. The base URL is the app's OWN ORIGIN, and it is a constant rather than a
- *    variable. The browser used to call identity directly at
- *    `NEXT_PUBLIC_IDENTITY_URL`, which `next build` inlines into the client
- *    bundle — and identity serves no CORS headers, so a deployed sign-in could
- *    not complete. `src/app/v1/[...path]/route.ts` now forwards the same paths
+ *    variable. The browser used to call identity directly, at an address the
+ *    build substituted into the client bundle — `NEXT_PUBLIC_IDENTITY_URL`,
+ *    inlined by `next build`, neither of which this repository runs any more —
+ *    and identity serves no CORS headers, so a deployed sign-in could not
+ *    complete. `src/app/v1/[...path]/route.ts` now forwards the same paths
  *    to identity from the server, and every URL in this file is relative to this
  *    origin. The address of identity is a server-only variable
  *    (`process.env.IDENTITY_URL`) and is not in this bundle at all: a value the
  *    browser can read is a value the browser can change, and for a forwarder
  *    that is the difference between a fixed destination and an attacker's.
+ *
+ *    The substitution that would put it there does not exist in this build.
+ *    `package.json` `scripts.build` is `vite build`, whose only route to a
+ *    variable in client code is `import.meta.env` — its `VITE_` prefix by
+ *    default — plus whatever a `define` in the config names. `vite.config.mts`
+ *    declares neither, and `grep -rn "import.meta.env" src/` is empty.
  */
 
 import { MAX_NAME_LENGTH, type Role } from "@/lib/roles";
