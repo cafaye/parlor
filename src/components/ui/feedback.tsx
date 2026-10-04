@@ -8,28 +8,38 @@
  * as "I deleted my account" with no way to undo it.
  *
  * ---------------------------------------------------------------------------
- * WHY `ConfirmDialog` NO LONGER LIVES HERE
+ * WHY `ConfirmDialog` NO LONGER LIVES HERE, AND WHAT THE SPLIT BUYS *NOW*
  * ---------------------------------------------------------------------------
- * It did, and the reason it does not any more is the same reason this file has
- * no `"use client"` directive. `ConfirmDialog` calls `useId`, `useEffect` and
- * `useCallback`, which makes it a Client Component. `Callout` calls no hooks,
- * which makes it a perfectly good Server Component. One file cannot be both, and
- * the barrel at `@/components/ui` re-exports both — so whichever way this file
- * was resolved, it was wrong for one of them.
+ * It did, and the reason it does not is the same reason this file has no
+ * `"use client"` directive. `ConfirmDialog` calls `useId`, `useEffect` and
+ * `useCallback`; `Callout` calls no hooks. Under the previous framework one file
+ * could not hold both kinds — the barrel at `@/components/ui` re-exports
+ * everything, so whichever way this file was resolved, it was wrong for one of
+ * them. So `ConfirmDialog` is `./confirm-dialog`, carrying the directive it
+ * needs, and `Callout` stays here, hook-free and unmarked.
  *
- * Left as a Server Component that calls hooks, any Server Component importing
- * `Callout` through the barrel breaks `next build` — and jsdom cannot see it
- * coming, because jsdom has no server/client boundary to cross. Given a
- * `"use client"` directive, `Callout` ships hydration JavaScript on every
- * server-rendered page that uses one, which is most of them, to render a
- * `<div>` with a `role`.
+ * The honest accounting of what that is worth today, because the version of this
+ * comment that said `Callout` "ships hydration JavaScript on every
+ * server-rendered page that uses one" was not true of this tree and had stopped
+ * being measurable:
  *
- * So `ConfirmDialog` is now `./confirm-dialog`, carrying the directive it
- * needs, and the barrel re-exports both. `Callout` stays here, hook-free, so a
- * Server Component can safely reach it.
+ *   * There is no server/client split here to keep `Callout` out of. `vite build`
+ *     is `package.json` `scripts.build`, no RSC configuration exists in `src/`,
+ *     and nothing reads `"use client"`.
+ *   * So `Callout` is in `dist/client/assets/ui-BseiPOyp.js` today, directive or
+ *     not — `login-form.tsx` and `register-form.tsx` render it, and both are
+ *     client components. That was measured with `grep -l bg-positive-surface
+ *     dist/client/assets/*.js`, not assumed.
  *
- * The `no-hooks-without-use-client` check in `tests/validate-ci.sh` keeps the
- * split from quietly healing back into one file.
+ * What the split buys is an accurate marker, and that is the whole of it. It is
+ * still worth having: it is what makes `"use client"` in this directory mean
+ * something, and it is what a future move to a framework that *does* enforce the
+ * split would need to already be true.
+ *
+ * The check that keeps it from healing back into one file is
+ * `src/components/ui/client-boundary.test.ts` — which also names these two files
+ * by hand, because no rule can tell a file that merely absorbed `ConfirmDialog`
+ * from a correct client file.
  */
 
 import type { ReactNode } from "react";
