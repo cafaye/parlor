@@ -29,8 +29,8 @@
  * name would come from.
  */
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { Link } from "@tanstack/react-router";
+import { useNavigation } from "@/lib/navigation";
 import { useRef, useState, type FormEvent } from "react";
 
 import {
@@ -527,7 +527,7 @@ function InviteForm({ role, accountId }: { role: Role; accountId: string }) {
             <p className="mt-2">
               <Link
                 className="font-mono break-all underline underline-offset-2 hover:no-underline"
-                href={`/invitations/${sent.token}`}
+                to={`/invitations/${sent.token}`}
               >
                 {sent.token}
               </Link>
@@ -595,7 +595,7 @@ function inviteFailure(thrown: unknown): string {
 
 function DangerZone({ role, accountId }: { role: Role; accountId: string }) {
   const { session } = useAuth();
-  const router = useRouter();
+  const router = useNavigation();
   const remove = useRemoveMember(accountId);
   const removeAccount = useDeleteAccount();
   const [confirming, setConfirming] = useState(false);
@@ -762,7 +762,7 @@ function SignInFirst() {
         Accounts are per person, so there is nothing to show until we know who you are.
       </p>
       <p className="mt-4 text-sm">
-        <Link className="font-medium underline underline-offset-2 hover:no-underline" href="/login">
+        <Link className="font-medium underline underline-offset-2 hover:no-underline" to="/login">
           Sign in
         </Link>
       </p>
@@ -779,7 +779,7 @@ function NotVisible() {
           and a message that distinguished them would undo that. */}
       <p className="mt-1 text-sm text-muted">{NOT_VISIBLE}</p>
       <p className="mt-4 text-sm">
-        <Link className="font-medium underline underline-offset-2 hover:no-underline" href="/accounts">
+        <Link className="font-medium underline underline-offset-2 hover:no-underline" to="/accounts">
           Back to your accounts
         </Link>
       </p>

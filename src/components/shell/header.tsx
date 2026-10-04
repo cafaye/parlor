@@ -16,7 +16,7 @@
  * in to see your accounts" — so it only appears once there is a session.
  */
 
-import Link from "next/link";
+import { Link } from "@tanstack/react-router";
 
 import { useAuth, type SessionState } from "@/lib/auth";
 import { Button } from "@/components/ui";
@@ -27,7 +27,7 @@ export function ShellHeader() {
   return (
     <header className="border-b border-border">
       <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-6 py-4">
-        <Link className="font-mono text-sm tracking-[0.2em] uppercase" href="/">
+        <Link className="font-mono text-sm tracking-[0.2em] uppercase" to="/">
           parlor
         </Link>
 
@@ -62,7 +62,7 @@ function HeaderNav({ authed }: { authed: boolean }) {
 
 function NavLink({ href, children }: { href: string; children: string }) {
   return (
-    <Link className="text-sm text-muted hover:text-foreground" href={href}>
+    <Link className="text-sm text-muted hover:text-foreground" to={href}>
       {children}
     </Link>
   );
@@ -99,12 +99,12 @@ function SessionControls({
   // that gets the two ways forward.
   return (
     <div className="flex items-center gap-3">
-      <Link className="text-sm text-muted hover:text-foreground" href="/login">
+      <Link className="text-sm text-muted hover:text-foreground" to="/login">
         Sign in
       </Link>
       <Link
         className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-surface hover:opacity-90"
-        href="/register"
+        to="/register"
       >
         Create account
       </Link>

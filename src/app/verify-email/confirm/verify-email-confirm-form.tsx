@@ -64,7 +64,7 @@
  * be dead for the human who then clicked it.
  */
 
-import { useRouter } from "next/navigation";
+import { useNavigation } from "@/lib/navigation";
 import { useRef, useState } from "react";
 
 import { Button, Callout, FieldSummary } from "@/components/ui";
@@ -102,7 +102,7 @@ const UNEXPECTED = "Something went wrong. Try again.";
 type ScreenState = "idle" | "failed" | "unusable-link" | "verified";
 
 export function VerifyEmailConfirmForm({ token }: { token: string | null }) {
-  const router = useRouter();
+  const router = useNavigation();
   const { client, session } = useAuth();
   const [state, setState] = useState<ScreenState>("idle");
   const [pending, setPending] = useState(false);

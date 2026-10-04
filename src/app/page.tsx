@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { Link } from "@tanstack/react-router";
 
 /**
  * The landing page.
@@ -25,19 +25,19 @@ export default function Home() {
       </div>
 
       <nav aria-label="Sections" className="grid gap-3 sm:grid-cols-2">
-        <Card href="/accounts" name="Accounts" body="The accounts you belong to, your role in each, and who else is in them." />
+        <Card to="/accounts" name="Accounts" body="The accounts you belong to, your role in each, and who else is in them." />
         <Card
-          href="/billing/plans"
+          to="/billing/plans"
           name="Plans"
           body="The plan catalogue: what can be bought, at what price, on what cadence."
         />
         <Card
-          href="/billing/customers"
+          to="/billing/customers"
           name="Customers"
           body="Billing's customer records, and the identity user or account each is for."
         />
         <Card
-          href="/healthz"
+          to="/healthz"
           name="Health"
           body="The liveness and readiness probes the platform reads."
         />
@@ -50,7 +50,7 @@ function Card({ href, name, body }: { href: string; name: string; body: string }
   return (
     <Link
       className="flex flex-col gap-1 rounded-lg border border-border bg-surface-raised px-4 py-3 hover:border-cafaye-300"
-      href={href}
+      to={href}
     >
       <span className="font-medium">{name}</span>
       <span className="text-sm text-muted">{body}</span>

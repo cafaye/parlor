@@ -7,7 +7,7 @@ import { aUser, anIdentityError, stubIdentity } from "@/test/support/identity";
 import { renderWithProviders } from "@/test/support/render";
 
 const { push } = vi.hoisted(() => ({ push: vi.fn() }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push, refresh: vi.fn() }) }));
+vi.mock("@/lib/navigation", () => ({ useNavigation: () => ({ push, refresh: vi.fn() }) }));
 
 /**
  * The token a real verification link carries.
@@ -60,7 +60,7 @@ async function renderConfirmPage(
 ) {
   const searchParams = token === NO_TOKEN ? {} : { token: token as unknown as string };
   const result = renderWithProviders(
-    await VerifyEmailConfirmPage({ searchParams: Promise.resolve(searchParams) }),
+    VerifyEmailConfirmPage({ searchParams: searchParams }),
     { identity },
   );
   return { identity, ...result };

@@ -1,16 +1,11 @@
-import type { Metadata } from "next";
-import Link from "next/link";
+import { Link } from "@tanstack/react-router";
 
 import { LoginForm, PASSWORD_CHANGED_PARAM } from "./login-form";
-
-export const metadata: Metadata = {
-  title: "Sign in · parlor",
-};
 
 /**
  * `/login` — the sign in screen.
  *
- * A server component that renders the heading and hands the form to the client.
+ * A page that renders the heading and hands the form to an interactive screen.
  * It reads no session of its own: the session lives in the token store and the
  * query cache (see `src/lib/auth.tsx`), and duplicating that read here would
  * give the shell two answers to the same question.
@@ -22,17 +17,18 @@ export const metadata: Metadata = {
  * PRESENCE is the whole signal: its value is never read, so nothing a person can
  * type into a URL changes a word on this page.
  *
- * `searchParams` is typed explicitly rather than with Next 16's generated
- * `PageProps`, which only exists after `next build` has written `.next/types`
- * and `npm run typecheck` has to pass on a fresh clone. It is also optional, so
- * a test or a caller that has no query to pass does not have to invent one.
+ * `searchParams` is a plain object, not a Promise, because the route that
+ * renders this reads it off a location that is already resolved — there is no
+ * framework handing out a promise here and nothing to await. It is also
+ * optional, so a test or a caller that has no query to pass does not have to
+ * invent one.
  */
-export default async function LoginPage({
+export default function LoginPage({
   searchParams,
 }: {
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+  searchParams?: Record<string, string | string[] | undefined>;
 }) {
-  const params = searchParams ? await searchParams : {};
+  const params = searchParams ?? {};
   const passwordChanged = Object.hasOwn(params, PASSWORD_CHANGED_PARAM);
 
   return (
@@ -42,7 +38,7 @@ export default async function LoginPage({
           <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
           <p className="text-sm text-muted">
             No account yet?{" "}
-            <Link className="underline hover:no-underline" href="/register">
+            <Link className="underline hover:no-underline" to="/register">
               Create account
             </Link>
           </p>
@@ -63,7 +59,7 @@ export default async function LoginPage({
           never do that.
         */}
         <p className="text-center text-sm text-muted">
-          <Link className="underline hover:no-underline" href="/verify-email">
+          <Link className="underline hover:no-underline" to="/verify-email">
             Need to verify your email?
           </Link>
         </p>

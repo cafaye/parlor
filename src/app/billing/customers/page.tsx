@@ -1,10 +1,6 @@
-import type { Metadata } from "next";
 
 import { CustomersScreen } from "./customers-screen";
 
-export const metadata: Metadata = {
-  title: "Customers · parlor",
-};
 
 /**
  * `/billing/customers` — billing's customer records.

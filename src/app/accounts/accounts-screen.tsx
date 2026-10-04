@@ -17,7 +17,7 @@
  *     account name is wrong when the service is what is wrong.
  */
 
-import Link from "next/link";
+import { Link } from "@tanstack/react-router";
 import { useRef, useState, type FormEvent } from "react";
 import type { UseQueryResult } from "@tanstack/react-query";
 
@@ -95,7 +95,7 @@ function AccountList({ accounts }: { accounts: UseQueryResult<AccountListItem[]>
         <li key={account.id}>
           <Link
             className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface-raised px-4 py-3 hover:border-cafaye-300"
-            href={`/accounts/${account.id}`}
+            to={`/accounts/${account.id}`}
           >
             <span className="flex min-w-0 flex-col">
               <span className="truncate font-medium">{account.name}</span>

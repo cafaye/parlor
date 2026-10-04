@@ -6,7 +6,7 @@ import { anIdentityError, stubIdentity } from "@/test/support/identity";
 import { renderWithProviders } from "@/test/support/render";
 
 const { push } = vi.hoisted(() => ({ push: vi.fn() }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push, refresh: vi.fn() }) }));
+vi.mock("@/lib/navigation", () => ({ useNavigation: () => ({ push, refresh: vi.fn() }) }));
 
 const ADDRESS = "kaka@example.com";
 

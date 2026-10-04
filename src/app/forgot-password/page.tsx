@@ -1,11 +1,7 @@
-import type { Metadata } from "next";
-import Link from "next/link";
+import { Link } from "@tanstack/react-router";
 
 import { ForgotPasswordForm } from "./forgot-password-form";
 
-export const metadata: Metadata = {
-  title: "Reset your password · parlor",
-};
 
 /**
  * `/forgot-password` — asking for a reset link.
@@ -33,7 +29,7 @@ export default function ForgotPasswordPage() {
         <ForgotPasswordForm />
         <p className="text-center text-sm text-muted">
           Remembered it?{" "}
-          <Link className="underline hover:no-underline" href="/login">
+          <Link className="underline hover:no-underline" to="/login">
             Sign in
           </Link>
         </p>

@@ -43,7 +43,7 @@
  * accounts exist on one device.
  */
 
-import Link from "next/link";
+import { Link } from "@tanstack/react-router";
 import { useRef, useState, type FormEvent } from "react";
 
 import { Button, Callout, Field, FieldSummary, Input } from "@/components/ui";
@@ -195,7 +195,7 @@ export function RegisterForm() {
             a coin flip for everybody else — and the longer name is the truer one
             here anyway, because this account was created thirty seconds ago.
           */}
-          <Link className="underline hover:no-underline" href="/login">
+          <Link className="underline hover:no-underline" to="/login">
             Sign in to your new account
           </Link>
           {/* The resend action. A link to the screen that asks rather than a
@@ -204,7 +204,7 @@ export function RegisterForm() {
               while promising something. */}
           <span className="text-muted">
             <span>Did not arrive?</span>{" "}
-            <Link className="underline hover:no-underline" href="/verify-email">
+            <Link className="underline hover:no-underline" to="/verify-email">
               Send it again
             </Link>
           </span>

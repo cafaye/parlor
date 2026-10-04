@@ -34,7 +34,7 @@ import { renderWithProviders } from "@/test/support/render";
  */
 
 const { push } = vi.hoisted(() => ({ push: vi.fn() }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push, refresh: vi.fn() }) }));
+vi.mock("@/lib/navigation", () => ({ useNavigation: () => ({ push, refresh: vi.fn() }) }));
 
 const TOKEN = "tok_abc";
 const INVITATION = "invitation-token-once-only";

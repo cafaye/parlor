@@ -1,3 +1,7 @@
+@import "@fontsource-variable/geist/index.css";
+@import "@fontsource/geist-mono/400.css";
+@import "@fontsource/geist-mono/500.css";
+@import "@fontsource/geist-mono/600.css";
 @import "tailwindcss";
 @import "../styles/tokens.css";
 
@@ -6,6 +10,18 @@
  *
  * Theme values live in `src/styles/tokens.css` — the single source of truth.
  * Do not add colors or fonts here; add a token and use the utility.
+ *
+ * The four `@import`s above the Tailwind import are the webfonts. They used to
+ * be `next/font/google`, which fetched Geist at build time and injected it as a
+ * `--font-geist-*` custom property; there is no framework here to do that, so
+ * the faces are self-hosted from `@fontsource` and the two custom properties
+ * `--font-geist-sans` and `--font-geist-mono` are declared where they are
+ * consumed, in `tokens.css`. Self-hosting is also the better answer on its own
+ * terms: no build-time request to a third party, and no runtime request either.
+ *
+ * The mono faces are imported at 400/500/600 rather than variable because
+ * `@fontsource/geist-mono` ships static weights and there is no variable cut of
+ * it — three files, which is what the token ramp actually uses.
  */
 
 @layer base {

@@ -51,7 +51,7 @@
  * nothing.
  */
 
-import { useRouter } from "next/navigation";
+import { useNavigation } from "@/lib/navigation";
 import { useRef, useState, type FormEvent } from "react";
 
 import { Button, Callout, Field, FieldSummary, Input } from "@/components/ui";
@@ -100,7 +100,7 @@ type FormState =
   | { kind: "already-verified" };
 
 export function VerifyEmailForm() {
-  const router = useRouter();
+  const router = useNavigation();
   const { client } = useAuth();
   const [email, setEmail] = useState("");
   const [state, setState] = useState<FormState>({ kind: "idle" });
