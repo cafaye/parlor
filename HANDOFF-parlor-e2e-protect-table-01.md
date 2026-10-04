@@ -5,12 +5,12 @@ Nothing pushed, nothing merged, no other worktree touched, `tests/validate-ci.sh
 `gate.yml` and every floor untouched.
 
 **State, in one paragraph.** The reported failure is **fixed and the tier now
-runs**: 23 tests execute, 19 pass, 4 fail for two causes that have nothing to do
-with the cluster and both of which predate this packet. The role the migration
+runs**: **26 tests execute, 22 pass, 4 fail** for two causes that have nothing to
+do with the cluster and both of which predate this packet. The role the migration
 asks for now exists, is a `LOGIN`, and the row-level-security boundary it exists
 to enforce is **now actually enforcing** — measured, not inferred (§3). Two of the
 four failures are a pre-existing defect in **identity** that this fix *unmasked*
-(§4) and one is a pre-existing defect in **parlor's own router** (§5). Neither is
+(§4) and two are a pre-existing defect in **parlor's own router** (§5). Neither is
 fixed here, and both are written up rather than patched, because one is a sibling
 repository and the other is a change to a router's composition.
 
@@ -93,18 +93,55 @@ then `./bin/e2e`, both unmodified):
 ```
 [e2e] the cluster's init script is present: …/kit/templates/compose/postgres/initdb
 [e2e] applying identity's migrations (../identity/migrations) as identity
-… OK   00016_account_isolation.sql (45.06ms)
+… OK   00016_account_isolation.sql (37.91ms)
+… OK   00017_credential_audit_dependencies.sql (10.73ms)
 [e2e] migrations applied in 1s
-[e2e]   identity ready after 0s (1 polls) — http://127.0.0.1:16080/readyz
+[e2e]   identity ready after 0s (1 polls) — http://127.0.0.1:16180/readyz
+[e2e]   gateway ready after 0s (1 polls) — http://127.0.0.1:16181/readyz
+[e2e]   parlor ready after 0s (1 polls) — http://127.0.0.1:16103/readyz
+[e2e]   edge ready after 0s (1 polls) — http://127.0.0.1:16100/readyz
 [e2e] the whole stack is ready
 …
   4 failed
-  19 passed (54.7s)
-[e2e] the tier ran: 19 passed, 4 failed, 0 skipped, 0 retried
+  22 passed (56.4s)
+[e2e] the tier ran: 22 passed, 4 failed, 0 skipped, 0 retried
+```
+
+and the cluster it came up with, read off that running stack:
+
+```
+   rolname    | rolcanlogin | rolsuper
+--------------+-------------+----------
+ identity     | t           | f
+ identity_app | t           | f
+(2 rows)
+
+       relname       | rls | force
+---------------------+-----+-------
+ account_audit_log   | t   | t
+ account_invitations | t   | t
+ account_users       | t   | t
+ api_keys            | t   | t
+ oidc_clients        | t   | t
+(5 rows)
+
+ datname  | public_connect
+----------+----------------
+ identity | f
+ postgres | f
 ```
 
 **The tier runs tests for the first time.** Before this change it never got past
 `migrate`. The four failures are §4 and §5, and neither is a cluster problem.
+
+**Two notes on this run, both about the machine rather than the change.** The
+suite needs `npm ci` first — without `node_modules` the tier's browser step
+resolves `playwright` out of the npx cache and dies with `Cannot find module
+'@playwright/test'` before a single test runs, which is a confusing way to learn
+that. And the ports above are in `161xx` rather than `160xx`: another agent's
+`site` stack was holding `16001`–`16006` and `16080`–`16081` on this machine, and
+every published port here is a `${E2E_*_PORT:-…}` substitution precisely so a run
+can move out of the way of a neighbour (§7.7 says what this cost).
 
 ---
 
@@ -491,10 +528,23 @@ whoever owns the screens, and it is unrelated to the cluster. Two tests:
    real checkout-less runner has not been observed. The two assertions should be
    redundant by design: the job catches it in CI, the preflight catches it on a
    laptop before four minutes of building.
-6. **Whether the `2 failed / 19 passed` count is the whole story.** 23 tests ran with
+6. **Whether the `4 failed / 22 passed` count is the whole story.** 26 tests ran with
    0 skipped and 0 retried, and both readers of the report agree on the floor of 2,
-   so the tier is not green-over-nothing. But "19 passed" is a count against a
-   suite that has never run before, so it is a baseline rather than a result.
+   so the tier is not green-over-nothing. But "22 passed" is a count against a
+   suite that has never run before, so it is a baseline rather than a result — and
+   it moved from 19 to 22 across this packet's own history **only** because
+   `parlor-e2e-social-01` landed three social tests on `origin/master` between my
+   base `3e1d3b8` and the rebase. **All three of those pass**, which is worth
+   saying explicitly: the cluster fix does not break the social round trip.
+7. **A run on the default ports.** This run moved to `161xx` because a neighbour
+   was holding `16xxx`. The `${E2E_*_PORT:-…}` shape made that an environment
+   change and no file edit, so the block's collision story holds — but it has not
+   been observed on the default numbers on a machine also running `site`.
+8. **`validate-ci.sh` reading `e2e/.artifacts/`.** §6. A real defect in the gate's
+   own subject, recorded here rather than fixed because that file is mid-repair by
+   another packet. The next packet to own it should know it exists: a failing run
+   leaves artifacts that turn the *next* run's gate red, and the message cites a
+   line of a spec header read out of a copy of it.
 
 ## 8. Reproducing this
 
@@ -505,5 +555,29 @@ npm ci                                  # the tier's browser step needs it; with
 ./bin/e2e                               # up, suite, report, down
 ```
 
-`../identity`, `../gateway` and `../kit` must all be checked out beside the
-repository. `goose` must be on `PATH` (`identity`'s documented install).
+`../identity`, `../gateway`, `../oauth-stub` and `../kit` must all be checked out
+beside the repository. `goose` must be on `PATH` (`identity`'s documented install).
+
+If the machine is already running another tier, move out of its way rather than
+stopping it — every published port is a substitution, so it costs no file edit:
+
+```sh
+E2E_EDGE_PORT=16100 E2E_IDENTITY_POSTGRES_PORT=16101 E2E_GATEWAY_REDIS_PORT=16102 \
+E2E_PARLOR_PORT=16103 E2E_OAUTH_STUB_PORT=16104 E2E_GITHUB_STUB_PORT=16105 \
+E2E_REGISTRY_PORT=16110 E2E_REGISTRY=localhost:16110 \
+E2E_IDENTITY_PORT=16180 E2E_GATEWAY_PORT=16181 \
+  ./bin/e2e
+```
+
+`E2E_REGISTRY` as well as `E2E_REGISTRY_PORT`, and the difference is the thing
+that cost a run here. The first names the registry the sibling images are pulled
+from and published to; the second is where this stack's own `registry:2` container
+listens. Setting only the second gives a stack that starts a registry nobody
+pushes to, and it fails later at `pushing … failed` — a step named for a symptom
+several steps downstream of the mistake. The stack still comes up correctly with
+one set, which is what makes it worth stating rather than letting the next person
+find it.
+
+The github stub's variable is `E2E_GITHUB_STUB_PORT`, not
+`E2E_OAUTH_STUB_GITHUB_PORT`. Read out of the compose file, so there is one
+spelling: `grep -oE '\$\{E2E_[A-Z_]*PORT:-[0-9]+\}' e2e/docker-compose.yml`.

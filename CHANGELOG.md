@@ -55,7 +55,7 @@ All notable changes to parlor are recorded here. The format follows
   `bin/e2e-stack`'s new `check_cluster_initdb`, the second reading the mount out
   of the compose document so the two cannot drift.
 
-  **The tier now runs 23 tests for the first time: 19 pass, 4 fail**, and none of
+  **The tier now runs 26 tests for the first time: 22 pass, 4 fail**, and none of
   the four is a cluster fault. Two are a **real defect in `identity`** this fix
   unmasked — `ListMine` reads `account_users` through a bare pool rather than
   `TxRunner`, so it carries no account identity and reads zero rows now that
@@ -64,7 +64,8 @@ All notable changes to parlor are recorded here. The format follows
   `src/routes/verify-email.tsx` declares a `component` and no `<Outlet />`, so
   `/verify-email/confirm` is served the index screen's body. Both are written up
   in `HANDOFF-parlor-e2e-protect-table-01.md` §4 and §5 rather than patched — one
-  is a sibling repository, the other belongs to whoever owns the screens.
+  is a sibling repository, the other belongs to whoever owns the screens. The three
+  social tests `parlor-e2e-social-01` added all pass against the fixed cluster.
 
   **The stated gap:** identity's `DATABASE_URL` names the **owner** rather than
   `identity_app`, so the process serving the browser can disable RLS on its own
