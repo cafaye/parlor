@@ -1,7 +1,8 @@
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { CardLink, Surface, TextLink, VisuallyHidden } from "@/components/ui";
+import { renderWithRouter } from "@/test/support/render";
 
 /**
  * The two link shapes and the surface they sit on.
@@ -14,14 +15,14 @@ import { CardLink, Surface, TextLink, VisuallyHidden } from "@/components/ui";
  */
 describe("TextLink", () => {
   it("carries a focus ring, which the hand-written links did not", () => {
-    render(<TextLink href="/login">Sign in</TextLink>);
+    renderWithRouter(<TextLink href="/login">Sign in</TextLink>);
 
     const link = screen.getByRole("link", { name: "Sign in" });
     expect(link.className).toContain("focus-ring");
   });
 
   it("underlines at rest, so it is not identified by colour alone", () => {
-    render(<TextLink href="/login">Sign in</TextLink>);
+    renderWithRouter(<TextLink href="/login">Sign in</TextLink>);
 
     // WCAG 1.4.1 (Use of Colour). A link that is only a different shade is
     // invisible to anybody who cannot perceive that shade, and this is a
@@ -30,7 +31,7 @@ describe("TextLink", () => {
   });
 
   it("is a real anchor, so middle-click and copy-link-address work", () => {
-    render(<TextLink href="/login">Sign in</TextLink>);
+    renderWithRouter(<TextLink href="/login">Sign in</TextLink>);
 
     expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");
   });
@@ -38,13 +39,13 @@ describe("TextLink", () => {
 
 describe("CardLink", () => {
   it("carries a focus ring, for the same reason", () => {
-    render(<CardLink href="/accounts">Accounts</CardLink>);
+    renderWithRouter(<CardLink href="/accounts">Accounts</CardLink>);
 
     expect(screen.getByRole("link", { name: "Accounts" }).className).toContain("focus-ring");
   });
 
   it("is one link covering the whole row, not a link with a click handler on a div", () => {
-    render(<CardLink href="/accounts">Accounts</CardLink>);
+    renderWithRouter(<CardLink href="/accounts">Accounts</CardLink>);
 
     const link = screen.getByRole("link", { name: "Accounts" });
     expect(link.tagName).toBe("A");
@@ -54,13 +55,13 @@ describe("CardLink", () => {
 
 describe("Surface", () => {
   it("renders a div by default", () => {
-    render(<Surface>Content</Surface>);
+    renderWithRouter(<Surface>Content</Surface>);
 
     expect(screen.getByText("Content").tagName).toBe("DIV");
   });
 
   it("can render as the element the content actually is", () => {
-    render(
+    renderWithRouter(
       <ul>
         <Surface as="li">A row</Surface>
       </ul>,
@@ -72,7 +73,7 @@ describe("Surface", () => {
   });
 
   it("has a default padding, because ten call sites re-decided it", () => {
-    render(<Surface>Content</Surface>);
+    renderWithRouter(<Surface>Content</Surface>);
 
     // The token, not a literal. `p-pane` resolves to `--pane`; asserting the
     // literal number here would be asserting a decision that tokens.css owns.
@@ -80,7 +81,7 @@ describe("Surface", () => {
   });
 
   it("has no shadow, because a sheet is separated by its edge", () => {
-    render(<Surface>Content</Surface>);
+    renderWithRouter(<Surface>Content</Surface>);
 
     expect(screen.getByText("Content").className).not.toContain("shadow");
   });
@@ -94,7 +95,7 @@ describe("VisuallyHidden", () => {
    * silently hides the accessible name it was written to provide.
    */
   it("stays in the accessibility tree while being invisible on screen", () => {
-    render(<VisuallyHidden>Delete this account</VisuallyHidden>);
+    renderWithRouter(<VisuallyHidden>Delete this account</VisuallyHidden>);
 
     const text = screen.getByText("Delete this account");
     expect(text).toBeInTheDocument();
