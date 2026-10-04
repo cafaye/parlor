@@ -436,7 +436,7 @@ build() {
   if [ "$BUILD_SIBLINGS" -eq 1 ]; then
     log "building images (budget ${BUILD_TIMEOUT}s) — sibling build mode"
     log "  identity  <- ../identity, built into cafaye/identity:e2e (NOT pushed)"
-    log "  gateway   <- ../guard, built into cafaye/gateway:e2e (NOT pushed)"
+    log "  gateway   <- ../gateway, built into cafaye/gateway:e2e (NOT pushed)"
   else
     log "building images (budget ${BUILD_TIMEOUT}s)"
     log "  parlor    <- . (no build args: the BFF reads IDENTITY_URL at run time)"
@@ -610,7 +610,7 @@ ensure_sibling_artifacts() {
 
   if [ "$have_all_checkouts" -eq 1 ]; then
     log "not published at $REGISTRY and the sibling checkouts are here; publishing once"
-    printf '[e2e] NOTE: these two images are being built from ../identity and ../guard,\n' >&2
+    printf '[e2e] NOTE: these two images are being built from ../identity and ../gateway,\n' >&2
     printf '[e2e]       so this run tests YOUR working trees, not a published artifact.\n' >&2
     printf '[e2e]       After ./bin/e2e-stack publish-siblings the registry tag is the one used.\n' >&2
     publish_siblings
@@ -620,7 +620,7 @@ ensure_sibling_artifacts() {
   printf '[e2e] FAIL: no %s artifact for %s\n' "$(sibling_tag "$service")" "$missing" >&2
   printf '[e2e] The default path consumes identity and gateway as published images, and neither\n' >&2
   printf '[e2e] the registry nor a sibling checkout has one. Either:\n' >&2
-  printf '[e2e]   ./bin/e2e-stack publish-siblings   (with ../identity and ../guard checked out)\n' >&2
+  printf '[e2e]   ./bin/e2e-stack publish-siblings   (with ../identity and ../gateway checked out)\n' >&2
   printf '[e2e]   E2E_BUILD_SIBLINGS=1 ./bin/e2e       (build the working trees instead)\n' >&2
   printf '[e2e]   E2E_REGISTRY=<host:port> ...        (if a persistent registry should serve this)\n' >&2
   exit 1

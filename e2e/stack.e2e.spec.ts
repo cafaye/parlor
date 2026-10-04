@@ -108,7 +108,7 @@ test("the gateway refuses a caller that cannot prove who they are", async ({ pag
   // No credential, and no key set to fetch one against. gateway's auth gate is
   // mounted on `/v1/*`, so this is answered before anything else happens: a
   // rejected token never reaches the rate limiter, and a rejected token costs no
-  // key fetch (guard/AGENTS.md, "The bucket is the strongest identity the
+  // key fetch (gateway/AGENTS.md, "The bucket is the strongest identity the
   // request has"). The rendered body is core's problem document, which is the
   // contract `cafaye.yml` and core's conventions fix and which a stubbed test
   // in gateway's own suite asserts against a fake identity.
