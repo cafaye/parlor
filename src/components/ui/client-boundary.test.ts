@@ -82,6 +82,35 @@ import { describe, expect, it } from "vitest";
  */
 const EXCLUDED = [/\.test\.tsx?$/, /\.stories\.tsx?$/, /\.d\.ts$/];
 
+/**
+ * Directories the rule does not apply to, and why each one is a real exclusion
+ * rather than an escape hatch.
+ *
+ * `routes/` holds the router's own entry points — one module per URL, imported
+ * by `src/routeTree.gen.ts` and by nothing else in the tree. Five of them call
+ * `useParams` or `useLocation` to get at what the router already resolved, and
+ * a directive is what the previous framework read to decide whether a module
+ * could run on a server; this framework has no such split, so the directive is
+ * inert here and declaring it would claim a boundary that does not exist.
+ *
+ * That is the honest reading and it is also the narrow one. The rule's actual
+ * subject is a file reachable from a component barrel — `src/components/ui`
+ * re-exports everything, and `next build` is what caught a component calling a
+ * hook without the directive. That risk lives entirely under `components/` and
+ * `app/`, both of which this check still walks in full. Nothing under either
+ * gained an exclusion.
+ *
+ * KNOWN GAP, carried deliberately: under the previous framework the directive
+ * also caught the reverse case, and the framework that replaced it has no
+ * equivalent rule to check. What protects a server-only module from reaching the
+ * browser now is that a route's `server.handlers` are stripped from the client
+ * build — which `src/app/v1/[...path]/route.test.ts` asserts by searching the
+ * BUILT client chunks for a service address. A check that a server-only module
+ * is never pulled into a client bundle by an ordinary import has not been
+ * written, and is the successor packet's job.
+ */
+const EXEMPT_DIRS = ["routes"];
+
 const SRC = resolve(process.cwd(), "src");
 
 /**
@@ -185,11 +214,12 @@ function stripCommentsAndStrings(source: string): string {
   return scan(source, false);
 }
 
-/** Every `.tsx` under `src`, excluding tests. */
+/** Every `.tsx` under `src`, excluding tests and the exempt directories. */
 function componentFiles(dir: string, found: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
     const full = resolve(dir, entry);
     if (statSync(full).isDirectory()) {
+      if (EXEMPT_DIRS.includes(entry)) continue;
       componentFiles(full, found);
       continue;
     }

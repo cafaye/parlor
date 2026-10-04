@@ -29,7 +29,16 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const ROUTE_MODULE = "src/app/v1/[...path]/route.ts";
-const STANDALONE_CHUNKS = ".next/static/chunks";
+/**
+ * Where the browser's JavaScript lands.
+ *
+ * Was `.next/static/chunks`. The assertion is a byte search of what a person
+ * would download, so it has to point at the real download directory and not at
+ * a path that used to exist: a search of a directory this build never writes
+ * finds nothing and passes, which is the failure mode the `beforeAll` below
+ * exists to refuse.
+ */
+const STANDALONE_CHUNKS = "dist/client/assets";
 
 /** Every `NEXT_PUBLIC_` name this repository has ever used for a service. */
 const SERVICE_ENV_VARS = ["NEXT_PUBLIC_IDENTITY_URL", "NEXT_PUBLIC_BILLING_URL"];
@@ -86,12 +95,12 @@ describe("the service addresses are server-only", () => {
    * test, and a check that only runs on some machines is a check that has
    * verified nothing on the others.
    *
-   * So this builds. It costs a `next build` on a run that did not need one,
+   * So this builds. It costs a build on a run that did not need one,
    * which is the trade, and the alternative — an assertion that silently does
    * not run — is the thing AGENTS.md is written against.
    *
-   * It is not as slow as it looks in the common case: `next build` is
-   * incremental against an existing `.next`, and a warm run is a few seconds.
+   * It is not as slow as it looks in the common case: the build is incremental
+   * against an existing `dist/`, and a warm run is a few seconds.
    */
   describe("in the built client bundle", () => {
     let chunks: string[] = [];
@@ -111,11 +120,11 @@ describe("the service addresses are server-only", () => {
     }, 600_000);
 
     afterAll(() => {
-      // The build writes into `.next/`, which is gitignored. Left in place it is
-      // a stale bundle that a later `next start` would happily serve, and
+      // The build writes into `dist/`, which is gitignored. Left in place it is
+      // a stale bundle that a later `npm start` would happily serve, and
       // `AGENTS.md` requires `npm run typecheck` to pass WITHOUT a build.
-      if (existsSync(".next")) {
-        execFileSync("rm", ["-rf", ".next"], { stdio: "pipe" });
+      if (existsSync("dist")) {
+        execFileSync("rm", ["-rf", "dist"], { stdio: "pipe" });
       }
     });
 
