@@ -49,6 +49,26 @@ export E2E_EDGE_PORT="${E2E_EDGE_PORT:-$(./bin/e2e-stack host-port edge)}"
 export E2E_PARLOR_PORT="${E2E_PARLOR_PORT:-$(./bin/e2e-stack host-port parlor)}"
 export E2E_GATEWAY_PORT="${E2E_GATEWAY_PORT:-$(./bin/e2e-stack host-port gateway)}"
 export E2E_IDENTITY_PORT="${E2E_IDENTITY_PORT:-$(./bin/e2e-stack host-port identity)}"
+# The two instances of the fake identity provider, exported on the same grounds as
+# the identity port above: the port is named as a fallback in
+# `playwright.config.ts` and `tests/validate-ci.sh` cross-checks that fallback
+# against the compose document, so the variable has to resolve from here too.
+#
+# THERE ARE TWO BECAUSE THE STUB ACCEPTS ONE CLIENT PAIR AND IDENTITY HAS TWO. That
+# is `oauth-stub`'s own documented limitation ("the only `client_id` this server
+# accepts") meeting a deployment fact — identity is configured with two providers
+# under two different ids, as two real providers would be. Neither loosening the
+# stub's credential check nor pointing identity at the stub's defaults is
+# available to this repository: the first modifies a sibling, the second makes the
+# fixture agree with itself about a credential nothing independently holds. The
+# reasoning is in full at the `oauth-stub` block in e2e/docker-compose.yml.
+#
+# IT IS EXPORTED EVEN THOUGH NO SPEC READS IT, and that is deliberate: a spec that
+# hardcoded the provider's address would be measuring its own constant rather than
+# the `OAUTH_*_AUTHORIZE_URL` the deployment actually handed the browser. It is
+# printed rather than relied upon so the run says where the browser went.
+export E2E_OAUTH_STUB_PORT="${E2E_OAUTH_STUB_PORT:-$(./bin/e2e-stack host-port oauth-stub)}"
+export E2E_GITHUB_STUB_PORT="${E2E_GITHUB_STUB_PORT:-$(./bin/e2e-stack host-port oauth-stub-github)}"
 
 KEEP=0
 BRING_UP=1
@@ -99,6 +119,8 @@ printf '[e2e] edge    %s   <- the origin the browser uses\n' "http://127.0.0.1:$
 printf '[e2e] parlor  %s   <- the app directly\n' "http://127.0.0.1:${E2E_PARLOR_PORT}"
 printf '[e2e] identity %s\n' "http://127.0.0.1:${E2E_IDENTITY_PORT}"
 printf '[e2e] gateway %s\n' "http://127.0.0.1:${E2E_GATEWAY_PORT}"
+printf '[e2e] oauth-stub %s   <- the fake provider; reached by a browser navigation, not by a spec\n' "http://127.0.0.1:${E2E_OAUTH_STUB_PORT}"
+printf '[e2e] oauth-stub-github %s   <- the same image, GitHub'"'"'s client id; the stub takes ONE pair\n' "http://127.0.0.1:${E2E_GITHUB_STUB_PORT}"
 
 # ---------------------------------------------------------------------------
 # The browser.

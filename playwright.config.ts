@@ -27,6 +27,32 @@ const parlorBaseUrl = `http://127.0.0.1:${port("E2E_PARLOR_PORT", "16003")}`;
 const gatewayBaseUrl = `http://127.0.0.1:${port("E2E_GATEWAY_PORT", "16081")}`;
 const identityBaseUrl = `http://127.0.0.1:${port("E2E_IDENTITY_PORT", "16080")}`;
 
+/**
+ * The two instances of the fake identity provider, as base URLs.
+ *
+ * `oauth-stub` accepts exactly one `client_id` and identity is configured with
+ * two providers, so Google and GitHub cannot share an instance — see the
+ * `oauth-stub` and `oauth-stub-github` blocks in `e2e/docker-compose.yml`, which
+ * argue why the other two answers (loosening the credential check, or editing a
+ * sibling repository) were both worse than a second instance.
+ *
+ * So this is a second port with the same properties as a first: the fallback is
+ * cross-checked against the compose document by `tests/validate-ci.sh`, so the two
+ * files cannot drift apart on it silently, and it is named after the SERVICE
+ * rather than after a provider — a third provider would make this
+ * `oauthStubFooBaseUrl` and nothing here would have to move.
+ *
+ * NEITHER IS USED BY A SPEC, and that is the point rather than an omission: the
+ * browser arrives at the provider because identity's own start leg sent a 302
+ * whose `Location` came out of `OAUTH_GOOGLE_AUTHORIZE_URL`. A spec that
+ * hardcoded either address would be measuring its own constant and would keep
+ * passing on a deployment that pointed the authorize URL somewhere nobody is
+ * listening. They exist so a future spec asserting the provider's own `/readyz`
+ * from outside the stack does not have to add a port in two files at once.
+ */
+const oauthStubBaseUrl = `http://127.0.0.1:${port("E2E_OAUTH_STUB_PORT", "16004")}`;
+const githubStubBaseUrl = `http://127.0.0.1:${port("E2E_GITHUB_STUB_PORT", "16005")}`;
+
 export default defineConfig({
   testDir: "e2e",
   // The names say which tier they are. A glob of `*.test.ts` would put
@@ -122,4 +148,11 @@ export default defineConfig({
 // The two base URLs that are not the app under test, re-exported so a spec does
 // not recompute them (and cannot disagree with the config about which port the
 // gateway is on).
-export { edgeBaseUrl, gatewayBaseUrl, identityBaseUrl, parlorBaseUrl };
+export {
+  edgeBaseUrl,
+  gatewayBaseUrl,
+  githubStubBaseUrl,
+  identityBaseUrl,
+  oauthStubBaseUrl,
+  parlorBaseUrl,
+};
