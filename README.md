@@ -233,10 +233,17 @@ TanStack Start + Vite · React 19 · TypeScript · Tailwind CSS v4 ·
 @testing-library/react · Playwright for the end-to-end tier · Node pinned in
 `package.json`.
 
-`npm run dev` is `vite dev`, `npm run build` is `vite build`, and `npm start` is
-`node server/index.mjs`. The build emits a fetch handler at
-`dist/server/server.mjs`; `server/adapter.mjs` binds it to a socket. There is no
-`.next/` directory, no standalone output and no `next start`.
+`npm run dev` is `vite dev` and `npm run build` is `vite build`, which emits a
+**Cloudflare Workers** module at `dist/server/index.mjs` — deploy it with
+`wrangler deploy`, configured by the committed `wrangler.jsonc`. There is no
+`npm start` and no `server/` directory: Cloudflare supplies the server, and the
+hand-rolled Node-to-Web adapter that used to bind the built fetch handler to a
+socket is deleted. A second target is kept for Node and Docker —
+`npm run build:node`, which emits `.output/` and is what the `Dockerfile` ships —
+because the end-to-end tier builds this repository's Dockerfile on every run and
+is the only thing here that proves the app against a real `identity` and
+`billing`. There is no `.next/` directory, no standalone output and no
+`next start`.
 
 ## Getting started
 
@@ -317,7 +324,7 @@ bash tests/validate-ci.sh --self-test  # break a throwaway copy 52 ways,
 | --- | --- | --- |
 | `ci` | kit's reusable workflow, `language: node` | The shared contract. Called, not copied, so a fix in kit lands here with no per-repo PR. |
 | `prime` | `./bin/prime`, then `git diff --exit-code -- package-lock.json` | CI runs the command a developer runs, and fails if the gate moved the lockfile. |
-| `build` | `rm -rf dist && npm run typecheck`, then `npm run build`, then an assertion that `dist/server/server.mjs`, `dist/client/assets` and `server/index.mjs` exist and that a `.woff2` was emitted | The suite renders components in jsdom and never asks the bundler to compile a route, so a route that does not compile or a prerender that throws is invisible to it. |
+| `build` | `rm -rf dist && npm run typecheck`, then `npm run build`, then an assertion that the Cloudflare Worker output exists (`dist/server/index.mjs`, the plugin's generated `dist/server/wrangler.json`, `dist/client/assets` and a `.woff2`), then `npm run build:node` and the same assertion for the Node target against `.output/server/index.mjs` and `.output/public` | The suite renders components in jsdom and never asks the bundler to compile a route, so a route that does not compile or a prerender that throws is invisible to it. |
 
 A second workflow, `.github/workflows/e2e.yml`, is the end-to-end tier. It is
 separate because a whole stack is not a per-commit gate, and it is not
@@ -391,13 +398,18 @@ docker run --rm -p 3000:3000 \
 ```
 
 Multi-stage `node:22.22.2-slim` — the pin `package.json` declares, on **both**
-stages, not whatever `node:22-slim` resolves to this week — the `vite build`
-output (`dist/client` and `dist/server`) plus `server/`, non-root user,
-`/healthz` wired to the image `HEALTHCHECK`, and `CMD ["node",
-"server/index.mjs"]`.
+stages, not whatever `node:22-slim` resolves to this week — the `npm run
+build:node` output (`.output/`, server **and** the client assets Nitro serves
+from `.output/public`), non-root user, `/healthz` wired to the image
+`HEALTHCHECK`, and `CMD ["node", ".output/server/index.mjs"]`.
 `tests/validate-ci.sh` fails the gate on an unpinned `FROM node:` anywhere in
 the Dockerfile, so the header's claim that the image is the fourth mirror of the
 pin is a check rather than a comment.
+
+Note which build this is: `npm run build:node`, not `npm run build`. The default
+build emits a **Worker**, and a container running a Worker module as a Node
+process answers nothing — it would start, print nothing and exit 0, which is the
+same failure the old `CMD ["node", "server/index.mjs"]` guarded against.
 
 The image is not the point of this section any more. `bin/e2e` builds it, pulls
 `identity` and `gateway` by tag, and drives all of it from a browser. Read on.
@@ -515,10 +527,15 @@ Dockerfile carries the `engines.node` pin, and that this script is executable.
 - **One host, one role, one replica.** `servers.web` is a single address. A
   multi-host rollout is `servers.web` gaining entries and nothing else changing,
   but nothing here has been measured against one.
-- **No CDN, and deliberately no static-asset build.** `vite build` emits a
-  server (`dist/server/server.mjs`) as well as client assets, so there is no
-  `out/` to upload and `node server/index.mjs` remains the only way this app
-  runs. A CDN in
+- **No CDN, and deliberately no static-asset build.** Both builds emit a server
+  as well as client assets — `dist/server/index.mjs` for the Worker,
+  `.output/server/index.mjs` for Node — so there is no `out/` of prerendered
+  pages to upload, and the BFF is not optional decoration that a static host
+  could replace. That is the reason this repository cannot be a fully static
+  build at all: `src/app/v1/[...path]/route.ts` reads `process.env.IDENTITY_URL`
+  on the server and rebuilds the upstream path from an allow-list, so a static
+  deploy would put the service address in the browser bundle, where "a value the
+  browser can read is a value the browser can change." A CDN in
   front would also be the wrong shape for the first release: the sign-in screen
   is a server-rendered shell whose API calls go through this app's own origin,
   so the assets are not the interesting part of the latency.
