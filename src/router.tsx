@@ -31,10 +31,20 @@ import { routeTree } from "./routeTree.gen";
  * appears in the committed tree, so a stale tree is a red `npm test` and not a
  * type error that only appears after somebody else runs a build.
  */
-export function getRouter() {
+/**
+ * A router, per server render and per browser session.
+ *
+ * `options` exists for the render harness, which needs a memory history so a
+ * test's navigation does not touch `window.history` — see
+ * `src/test/support/render.tsx`. It is typed from the library's own options
+ * rather than from `@tanstack/history`, so nothing here depends on a package
+ * this repository does not declare.
+ */
+export function getRouter(options: Omit<Parameters<typeof createRouter>[0], "routeTree"> = {}) {
   return createRouter({
-    routeTree,
     scrollRestoration: true,
+    ...options,
+    routeTree,
   });
 }
 
