@@ -20,8 +20,9 @@
 # and a partial parse is a worse reader than a grep that says what it wants.
 #
 #   bash tests/validate-ci.sh              the checks
-#   bash tests/validate-ci.sh --self-test  prove they can fail (47 breakages,
-#                                         plus the opposite case)
+#   bash tests/validate-ci.sh --self-test  prove they can fail (51 breakages,
+#                                         minus whatever this machine cannot
+#                                         prove, plus the opposite cases)
 #
 # `--self-test` is part of the gate, not an extra. A check nobody has watched
 # go red is a check that has verified nothing (PLAN.md §1). It has already paid
@@ -290,7 +291,7 @@ if [ -f "$WF" ]; then
   ok "ci.yml exists"
 else
   no "ci.yml exists" "$WF is missing; nothing runs the gate on a pull request"
-  printf '\n0 passed, 1 failed, 0 skipped — every other check needs the workflow.\n'
+  printf '\n0 checks declared, 0 passed, 1 failed, 0 skipped — every other check needs the workflow.\n'
   exit 1
 fi
 
@@ -1314,18 +1315,144 @@ else
   skipped "docker or docker/provenance.sh is not available, so the provenance verifier was not exercised on real images"
 fi
 
+# --- every tally helper this file CALLS is a defined function ---------------
+# `ok`, `no` and `skipped` are the only three ways a check reaches the tally
+# printed at the bottom, and all three are FUNCTIONS. They are also the names a
+# typo silently turns into something else, because two of them are this script's
+# counter variables too: `skip` is `skip=0`, so a call written `skip "…"`
+# instead of `skipped "…"` does not fail a check — bash looks for a program
+# named `skip`, finds none, and the whole gate dies at exit 127 on the line that
+# used it.
+#
+# That is the worst shape a gate defect has: no FAIL, no tally, no proof line,
+# just an exit code. It cost this repository a full gate. `skip` was written
+# instead of `skipped` on the manifest branch, which is the branch that only
+# runs when `caf` is ABSENT — so the gate was green on the machine that wrote
+# it, which had `caf`, and dead at 127 on every machine without it, which is
+# every CI runner. Neither the tally nor `gate_check.py` ever got to see it.
+#
+# So the property is asserted statically, and statically because the dynamic
+# answer does not exist: a misspelled helper has already killed the process
+# before any tally could be read. Reading this file's own source answers it in a
+# second, on every machine, and whether `caf` is installed never enters it.
+#
+# The vocabulary is the three real helpers plus the shapes a typo takes around
+# them. It is deliberately small: this is a check on the names the tally is
+# built from, not a lint of every command in the file, and a vocabulary wide
+# enough to match everything would be a check that matched nothing.
+#
+# WHY THE COMMENTS ARE STRIPPED FIRST, and what that costs. Same trap as
+# `code_lines` below, met from the other side: this file's headers discuss
+# `skip`, `skipped` and `no` at length, and a reader that does not strip
+# comments finds every sentence about a tally helper shaped like a call to one.
+# The strip is a `sed` on `#`, so a `#` inside a quoted string ends the line
+# early — a MISSED call site at worst and a fabricated one never, which is the
+# right way round for a decrease-detector.
+#
+# WHY A FUNCTION DEFINITION IS NOT A CALL SITE: `ok() {` is a name followed by
+# `(`, and the pattern needs whitespace and then a quote, so a definition cannot
+# satisfy it. The check asks `declare -F` for the answer rather than a list
+# written out beside it, because a second list is a thing that drifts from the
+# functions — and this file has been bitten by a second copy drifting before
+# (`MINIMUM_TESTS` in two files, the runtime pin in four).
+#
+# WHAT IT IS NOT, stated so a reader does not over-read it. It does not check
+# that every check site calls a helper at all, that the arguments are in the
+# right order, or that `skipped` was called where `no` was meant. It answers one
+# question — does every tally-shaped command in this file name a function that
+# exists — and the answer is the one the `skip` defect turned on.
+TALLY_SHAPES='ok|no|skip|skipped|fail|failed|fails|pass|passed|passes'
+tally_calls=$(sed 's/[[:space:]]*#.*$//' "$ROOT/tests/validate-ci.sh" \
+  | grep -oE "^[[:space:]]*($TALLY_SHAPES)[[:space:]]+\"|([;&|][[:space:]]*($TALLY_SHAPES)[[:space:]]+\")" \
+  | grep -oE "($TALLY_SHAPES)[[:space:]]+\"" \
+  | sed 's/[[:space:]]*"$//' | sort -u || true)
+unresolved=""
+for helper in $tally_calls; do
+  if ! declare -F "$helper" >/dev/null 2>&1; then
+    unresolved="$unresolved $helper"
+  fi
+done
+if [ -z "$tally_calls" ]; then
+  no "every tally helper this file calls is a defined function" \
+    "no call to ok, no or skipped was found in $ROOT/tests/validate-ci.sh, so the pattern this check asserts no longer matches the file"
+elif [ -z "$unresolved" ]; then
+  ok "every tally helper this file calls is a defined function ($(echo "$tally_calls" | tr '\n' ' '))"
+else
+  no "every tally helper this file calls is a defined function" \
+    "called here and not a defined function:$unresolved. A tally helper that is not a function is a command not found, which kills this script before the tally prints rather than failing one check. Look for a misspelling, and for a name that is ALSO a counter variable (pass=0, fail=0, skip=0) — those are the two ways this happens."
+fi
+
 # --- prove the checks can fail --------------------------------------------
-# Forty-seven breakages of a throwaway copy of every file these checks read,
-# each asserted to send this gate red. A check that has only ever been seen
-# green is a check nobody has watched fail, and this is the difference between
-# a gate and a rubber stamp (PLAN.md §1: a skipped test proves nothing; a check
-# that cannot fail proves less).
+# Fifty-one breakages of a throwaway copy of every file these checks read, each
+# asserted to send this gate red — except the ones this machine cannot prove,
+# which are counted separately and said out loud rather than passed quietly (see
+# `axis_available` and the tally at the bottom of `self_test`).
+#
+# A check that has only ever been seen green is a check nobody has watched
+# fail, and this is the difference between a gate and a rubber stamp (PLAN.md
+# §1: a skipped test proves nothing; a check that cannot fail proves less).
 #
 # The copy is built from the pristine files, so the self-test never depends on
 # the working tree being green — which is the only way it can be run at the
 # moment the tree is deliberately broken.
+# The environment axis a breakage needs before it can be PROVEN on this machine,
+# or `-` for the ones that need nothing beyond node and grep.
+#
+# THIS IS A `case` AND NOT A SECOND FIELD IN THE BREAKAGE LIST, and the reason
+# is a delimiter collision rather than a preference: almost every breakage is a
+# `sed` script written with `|` as its own delimiter, so a `name|axis|command`
+# split reads `sed -i '' 's` out of the middle of one as the axis. It is not an
+# associative array either, because macOS ships bash 3.2 and `declare -A` is
+# 4.0 — the same reason the numbers above are plain variables.
+#
+# A breakage that is not listed here is one that needs nothing, which is the
+# right default: a new env-gated breakage added without a line in this function
+# goes RED on a machine that cannot run it ("did NOT go red — that check cannot
+# fail") rather than passing quietly. The failure mode of forgetting is loud,
+# and loud is the direction this file is willing to be wrong in.
+#
+# caf: `manifest_parses` asks `caf dev --dry-run` and is the ONLY check that
+# can see an unquoted colon in `cafaye.yml`, because every other check reads the
+# manifest with `sed` line matching and a document YAML cannot parse still
+# matches every line pattern they use. With no `caf`, that breakage has no
+# witness, and the honest report is "unprovable here" rather than "a check that
+# cannot fail" — which is what the unprovable count exists to say.
+breakage_axis() {
+  case "$1" in
+    an-unquoted-colon-in-the-manifest) printf 'caf\n' ;;
+    *) printf -- '-\n' ;;
+  esac
+}
+
+# Can this machine prove a breakage on this axis at all? Mirroring the gate's
+# OWN condition rather than paraphrasing it is the point: `docker` alone is not
+# enough for the provenance check (it also needs a reachable daemon) and `caf`
+# alone is not enough for the manifest check (the call has to have somewhere to
+# resolve), so an axis is available exactly when the check that depends on it
+# could have run.
+#
+# An unknown axis answers no rather than yes. That way a typo in the name above
+# reports its breakages as unprovable — named, counted, and never counted as
+# proven — instead of running them and finding they cannot fail.
+axis_available() {
+  case "$1" in
+    -) return 0 ;;
+    caf) command -v caf >/dev/null 2>&1 ;;
+    shellcheck) command -v shellcheck >/dev/null 2>&1 ;;
+    docker)
+      command -v docker >/dev/null 2>&1 \
+        && docker info >/dev/null 2>&1 \
+        && [ -f "$ROOT/docker/provenance.sh" ]
+      ;;
+    *)
+      printf 'self_test: unknown breakage axis %s; treating it as unavailable\n' "$1" >&2
+      return 1
+      ;;
+  esac
+}
+
 self_test() {
-  local proofs=0 proof name breakage
+  local proofs=0 unprovable=0 declared=0 proof name breakage axis
   # Deliberately not `local`: the EXIT trap below is global, and a local would
   # be out of scope by the time the trap runs — leaving the sandbox behind, or
   # erroring on a set -u reference to a variable that no longer exists.
@@ -1454,10 +1581,32 @@ self_test() {
     "an-entry-named-for-another-service|sed -i '' 's|\"name\": \"identity\"|\"name\": \"parlor\"|' '$SANDBOX/caf.dev.json'" \
     "a-catalog-entry-with-no-image|sed -i '' 's|\"image\": \"cafaye/identity:dev\",||' '$SANDBOX/caf.dev.json'" \
     "a-healthcheck-with-no-test|sed -i '' 's|\"test\": \[\"CMD\", \"/app/service\", \"-healthcheck\"\],||' '$SANDBOX/caf.dev.json'" \
-    "the-lockfile-does-not-know-the-tarball|node -e 'const fs=require(\"fs\"),p=require(\"path\"),c=require(\"crypto\");const f=process.argv[1];const root=p.dirname(f);const l=JSON.parse(fs.readFileSync(f,\"utf8\"));const rel=\"vendor/thing-1.0.0.tgz\";fs.mkdirSync(p.join(root,\"vendor\"),{recursive:true});fs.writeFileSync(p.join(root,rel),\"a tarball\");l.packages[\"node_modules/thing\"]={version:\"1.0.0\",resolved:\"file:\"+rel,integrity:\"sha512-AAAA\"+c.createHash(\"sha512\").update(\"different bytes\").digest(\"base64\")};fs.writeFileSync(f,JSON.stringify(l,null,2)+\"\\n\")' '$SANDBOX/package-lock.json'"
+    "the-lockfile-does-not-know-the-tarball|node -e 'const fs=require(\"fs\"),p=require(\"path\"),c=require(\"crypto\");const f=process.argv[1];const root=p.dirname(f);const l=JSON.parse(fs.readFileSync(f,\"utf8\"));const rel=\"vendor/thing-1.0.0.tgz\";fs.mkdirSync(p.join(root,\"vendor\"),{recursive:true});fs.writeFileSync(p.join(root,rel),\"a tarball\");l.packages[\"node_modules/thing\"]={version:\"1.0.0\",resolved:\"file:\"+rel,integrity:\"sha512-AAAA\"+c.createHash(\"sha512\").update(\"different bytes\").digest(\"base64\")};fs.writeFileSync(f,JSON.stringify(l,null,2)+\"\\n\")' '$SANDBOX/package-lock.json'" \
+    "a-tally-helper-that-is-not-a-function|node -e 'const fs=require(\"fs\");const f=process.argv[1];const s=fs.readFileSync(f,\"utf8\");const m=/\\nexit 0\\n$/;if(!m.test(s))throw new Error(\"this script no longer ends in a bare exit 0\");fs.writeFileSync(f,s.replace(m,\"\\nskip \\\"a tally helper that is not a function\\\"\\nexit 0\\n\"))' '$SANDBOX/tests/validate-ci.sh'"
   do
     name=${proof%%|*}
     breakage=${proof#*|}
+    axis=$(breakage_axis "$name")
+    declared=$((declared + 1))
+
+    # THE AXIS CHECK, and the whole content of this packet. On a machine that
+    # cannot run a check there is no witness for its breakage, so running it
+    # anyway reports "did NOT go red — that check cannot fail", which is a true
+    # sentence about a check that CAN fail and a false finding about the gate.
+    # The three honest options are all bad in a different direction — skip it
+    # silently, let it fail, or lower the floor — and the one taken here is to
+    # NOT count it as proven, to say so on its own line, and to leave it in the
+    # declared total the floor reads. So the number in the proof is the number
+    # of breakages this file DECLARES, the same on every machine, and the run
+    # prints how many of them this machine actually proved. That is the same
+    # asymmetry the checks tally uses, for the same reason: a floor that moves
+    # with the environment is not a floor.
+    if ! axis_available "$axis"; then
+      unprovable=$((unprovable + 1))
+      printf '  UNPROVABLE  %s — needs %s, which is not available on this machine; NOT counted as proven\n' \
+        "$name" "$axis"
+      continue
+    fi
 
     # One throwaway copy per breakage, seeded from the pristine one.
     seed_sandbox
@@ -1500,7 +1649,22 @@ self_test() {
     return 1
   fi
 
-  printf 'self_test: %d breakages, every check proven able to fail\n' "$proofs"
+  # THE LINE `gate.yml` FLOORS is the DECLARED count, and the split is on the
+  # same line rather than in a second line above it, so a reader who has only
+  # the proof gets all three facts: how many breakages this repository declares,
+  # how many this machine proved, and how many it could not.
+  #
+  # `declared` is the loop count rather than a constant, so adding a breakage
+  # without raising the floor in gate.yml is a `gate.floor`, which is the
+  # property the whole shape exists to have. Deleting a breakage is the same
+  # event seen from the other side, and it is caught the same way.
+  if [ "$unprovable" -eq 0 ]; then
+    printf 'self_test: %d breakages declared, %d proven able to fail, 0 unprovable on this machine\n' \
+      "$declared" "$proofs"
+  else
+    printf 'self_test: %d breakages declared, %d proven able to fail, %d unprovable on this machine (named above)\n' \
+      "$declared" "$proofs" "$unprovable"
+  fi
 }
 
 # The tally prints in both modes, and the exit code reflects both halves.
@@ -1509,7 +1673,34 @@ self_test() {
 # printed no count and returned 0 on a tree whose real checks had failed. The
 # self-test's own baseline would have caught it and said so, but a gate that
 # needs a second mechanism to notice a failure is a gate with a hole in it.
-printf '\n%d passed, %d failed, %d skipped\n' "$pass" "$fail" "$skip"
+#
+# THE FIRST NUMBER IS THE DECLARED TOTAL, and it is first because it is the one
+# `gate.yml` floors. `passed` is NOT that number and was never the right one to
+# floor: three of the checks above are gated on a tool this repository does not
+# require (`caf`, `shellcheck`, `docker`), so on a machine without one of them a
+# check that SKIPPED is a check that did not pass, and on this fleet "a check was
+# deleted" and "a check could not run" are the same event to the passed count.
+# Flooring `passed` therefore made the floor a measurement of one fully-loaded
+# machine, and every CI runner red for not being it.
+#
+# What does not move is the SUM. Every check this file reaches a verdict on
+# reaches exactly ONE of the three — `ok`, `no` or `skipped` — so
+# passed + failed + skipped IS the number of checks the repository declares, on
+# every machine, whatever is installed. Deleting a check moves it. An absent
+# `caf` moves only the split and leaves the sum where it was, which is exactly
+# the asymmetry a decrease-detector needs. Measured, same tree, four machines:
+#
+#   caf + shellcheck + docker   46 passed, 0 failed, 0 skipped   -> 46 declared
+#   no caf                      45 passed, 0 failed, 1 skipped   -> 46 declared
+#   no caf, no docker           44 passed, 0 failed, 2 skipped   -> 46 declared
+#   and no shellcheck either    43 passed, 0 failed, 3 skipped   -> 46 declared
+#
+# The sum is not perfectly constant in every possible tree — a block guarded by
+# `[ -f ... ]` that is false contributes no verdict at all — and that is not a
+# hole, because every such guard also reports a FAIL naming the missing file.
+# The invariant this line carries is the one the three axes depend on.
+printf '\n%d checks declared, %d passed, %d failed, %d skipped\n' \
+  "$((pass + fail + skip))" "$pass" "$fail" "$skip"
 if [ "$fail" -ne 0 ]; then
   echo "the checks above failed; not running --self-test on a broken tree" >&2
   exit 1

@@ -132,12 +132,34 @@ in the repository. The format, the checker and the reasoning are `core`'s —
   fresh clone needs the registry once, and no Node is vendored. Both are
   enumerated with a `satisfy` command and what "unmet" looks like. A
   requirement nobody can demonstrate is worse than no requirement.
-- **The three `proof` floors are decrease-detectors, not budgets:** 662 vitest
-  tests, 41 `validate-ci.sh` checks, 42 self-test breakages. Adding a test means
-  raising `minimum: 662` in `gate.yml` in the same commit. `core` has
+- **The three `proof` floors are decrease-detectors, not budgets:** 727 vitest
+  tests, 47 `validate-ci.sh` checks, 51 self-test breakages. Adding a test means
+  raising `minimum: 727` in `gate.yml` in the same commit. `core` has
   `test_the_gate_floor_is_not_below_the_suite_core_claims_to_have` to force
   that; **this repository has no equivalent**, so it is a thing a human has to
   remember.
+- **Two of those three floors are DECLARED totals, not counts of what ran, and
+  that is load-bearing rather than a phrasing.** `ci-shape-checks` reads the
+  first number on `47 checks declared, …` — the sum of passed, failed and
+  skipped — and `check-self-test` reads `self_test: 51 breakages declared, …`.
+  Three checks in `tests/validate-ci.sh` are gated on `caf`, `shellcheck` and
+  `docker`, none of which this repository requires, and each prints SKIP rather
+  than PASS when the tool is absent. A floor on the PASSED count is therefore a
+  measurement of one fully-loaded machine, it is red on every machine that is
+  not that one — which is every CI runner — and on this fleet, where "a check was
+  deleted" and "a check could not run" are the same event, it cannot tell the two
+  apart either. Measured on this tree: 46/45/44/43 passed across four machines,
+  **46 declared on all four**. Never lower these two floors to accommodate a
+  missing tool; the sum is the number that means the same thing everywhere.
+- **A self-test breakage declares the ENVIRONMENT AXIS it needs.** `breakage_axis`
+  in `tests/validate-ci.sh` maps a breakage name to `caf`, `shellcheck`, `docker`
+  or `-`, and `axis_available` mirrors the gate's own condition for that tool. A
+  breakage whose axis is absent is printed as `UNPROVABLE`, counted separately,
+  and **never counted as proven** — it is in the declared total the floor reads,
+  and it is not in the number that was proved. It is not skipped to make the gate
+  green: a skip nobody is forced to notice is not a pass (PLAN.md §1). A new
+  env-gated breakage added without a line in `breakage_axis` goes RED loudly
+  rather than passing quietly, which is the direction this file will be wrong in.
 - **Write a proof for the line a TERMINAL SHOWS, because `core` strips the
   escapes first.** `vitest` colours its summary, so with `FORCE_COLOR=1` in the
   environment the bytes `core` writes to its log are
