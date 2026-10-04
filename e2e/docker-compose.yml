@@ -44,9 +44,9 @@
 #   1. NO SIBLING BUILD CONTEXTS — this file changed, and the change is the
 #      point of the whole contract below. `caf dev` builds the project service
 #      and pulls its dependencies; so does this file, for `parlor`. But
-#      `identity` and `gateway` carry an `image:` and NO `build:`, so this tier
-#      consumes them as published artifacts rather than rebuilding them from
-#      `../identity` and `../gateway` on every run.
+#      `identity`, `gateway` and `oauth-stub` carry an `image:` and NO `build:`,
+#      so this tier consumes them as published artifacts rather than rebuilding
+#      them from `../identity`, `../gateway` and `../oauth-stub` on every run.
 #
 #      WHY, because "it is faster" is not the reason and the measured numbers
 #      say so: a warm full build here is 13.81s and invalidating identity costs
@@ -64,6 +64,12 @@
 #      layers e2e/docker-compose.siblings.yml, which puts the `build:` stanzas
 #      back, for a developer whose sibling change is not merged yet. One
 #      documented path, not two defaults.
+#
+#      `oauth-stub` is in that list because it is a TEST DOUBLE and it is still a
+#      sibling: being a fake is a statement about what it answers, not about
+#      whether it has a deploy path, a version anybody depends on, or a suite that
+#      ought to be the one that runs. Before it existed as a sibling there was no
+#      way to run this tier's social path at all — see the `oauth-stub` block.
 #   2. A port block nothing else uses. See PORTS below.
 #   3. A migration step. Migrations are a deploy step in every service, by
 #      policy, so nothing here migrates on boot. `bin/e2e` runs `goose` from the
@@ -93,8 +99,8 @@
 #     tempo 15900, loki 15901, mimir 15902) and it is *running* right now on
 #     the machine this was written on. Two stacks that both believe they own
 #     15xxx is a collision the day somebody scales either of them.
-#   * 16xxx is adjacent, unallocated, and still a block: 100 ports for a
-#     six-service fleet, and 16000-16099 leaves room for the services this file
+#   * 16xxx is adjacent, unallocated, and still a block: 100 ports for an
+#     eight-service fleet, and 16000-16099 leaves room for the services this file
 #     does not have yet (billing, courier, darkroom, muse) without moving
 #     anything.
 #   * The layout is by role, not by service, so a reader can guess a port:
@@ -103,6 +109,23 @@
 #   * `parlor` is published on 16003 AND proxied through the edge, rather than
 #     only proxied. The harness proves the app is up as a process and that the
 #     edge can reach it, and those are two facts that fail for two reasons.
+#   * 16004 AND 16005 GO TO THE TWO `oauth-stub` INSTANCES, and the reason they
+#     are published at all is the browser rather than the harness. Everything
+#     else in the block exists so `bin/e2e` can probe it from the host;
+#     `oauth-stub`'s ports exist because the AUTHORIZE leg of a social sign-in is
+#     a navigation, so the browser has to be handed an address it can resolve.
+#     The compose service name `oauth-stub` is not one — a browser cannot resolve
+#     it, which is why identity's `OAUTH_GOOGLE_AUTHORIZE_URL` says
+#     `http://127.0.0.1:16004/...` while its token and userinfo URLs say
+#     `http://oauth-stub:8080/...`. Read the `oauth-stub` block before moving a
+#     number here.
+#   * 16004/16005 ARE NOT SITE'S. `site`'s own block publishes its registry on
+#     16004 and its two stubs on 16005/16006, so the two stacks are not
+#     simultaneously runnable on their defaults — which was already true of
+#     16003, 16080 and 16081 before this packet. `tests/validate-ci.sh` checks
+#     this block against the ports reserved in the workspace, not against
+#     another repository's defaults; if a run ever needs both stacks at once,
+#     `E2E_*_PORT` moves this one and nothing in it.
 #
 # Every published port is `${E2E_*:default}`: a literal port in a compose file
 # is a collision the second developer on the machine hits. Change it in the
@@ -166,8 +189,8 @@ services:
   # WHERE THE SIBLING ARTIFACTS COME FROM, and the first service in the file
   # for a reason that is mechanical rather than editorial: `docker compose up`
   # resolves and pulls every `image:` in the document BEFORE it creates any
-  # container, so a stack that pulls `identity` and `gateway` from a registry
-  # that this same compose file is about to start cannot start at all. Compose
+  # container, so a stack that pulls `identity`, `gateway` and `oauth-stub` from a
+  # registry that this same compose file is about to start cannot start at all. Compose
   # has no way to express "start this one first, then pull those", so
   # `bin/e2e-stack` brings this service up as its own step before anything else
   # resolves. That ordering lives in the script; the fact that it has to is
@@ -457,6 +480,128 @@ services:
       # against, and no test mints a JWT — is stated in the packet report as the
       # reason the suite's guard assertions are about readiness and refusal
       # rather than about a verified token.
+    # -------------------------------------------------------------------
+      # SOCIAL LOGIN — the fake provider, and the seven overrides that make the
+      # round trip testable at all
+      # -------------------------------------------------------------------
+      # Social sign-in in this repository was, until parlor-e2e-social-01, only
+      # ever tested against a fake inside identity's own package. That is the
+      # right way to test identity's client and it is structurally incapable of
+      # testing a DEPLOYMENT, because the thing a deployment gets wrong is
+      # `OAUTH_REDIRECT_BASE_URL` and that value is not in identity's code at all.
+      # This block is what makes the round trip testable: a real identity process,
+      # a real provider at the far end, and one value here that nothing below the
+      # service could ever see.
+      #
+      # `OAUTH_REDIRECT_BASE_URL` IS THE ONE THAT MATTERS, and it is written as an
+      # interpolation of the EDGE's own published port rather than a literal —
+      # the EDGE, not `parlor`'s, because the browser is on the edge and the
+      # `__Host-oauth-state` cookie is scoped to the origin the 302 arrived on.
+      # identity builds every provider callback from this value and never from the
+      # request's `Host` (oauth.Provider.RedirectURI says why: a host an attacker
+      # chose must not become part of a redirect_uri). So a deployment that points
+      # it at identity's own address completes the ENTIRE round trip with the
+      # provider — 302, code, exchange, userinfo — and fails at the last step, or
+      # sets the session cookie where the app is not. Deriving it from
+      # `${E2E_EDGE_PORT}` also means it cannot drift from the port the browser is
+      # actually on.
+      #
+      # It is the EDGE and not parlor's published port for a second reason that
+      # only this repository has: the callback has to be a route this app RENDERS.
+      # `src/routes/v1/auth/oauth/$provider/callback.tsx` branches on
+      # `Accept: text/html` and serves a document for a navigation, so the callback
+      # lands on a page that runs one programmatic exchange. Point the redirect at
+      # `http://identity:8080` and the browser gets identity's JSON instead of a
+      # page — a 200 the whole way through that leaves a person reading a token.
+      OAUTH_REDIRECT_BASE_URL: "http://127.0.0.1:${E2E_EDGE_PORT:-16000}"
+      # Fixture client credentials, one pair PER PROVIDER because two real
+      # providers do not share a client id. A provider with BOTH halves is what
+      # mounts the social routes at all, and a provider with one half is a startup
+      # FAILURE (oauth.Settings.Validate), so neither may be emptied "to disable a
+      # provider" — the way to turn social login off is to remove all of them.
+      #
+      # THE SECRETS BELOW ARE FIXTURES AND THE STUBS ARE TOLD THEM, which is what
+      # the `oauth-stub` block's second half exists to make legible: `oauth-stub`
+      # accepts EXACTLY ONE pair, so there are TWO stub instances below and not
+      # one. The temptation this arrangement invites is the wrong one — pointing
+      # identity at the stub's DEFAULTS (`oauth-stub-client`) so a single instance
+      # could serve both providers. That makes the harness agree with itself while
+      # testing nothing: the credentials exist to be checked, and a fixture that
+      # accepts whatever it is handed checks nothing. `oauth-stub/README.md` says it
+      # outright — "a fake that accepts any `client_id` will happily complete a flow
+      # whose credentials are wrong."
+      OAUTH_GOOGLE_CLIENT_ID: "cafaye-e2e-google-client"
+      OAUTH_GOOGLE_CLIENT_SECRET: "cafaye-e2e-google-secret"
+      OAUTH_GITHUB_CLIENT_ID: "cafaye-e2e-github-client"
+      OAUTH_GITHUB_CLIENT_SECRET: "cafaye-e2e-github-secret"
+      # Standard base64 of EXACTLY 32 bytes, which is what identity requires
+      # (settings.go refuses anything else at boot EVEN WHEN NO PROVIDER IS
+      # CONFIGURED — a deployment whose key is wrong should find out at boot, not
+      # in front of a person who cannot sign in). It seals the provider's refresh
+      # token, which is why it cannot be empty. This value is the SHA-256 of a
+      # fixed phrase, so it is reproducible and unmistakably a fixture; it protects
+      # a refresh token for a database inside a throwaway container and must never
+      # be reused — see SECRETS above.
+      #
+      # NOTE THE LENGTH: a 32-BYTE key is 44 base64 characters and this is one. A
+      # hand-written "32-byte-looking" string decodes to 34 and identity refuses to
+      # boot, which is the correct outcome and a confusing one to debug.
+      OAUTH_ENCRYPTION_KEY: "58/st5WnNh1whcj4pP02PVGH5MX2No0AMPlvt1l/YVc="
+      #
+      # THE TWO DIALECTS OF THE ENDPOINT OVERRIDES, and this is the whole reason
+      # they are seven variables rather than one provider URL:
+      #
+      #   * The AUTHORIZE url is BROWSER-CONTEXT. A 302 sends a person to it, so
+      #     it must be an address the BROWSER can resolve — hence 127.0.0.1 and the
+      #     published port, not the compose name. The compose network name
+      #     `oauth-stub` is not resolvable from a browser.
+      #   * The TOKEN and USERINFO urls are IDENTITY-CONTEXT. identity dials them
+      #     server-side, so they use the compose service name, the same way a deploy
+      #     reaches a sibling by service name and never by a published port. This is
+      #     deliberate in both directions: if these went through 127.0.0.1 the run
+      #     would stop testing whether identity can reach a provider it addresses by
+      #     NAME, and if the authorize url went through `oauth-stub` the browser
+      #     would get a name it cannot resolve.
+      #
+      # A real provider needs one address for both dialects; this fixture needs two,
+      # because the browser and the server resolve names differently. That is a fact
+      # about the fixture, not a shape to copy, and worth knowing before this is read
+      # as a deployment shape. What IS the fixture's quirk is that the provider is IN
+      # this stack at all, on the same network, rather than on somebody else's DNS.
+      #
+      # AND ONE PER PROVIDER, because the two dialects are no longer the only thing
+      # separating these seven variables: there are two INSTANCES. Each stub accepts
+      # one client pair and refuses everything else, so Google and GitHub cannot
+      # share one. Every GOOGLE_* url points at `oauth-stub`/16004 and every
+      # GITHUB_* url at `oauth-stub-github`/16005, in BOTH dialects — the authorize
+      # urls differ in host because of the browser AND in port because of the
+      # instance, which are two independent reasons and the port is the new one. A
+      # reader who finds the port split puzzling should read the second reason
+      # rather than assume the first covers it.
+      #
+      # The TOKEN paths are each provider's REAL last segment and are not a
+      # mistake: `/google/token` and `/github/access_token`. oauth.GitHub() pins
+      # `https://github.com/login/oauth/access_token`, and oauth-stub/main.go's
+      # `routes()` registers the same two paths for the same reason — GitHub's real
+      # endpoint answers a form body where Google's answers JSON, and
+      # `golang.org/x/oauth2` picks its parser from the Content-Type. Symmetrising
+      # them would make GitHub's exchange a 404 against a fake whose own README calls
+      # the asymmetry load-bearing. Check `routes()` rather than assuming one
+      # pattern: an asymmetry that looks like a typo is usually the real shape.
+      OAUTH_GOOGLE_AUTHORIZE_URL: "http://127.0.0.1:${E2E_OAUTH_STUB_PORT:-16004}/google/authorize"
+      OAUTH_GOOGLE_TOKEN_URL: "http://oauth-stub:8080/google/token"
+      OAUTH_GOOGLE_USERINFO_URL: "http://oauth-stub:8080/google/userinfo"
+      OAUTH_GITHUB_AUTHORIZE_URL: "http://127.0.0.1:${E2E_GITHUB_STUB_PORT:-16005}/github/authorize"
+      OAUTH_GITHUB_TOKEN_URL: "http://oauth-stub-github:8080/github/access_token"
+      OAUTH_GITHUB_USERINFO_URL: "http://oauth-stub-github:8080/github/user"
+      # The address list, dialled only because the fake's `/user` answers with a
+      # null email — the case a private GitHub address produces and the reason
+      # `Provider.EmailsURL` exists at all. identity's `githubIdentity` only falls
+      # back to this when `/user` returns an empty address, which is GitHub's normal
+      # answer for a private one. A fake that returned the address on `/user` would
+      # leave this variable unused and the branch untested forever — and the branch
+      # is the whole reason the GitHub test in social.e2e.spec.ts is its own test.
+      OAUTH_GITHUB_EMAILS_URL: "http://oauth-stub-github:8080/github/user/emails"
     ports:
       - "${E2E_IDENTITY_PORT:-16080}:8080"
     depends_on:
@@ -600,6 +745,162 @@ services:
       start_period: 5s
     networks: [platform]
 
+  # --------------------------------------------------------------- oauth-stub
+  # The fake identity provider, as a PUBLISHED SIBLING.
+  #
+  # It is a sibling and it is a test double, and both of those are load-bearing
+  # for different reasons. It is a sibling because `github.com/cafaye/oauth-stub`
+  # has a repository, a release tag (`v0.1.0`, which `bin/e2e-stack` pins), a
+  # Dockerfile and a suite — so it is consumed by tag like `identity` and
+  # `gateway`, and `publish-siblings` builds and pushes it. It is a test double
+  # because its README's first line is `THIS IS A TEST DOUBLE. NEVER DEPLOY IT.`
+  # and because everything it answers is chosen to exercise a branch.
+  #
+  # Before this existed there was NO WAY TO RUN THE SOCIAL PATH HERE AT ALL. Every
+  # test of it, in every repository, stubbed the upstream inside identity's own
+  # package with an `httptest` server — which tests identity's client and is
+  # structurally incapable of testing a DEPLOYMENT, because the thing a
+  # deployment gets wrong (`OAUTH_REDIRECT_BASE_URL`) is not in identity's code.
+  # That is the whole reason this service and `social.e2e.spec.ts` arrived
+  # together; read that spec's header before reading this block.
+  #
+  # It is placed after `edge` rather than in service-name order because it is the
+  # far side of a flow this stack starts. `depends_on` is therefore absent on
+  # purpose — see the note on `edge`'s own list, which is the same argument.
+  #
+  # THIS INSTANCE IS GOOGLE'S, and that is the entire reason a second one exists.
+  # oauth-stub holds ONE client id and ONE secret (`OAUTH_STUB_CLIENT_ID`,
+  # `OAUTH_STUB_CLIENT_SECRET` — oauth-stub/README.md's table calls the id "the
+  # only `client_id` this server accepts") and refuses everything else at both the
+  # authorize and the token endpoint. identity holds TWO providers under TWO
+  # different ids, as two real providers would be, so one instance cannot serve
+  # both: whichever id it was not given gets `invalid_client` on every
+  # authorization, and the browser stalls on the provider with an error message
+  # that names the variable.
+  #
+  # THE TWO WAYS OUT WERE BOTH WRONG, and the wrong one is the one that takes five
+  # minutes:
+  #
+  #   * Point identity's client ids at the stub's DEFAULTS so one instance could
+  #     take both. This compiles, boots, and tests nothing — the fixture is now
+  #     agreeing with itself about a credential neither side independently holds.
+  #   * Patch the stub to accept a LIST of clients. `github.com/cafaye/oauth-stub`
+  #     is a separate published repository with its own release and its own suite,
+  #     and a weaker credential check is a change to the thing under test, made by
+  #     the harness, to make a test pass. This repository may not modify a sibling.
+  #
+  # So there are two instances, one per provider, each told its own pair. The cost
+  # is a few MB of a second container against a fixture that cannot see it, and it
+  # is worth it in a tier whose stated subject is "a deployment fact nothing below
+  # could ever see".
+  oauth-stub:
+    image: "${E2E_REGISTRY:-localhost:16010}/cafaye/oauth-stub:e2e"
+    environment:
+      # The bind address, under the PUBLISHED repository's variable name and not
+      # any older spelling. Every variable in oauth-stub is optional and ABSENT IS
+      # A SUPPORTED STATE, so a variable this harness names wrongly does not fail —
+      # it is silently ignored and the service listens on its own default. A
+      # renamed variable that reads as a no-op is the failure mode worth naming,
+      # because there is no error to notice.
+      OAUTH_STUB_ADDR: ":8080"
+      # THE CREDENTIALS THIS INSTANCE ACCEPTS, and they are the ones identity's
+      # `OAUTH_GOOGLE_CLIENT_ID`/`_SECRET` carry. Absent is a supported state, so
+      # with these missing this instance would take its own defaults
+      # (`oauth-stub-client`) and refuse every authorize leg identity sent. No
+      # harness assertion would fail; all three social tests would simply stop at
+      # the provider.
+      OAUTH_STUB_CLIENT_ID: "cafaye-e2e-google-client"
+      OAUTH_STUB_CLIENT_SECRET: "cafaye-e2e-google-secret"
+      # The domain minted addresses are built in. `example.test` is RFC 6761's
+      # reserved TLD, so a stray message to one of these accounts is a no-op
+      # rather than a delivery — the same reason `session.e2e.spec.ts` mints
+      # `example.test` addresses.
+      #
+      # IT IS SET ON BOTH INSTANCES AND MUST STAY IDENTICAL BETWEEN THEM, because
+      # `social.e2e.spec.ts` asserts one address SHAPE rather than one value: the
+      # fake mints a fresh address per authorization, and the two providers mint
+      # separately so that a shared address would mean one person handed out twice.
+      # Two instances with two different domains would still satisfy that
+      # assertion, so a difference here is a fact to hold rather than one a test
+      # can check.
+      OAUTH_STUB_EMAIL_DOMAIN: "example.test"
+    ports:
+      # The one published port in this file whose reason is not "so the harness can
+      # probe it from the host": the BROWSER reaches the provider here, because the
+      # authorize leg is a navigation and `oauth-stub` is a name a browser cannot
+      # resolve. See the PORTS section for the whole argument.
+      #
+      # 16004 is the next free port in this document's own ordering after 16003,
+      # and `tests/validate-ci.sh` checks all three claims about it — inside
+      # 16000-16099, no collision with a reserved workspace port, and that
+      # Playwright's fallback is this document's number — rather than trusting this
+      # paragraph.
+      - "${E2E_OAUTH_STUB_PORT:-16004}:8080"
+    # FINDING: NO `healthcheck:`, AND IT IS NOT AN OMISSION.
+    #
+    # oauth-stub's image is `gcr.io/distroless/static-debian12:nonroot`, which
+    # carries no `wget`, no `curl` and no shell, so there is nothing inside the
+    # container that could answer a probe. A `healthcheck:` here would always
+    # report healthy, which is worse than reporting nothing — it converts a missing
+    # signal into a false one, and `docker compose up --wait` would then gate on it.
+    #
+    # Its own README states the arrangement and `bin/e2e-stack` implements it:
+    # `oauth-stub` is in READY_SERVICES, so its `/readyz` is polled FROM THE HOST
+    # over the port above, with a bounded budget. That is the same mechanism
+    # identity gets, and the reason is identical.
+    networks: [platform]
+
+  # -------------------------------------------------------- oauth-stub-github
+  # THE SAME IMAGE, THE SECOND INSTANCE, and GitHub's rather than Google's.
+  #
+  # Everything above it that is about oauth-stub's NATURE — distroless, a published
+  # sibling rather than a copy, no in-container probe, a published port because a
+  # browser must reach it — is a property of the IMAGE, and one copy of that
+  # argument is the right number. What is NOT repeated by reference is the
+  # FINDING, and that is deliberate: `tests/validate-ci.sh` requires a service with
+  # no `healthcheck:` to carry `FINDING` in its OWN block, so this block states it
+  # rather than trusting a reader to carry it across.
+  #
+  # WHY IT EXISTS AT ALL is the block above's "THIS INSTANCE IS GOOGLE'S": one
+  # client pair per instance, two pairs to configure, so two instances. This one
+  # carries GitHub's, and identity's `OAUTH_GITHUB_*` overrides point at it in BOTH
+  # dialects — by service name for the token and userinfo legs, by published port
+  # for the authorize leg, which is a browser navigation.
+  oauth-stub-github:
+    image: "${E2E_REGISTRY:-localhost:16010}/cafaye/oauth-stub:e2e"
+    environment:
+      # The bind address, the same 8080 every application service here uses. It is
+      # 8080 on BOTH instances deliberately: the container-side port is not part of
+      # what makes this instance GitHub's, and two instances claiming different
+      # internal ports would only add a way for the two to be confused.
+      OAUTH_STUB_ADDR: ":8080"
+      # GitHub's pair, matching identity's `OAUTH_GITHUB_CLIENT_ID`/`_SECRET`.
+      OAUTH_STUB_CLIENT_ID: "cafaye-e2e-github-client"
+      OAUTH_STUB_CLIENT_SECRET: "cafaye-e2e-github-secret"
+      # Same domain as the other instance, for the reason given there.
+      OAUTH_STUB_EMAIL_DOMAIN: "example.test"
+    ports:
+      # 16005, the next free number after 16004, and the same three claims about
+      # it are checked by `tests/validate-ci.sh` rather than asserted here.
+      #
+      # It is a VARIABLE, not a literal, because every published port here is one
+      # (see PORTS above). And the escape hatch the PORTS block offers for a
+      # transient occupier is NARROWER than a single-port stack: moving ONE
+      # instance means moving one variable, and moving both means moving both
+      # together. That is the real cost of the second instance and it is stated here
+      # rather than discovered by the next person to hit it.
+      - "${E2E_GITHUB_STUB_PORT:-16005}:8080"
+    # FINDING: NO `healthcheck:`, FOR THE SAME REASON AS `oauth-stub`.
+    #
+    # Same image — `gcr.io/distroless/static-debian12:nonroot`, no `wget`, no
+    # `curl`, no shell — so nothing inside this container can answer a probe
+    # either, and a `healthcheck:` would report healthy forever. `bin/e2e-stack`
+    # polls this instance's `/readyz` from the host over the port above, because
+    # `oauth-stub-github` is in READY_SERVICES for exactly the reason `oauth-stub`
+    # is: leaving it out is the silent gap that array's own comment warns about, and
+    # this instance is the one a GitHub sign-in dials.
+    networks: [platform]
+
   # --------------------------------------------------------------------- edge
   # The origin a browser actually talks to, and the only reason the sign-in path
   # in this stack works at all. Read e2e/edge.conf before changing anything here:
@@ -637,6 +938,16 @@ services:
         condition: service_healthy
       identity:
         condition: service_started
+      #
+      # NEITHER STUB IS HERE, and that is not an oversight. `depends_on` orders
+      # BOOT, and nothing in this stack boots a sign-in: a provider is dialled
+      # during a social sign-in, which is a browser action the harness takes
+      # after the gate has already passed. Listing them would be a false
+      # dependency in the direction that matters — a fixture's outage would
+      # become "the edge does not start", which is a sentence about the harness
+      # wearing the costume of a fact about the product. The real ordering is
+      # `bin/e2e-stack`'s bounded host poll on both `/readyz`, which is in
+      # READY_SERVICES.
     healthcheck:
       # The app's own liveness, through the proxy. A healthcheck on the edge's
       # port that answered a static file would be a healthcheck on nginx.

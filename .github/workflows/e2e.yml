@@ -9,7 +9,8 @@
 #     people stop running is a gate that is not a gate.
 #   * The stack needs sibling checkouts, and NOT because a compose file names
 #     them as build contexts — `e2e/docker-compose.yml` has no `build:` stanza
-#     for any sibling and consumes identity and gateway as `image:` by tag. It
+#     for any sibling and consumes identity, gateway and oauth-stub as `image:`
+#     by tag. It
 #     needs them because of WHERE those tags come from. The registry in the
 #     stack is a `registry:2` container this run starts itself
 #     (`bin/e2e-stack` ensure_registry), so it holds nothing when the run
@@ -92,8 +93,9 @@ jobs:
     name: whole stack, in a browser
     runs-on: ubuntu-latest
     # Generous, and it is a ceiling rather than a target: a cold run builds
-    # three images from three toolchains, which is most of the time. A timeout
-    # that is too tight turns a slow cold cache into a red build that says
+    # FOUR images from three toolchains (oauth-stub is the second Go build, and
+    # `COMPOSE_PARALLEL_LIMIT` is 1 on purpose), which is most of the time. A
+    # timeout that is too tight turns a slow cold cache into a red build that says
     # nothing; a timeout that is too loose is only paid when something is
     # already wrong, and every long command inside bin/e2e-stack has its own
     # bounded budget and prints the failing container's logs.
@@ -105,14 +107,25 @@ jobs:
       # this repository would start a stack whose sibling images exist nowhere,
       # and `docker compose up` would fail pulling them.
       #
-      # FOUR checkout steps rather than one with a `path:` list, because `ref`
+      # FIVE checkout steps rather than one with a `path:` list, because `ref`
       # differs between them: this repository is tested at the ref being pushed,
-      # and everything else at master. A stack assembled from mismatched service
-      # versions is a different artifact with the same name, and pinning the
-      # siblings to this ref would mean a green run of a fleet that does not
-      # exist.
+# identity, gateway and kit at master, and oauth-stub at the tag
+      # `bin/e2e-stack` pins. A stack assembled from mismatched service versions is
+      # a different artifact with the same name, and pinning the service siblings
+      # to this ref would mean a green run of a fleet that does not exist.
       #
-      # `repository:` IS NOT OPTIONAL ON ANY OF THE FOUR, and the reason is the
+      # `oauth-stub` IS THE ONE THAT IS NOT `master`, and this checkout is where
+      # that decision becomes concrete. `bin/e2e-stack`'s `sibling_default_ref`
+      # pins it because it is a TEST DOUBLE — a dependency of this tier's
+      # assertions rather than of the product — and a double that moves under the
+      # harness changes what a green run means without changing a line of this
+      # repository. `fetch-depth: 0` is load-bearing for exactly that reason:
+      # `publish-siblings` resolves the PINNED TAG, and a shallow single-branch
+      # clone carries no tags, so `sibling_revision` would fail with "oauth-stub
+      # has no ref v0.1.0" and send the reader to `git fetch` on a repository the
+      # workflow itself chose not to fetch.
+      #
+      # `repository:` IS NOT OPTIONAL ON ANY OF THE FIVE, and the reason is the
       # defect this step arrangement carried for its whole life: an
       # `actions/checkout` with no `repository:` checks out
       # `${{ github.repository }}` — this repository — into whatever directory
@@ -137,8 +150,22 @@ jobs:
           repository: cafaye/gateway
           path: gateway
           ref: master
-      # `kit` IS NOT A SIBLING, and it is here for a reason the other three do
-      # not share: no `image:` is built from it, nothing is pushed from it, and it
+# The fake provider, at the PINNED TAG rather than at master. `ref:` alone
+      # is not enough here: `git rev-parse v0.1.0^{commit}` is how
+      # `publish-siblings` names the source it is about to build, and a
+      # single-branch clone of the tag's commit does not carry the tag itself.
+      # So `fetch-depth: 0`. The pin lives in `bin/e2e-stack`
+      # (`sibling_default_ref`), NOT here — restating the number in this file
+      # would make it a second place to keep true, and the two would drift
+      # silently in whichever direction a human last edited.
+      - uses: actions/checkout@v7
+        with:
+          repository: cafaye/oauth-stub
+          path: oauth-stub
+          ref: v0.1.0
+          fetch-depth: 0
+      # `kit` IS NOT A SIBLING, and it is here for a reason none of the other four
+      # share: no `image:` is built from it, nothing is pushed from it, and it
       # is not in `SIBLING_SERVICES`. `e2e/docker-compose.yml` MOUNTS
       # `../kit/templates/compose/postgres/initdb` over
       # `/docker-entrypoint-initdb.d`, so this checkout is load-bearing for the
@@ -149,15 +176,15 @@ jobs:
       # because three loops in bin/e2e-stack iterate it, and adding a name to that
       # list to satisfy a mount would make `publish_siblings` look for a build
       # recipe for kit and die with "no build recipe for sibling kit" on the
-      # default path. It is a fourth checkout and a fourth assertion, and it
+      # default path. It is a fifth checkout and a fifth assertion, and it
       # asserts the DIRECTORY rather than a Dockerfile because a Dockerfile is
       # what a build reads and this is what a bind mount reads.
       #
-      # It is at master for the same reason as the others: kit is the fleet's
-      # shared definition, and testing a service against a pinned older cluster
-      # script would prove a fleet that does not exist. It also means this job can
-      # go red on a kit commit — which is correct, because a cluster-script change
-      # IS a change to every service's isolation.
+      # It is at master for the same reason as identity and gateway: kit is the
+      # fleet's shared definition, and testing a service against a pinned older
+      # cluster script would prove a fleet that does not exist. It also means this
+      # job can go red on a kit commit — which is correct, because a
+      # cluster-script change IS a change to every service's isolation.
       - uses: actions/checkout@v7
         with:
           repository: cafaye/kit
