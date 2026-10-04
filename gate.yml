@@ -334,54 +334,96 @@ gate:
     # runtime pin, `npm ci` and not `npm install`, the gate command, the
     # end-to-end tier's shape, and now the deployment story's shape.
     #
-    # 46 is this machine's count, up from 41: the deployment story added five.
-    # A floor is a decrease-detector, so it is raised to the real count rather
-    # than left under it — a floor below the tally cannot tell a check being
-    # removed from a check being lost.
+    # 47 is this repository's DECLARED count, up from 46: this packet adds one
+    # check (every tally helper this file calls is a defined function) and the
+    # line it floors changed shape.
+    #
+    # WHY THE FLOOR IS THE FIRST NUMBER AND NOT THE PASSED COUNT, which is the
+    # whole content of this packet and the defect the TanStack migration
+    # introduced. This used to read the PASSED count, and the passed count is a
+    # measurement of one fully-loaded machine:
+    #
+    #   caf + shellcheck + docker   46 passed, 0 failed, 0 skipped
+    #   no caf                      45 passed, 0 failed, 1 skipped
+    #   no caf, no docker           44 passed, 0 failed, 2 skipped
+    #   and no shellcheck either    43 passed, 0 failed, 3 skipped
+    #
+    # Three checks in that script are gated on a tool this repository does not
+    # require — `caf` for the manifest parse, `shellcheck` for the self-lint,
+    # `docker` for the provenance verifier — and each prints SKIP rather than
+    # PASS when the tool is absent. So `46` was a floor on "this machine has
+    # caf", it went red on every machine that is not the machine the numbers
+    # were read off, and on this fleet — where "a check was deleted" and "a
+    # check could not run" are the same event to a passed count — a passed-count
+    # floor could not tell a deletion from an absent `caf` either. Every CI
+    # runner is a machine without `caf`, which is how a merge went green
+    # locally and red everywhere else.
+    #
+    # THE SUM IS THE DECLARED TOTAL, and that is what moves with the tree
+    # instead. Every check the script reaches a verdict on reaches exactly one of
+    # passed / failed / skipped, so passed + failed + skipped is the number of
+    # checks this repository DECLARES, on every machine, whatever is installed:
+    # 46 on the first line above and 46 on the last. Deleting a check moves it.
+    # An absent `caf` moves only the split. That is the asymmetry a
+    # decrease-detector needs, and it is why lowering this floor was not an
+    # option: 46 -> 45 would have bought a green CI at the price of a floor that
+    # can no longer notice a check going missing, which is the one thing a floor
+    # is for. The old comment on this proof argued that the SKIPPED count is
+    # machine-dependent and therefore must not be floored — true, and beside the
+    # point, because the number that moved was the passed count and not the
+    # skipped one.
     #
     # NO ESCAPE TOLERANCE HERE, and the difference is measured rather than
-    # assumed. This line is a bash `printf` in `tests/validate-ci.sh` (line 1039),
-    # and that file contains no byte that can start an ANSI escape and no call
-    # to `tput` — `grep -c $'\x1b' tests/validate-ci.sh` is 0. It cannot
-    # colourise, so a pattern that tolerated colour here would be matching
-    # something the source is incapable of printing, which is a weaker proof
-    # bought for nothing. That was true when the `suite` proof above still
-    # needed a workaround for a checker that could not see colour, and it is
-    # still true now that the checker strips for everybody (MD17) — a tolerance
-    # here is dead weight rather than a weaker match. What changed is that this
-    # is now a RULE with an assertion behind it instead of a comment that
-    # decays. The self-test greps the source and fails if an ESC byte appears,
-    # so if somebody does add colour here the assertion fires and the gate goes
-    # red at the same moment, which is the right order to find out in.
+    # assumed. This line is a bash `printf` in `tests/validate-ci.sh`, and that
+    # file contains no byte that can start an ANSI escape and no call to `tput`
+    # — `grep -c $'\x1b' tests/validate-ci.sh` is 0. It cannot colourise, so a
+    # pattern that tolerated colour here would be matching something the source
+    # is incapable of printing, which is a weaker proof bought for nothing.
+    # What changed since then is that this is a RULE with an assertion behind it
+    # instead of a comment that decays: the declaration self-test greps the
+    # source and fails if an ESC byte appears, so if somebody does add colour
+    # here the assertion fires and the gate goes red at the same moment, which
+    # is the right order to find out in.
     #
-    # The pattern counts CHECKS PASSED and reads the skipped count as a number
-    # it deliberately does not floor, because it is not a constant: shellcheck
-    # is installed on this machine (so the line reads `39 passed, 0 failed, 0
-    # skipped`) and is not installed on every machine (so it would read
-    # `39 passed, 0 failed, 1 skipped`). A floor on the total would be a
-    # different number in the two places, which is the "green badge means
-    # different things on different machines" defect in miniature. The skip is
-    # still visible in the line, and `bin/prime` prints it, so a reader can see
-    # it — a skipped check is not a passing check and this declaration does not
-    # pretend otherwise.
+    # ONE CAPTURE GROUP, and the other three are read as numbers the pattern
+    # deliberately does not floor. The failed count cannot move down without the
+    # gate exiting 1 (`bin/prime` stops on it), and the passed count is machine
+    # dependent in exactly the way this floor used to be.
     - id: ci-shape-checks
-      match: '^([0-9]+) passed, [0-9]+ failed, [0-9]+ skipped$'
-      minimum: 46
-    # And the self-test, which is what makes the 46 above load-bearing: 50
+      match: '^([0-9]+) checks declared, [0-9]+ passed, [0-9]+ failed, [0-9]+ skipped$'
+      minimum: 47
+    # And the self-test, which is what makes the 47 above load-bearing: 51
     # throwaway copies of the tree, each broken one way, each asserted to go
-    # red. A gate that runs the 46 checks but silently stopped proving they can
-    # fail would still print `46 passed` — this is the line that says the
-    # rubber stamp was pressed.
+    # red. A gate that runs the checks but silently stopped proving they can
+    # fail would still print `47 checks declared` — this is the line that says
+    # the rubber stamp was pressed.
     #
-    # Also a bash `printf` in the same file (line 1030) and also plain by
-    # construction, for the same measured reason. `^self_test:` is anchored
-    # hard enough that nothing else in a vitest or npm log can be mistaken for
-    # it; the earlier `self_test:` lines this script prints on a failure do not
-    # match either, because the pattern needs the digits immediately after the
-    # colon.
+    # ALSO A DECLARED COUNT, AND FOR THE SAME REASON. The self-test used to
+    # floor the number of breakages it PROVED, which on a machine without `caf`
+    # is one short of the real list: exactly one breakage — the one that plants
+    # an unquoted colon in `cafaye.yml` — can only be witnessed by `caf dev
+    # --dry-run`, because every other check reads the manifest with `sed` line
+    # matching and a document YAML cannot parse still matches all of them. Run
+    # it without `caf` and the self-test asserted a check could fail, the check
+    # declined to run, and the honest report was "a check that cannot fail" —
+    # a true sentence and a false finding, which is the worst of both.
+    #
+    # So the proof now floors the number the repository DECLARES and the line
+    # carries the split: `self_test: 51 breakages declared, 50 proven able to
+    # fail, 1 unprovable on this machine`. The unprovable one is named on its own
+    # line in the run, counted here, and NEVER counted as proven. It is not
+    # skipped to make this green — a skip that nobody is forced to notice is not
+    # a pass (PLAN.md §1) — and the declared count stays at 51 either way, so
+    # deleting a breakage still moves this floor.
+    #
+    # Also a bash `printf` in the same file and also plain by construction, for
+    # the same measured reason as the proof above. `^self_test:` is anchored hard
+    # enough that nothing else in a vitest or npm log can be mistaken for it;
+    # the earlier `self_test:` lines this script prints on a failure do not match
+    # either, because the pattern needs the digits immediately after the colon.
     - id: check-self-test
-      match: '^self_test: ([0-9]+) breakages'
-      minimum: 50
+      match: '^self_test: ([0-9]+) breakages declared'
+      minimum: 51
   # NOT PROVED, and named here rather than left to be discovered: a proof is a
   # line of output. `484 passed` proves 484 tests ran; it does not prove the
   # tests touched identity, because they do not — the identity and billing

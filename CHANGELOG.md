@@ -594,6 +594,51 @@ All notable changes to parlor are recorded here. The format follows
 
 ### Fixed
 
+- **`bin/prime` was green on the machine that produced the TanStack migration
+  and red on every machine without `caf`, because two of the three `gate.yml`
+  proof floors were counts of what happened to run rather than counts of what
+  the repository declares.** Measured on this tree before the fix, one variable:
+
+      environment                ci-shape-checks       check-self-test
+      caf + shellcheck + docker     46 passed, 0 skipped   50 breakages, exit 0
+      caf absent                    45 passed, 1 skipped   49 breakages, exit 1
+      caf and docker absent         44 passed, 2 skipped   —
+
+  Three checks in `tests/validate-ci.sh` are gated on `caf`, `shellcheck` and
+  `docker`; none of the three is something this repository requires, and each
+  prints SKIP rather than PASS when its tool is absent. So `46` was a
+  measurement of one fully-loaded machine. It was red on every machine that is
+  not that one — which is every CI runner — and on this fleet, where "a check was
+  deleted" and "a check could not run" are the same event to a passed count, it
+  could not tell those two apart either.
+
+  Both floors now read a DECLARED total, which means the same thing everywhere.
+  `tests/validate-ci.sh` prints `47 checks declared, 47 passed, 0 failed, 0
+  skipped`: every check reaches exactly one verdict, so passed + failed + skipped
+  IS the number of checks the repository declares, and it is 46 on all four
+  machines above. Deleting a check moves it; an absent tool moves only the split.
+  Each self-test breakage declares the environment axis it needs, so a breakage
+  this machine cannot witness is printed as `UNPROVABLE`, counted separately, and
+  never counted as proven — while the declared total the floor reads stays put.
+
+  **Neither floor was lowered.** `46 -> 45` and `50 -> 49` are the edits that
+  would have bought a green CI, and both are a floor that can no longer notice a
+  check going missing. The unprovable breakage is named and printed rather than
+  skipped, because a skip nobody is forced to notice is not a pass. Deleting one
+  check, in a scratch copy, now goes red as `gate.floor: proof
+  'ci-shape-checks' reported 46 and the declaration's floor is 47`.
+
+- **A gate check called `skip`, which is not a function — exit 127 on every
+  machine without `caf`, with no FAIL, no tally and no proof line.**
+  `tests/validate-ci.sh` defines `skipped()`; `skip` is the counter variable
+  (`skip=0`). Bash looked for a program named `skip`, found none, and died on
+  the line that used it — inside the branch that runs only when `caf` is ABSENT,
+  which is why the machine that wrote it was green and every CI runner was not.
+  There is now a check that every tally-shaped command in that file names a
+  defined function, and it is STATIC because the dynamic answer cannot exist: a
+  misspelled helper has already killed the process before any tally could be
+  read.
+
 - **This template's `cafaye.yml` was not a YAML document, so no cafaye command
   could read it — and every repository generated from this file inherited that.**
   `description:` held an unquoted colon followed by a space ("The cafaye web
