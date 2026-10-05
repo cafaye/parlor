@@ -529,6 +529,71 @@ check_cluster_initdb() {
   log "the cluster's init script is present: $src"
 }
 
+# --- the cluster's DATA DIRECTORY ----------------------------------------------
+# WHY THIS IS A SEPARATE CHECK FROM THE INIT SCRIPT ABOVE, AND IT IS THE SAME
+# FAILURE REACHED THE OTHER WAY ROUND.
+#
+# `check_cluster_initdb` asks whether kit's script is on disk. It cannot ask
+# whether the script will ever RUN, and for a cluster that already exists the
+# answer is no. **Docker runs `/docker-entrypoint-initdb.d` only when the data
+# directory is empty** — that is the postgres image's documented behaviour, and it
+# is what makes an existing cluster safe rather than what makes it dangerous. The
+# danger is the other direction: a volume left over from a run that predates the
+# mount, or from a checkout where the mount was absent, keeps a cluster that was
+# initialised WITHOUT kit's script and will never be initialised with it.
+#
+# The measured failure, on this machine, 2026-10-05, and it cost a full stack run:
+#
+#   goose run: ERROR 00016_account_isolation.sql: failed to run SQL migration:
+#   failed to execute SQL query "select cafaye.protect_table('account_users');":
+#   ERROR: cafaye.protect_table(account_users, identity_app): identity_app is not
+#   a LOGIN role on this cluster. (SQLSTATE 42704)
+#
+# `pg_roles` on that cluster held exactly one entry. Not "the wrong roles" — one
+# role, `identity` itself, which is the superuser the image creates as
+# `POSTGRES_USER`. So this is NOT the missing-`../kit` failure the check above
+# describes, and that check passed: kit was checked out, the mount was there, and
+# every preflight green. It is the same *symptom* from a different cause, and
+# which of the two you are looking at is decided entirely by whether the volume
+# was already there.
+#
+# So this asks the one question the other check cannot, and it asks it of the
+# volume rather than of the file:
+#
+#   * NO volume — initdb runs on this start and roles exist. Nothing to do.
+#   * volume present — initdb has already been skipped once, and will be skipped
+#     again. `down -v` is the fix, and the check says so.
+#
+# It is a REFUSAL rather than a silent `down -v`, deliberately, for the same
+# reason `down` documents its `-v`: the volumes hold a throwaway fixture, but
+# deleting a volume nobody asked this script to delete is a destructive act done
+# on a guess. The check names the volume it found, so the reader can see which
+# one it means, and the fix is one command they can see is safe.
+#
+# `E2E_ALLOW_STALE_CLUSTER=1` is the escape hatch for the one legitimate case:
+# somebody deliberately parked a cluster and wants it back. It is an env var
+# rather than a flag because `bin/e2e` drives this script as a subprocess and
+# adding a flag would mean changing both call sites to keep them in step.
+check_cluster_freshness() {
+  local vol="${PROJECT}_identity-postgres-data"
+  docker volume inspect "$vol" >/dev/null 2>&1 || return 0
+
+  [ "${E2E_ALLOW_STALE_CLUSTER:-0}" = "1" ] && {
+    log "WARNING: reusing the existing cluster volume $vol, which was initialised without kit's script if that mount was absent then. Roles it should have created may not exist; expect a 42704 naming one of them."
+    return 0
+  }
+
+  die "the cluster volume $vol already exists, so this start will NOT run kit's init script — the postgres image runs /docker-entrypoint-initdb.d only against an empty data directory, and a cluster that was initialised without it is never given the service roles.
+
+This is not the missing-kit failure: that mount is present, or the preflight above would have said so. This volume was initialised before the mount existed, or before $PROJECT existed at all, so it carries whatever roles it was created with and none of the ones kit's script creates.
+
+The fix is one command, and the volumes hold a throwaway fixture:
+
+    docker compose --project-name $PROJECT --project-directory $ROOT -f $COMPOSE_FILE down -v
+
+or run bin/e2e-stack down. Set E2E_ALLOW_STALE_CLUSTER=1 to reuse it anyway and accept a migration failure if the roles are not there."
+}
+
 # --- preflight --------------------------------------------------------------
 # Everything this script needs, checked before anything is started, so the
 # failure is "curl is not installed" rather than "the stack did not come up"
@@ -574,6 +639,7 @@ preflight() {
   # three services away from the cause. So it is checked here, by name, before
   # anything starts.
   check_cluster_initdb
+  check_cluster_freshness
 
   # The sibling checkouts are required ONLY in the hatch. While every image was
   # built from a sibling checkout they were unconditionally required, and that
