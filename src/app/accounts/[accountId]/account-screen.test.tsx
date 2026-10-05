@@ -68,9 +68,9 @@ function asCaller(
   const detail: AccountDetail = anAccountDetail({ id: ACCOUNT_ID, role, ...account });
   const panel: MemberList = { memberships: members ?? [aMembership({ role: "owner" })], role };
   return stubIdentity({
-    me: vi.fn(async () => ME),
-    getAccount: vi.fn(async () => detail),
-    listMembers: vi.fn(async () => panel),
+    me: vi.fn(() => Promise.resolve(ME)),
+    getAccount: vi.fn(() => Promise.resolve(detail)),
+    listMembers: vi.fn(() => Promise.resolve(panel)),
     ...overrides,
   });
 }
@@ -139,9 +139,7 @@ describe("an account you cannot see", () => {
     return asCaller(
       {},
       {
-        getAccount: vi.fn(async () => {
-          throw anIdentityError(status, code, { detail: "no such account is visible to you" });
-        }),
+        getAccount: vi.fn(() => Promise.reject(anIdentityError(status, code, { detail: "no such account is visible to you" }))),
       },
     );
   }
@@ -181,9 +179,7 @@ describe("an account you cannot see", () => {
     const identity = asCaller(
       {},
       {
-        getAccount: vi.fn(async () => {
-          throw anIdentityError(503, "unavailable");
-        }),
+        getAccount: vi.fn(() => Promise.reject(anIdentityError(503, "unavailable"))),
       },
     );
     renderWithProviders(<AccountScreen accountId={ACCOUNT_ID} />, { identity });
@@ -357,9 +353,7 @@ describe("the member panel", () => {
     const identity = asCaller(
       {},
       {
-        listMembers: vi.fn(async () => {
-          throw anIdentityError(503, "unavailable");
-        }),
+        listMembers: vi.fn(() => Promise.reject(anIdentityError(503, "unavailable"))),
       },
     );
     renderWithProviders(<AccountScreen accountId={ACCOUNT_ID} />, { identity });
@@ -394,7 +388,7 @@ describe("renaming", () => {
 
   it("sends the trimmed name", async () => {
     signIn();
-    const identity = asCaller({ role: "admin" }, { renameAccount: vi.fn(async () => anAccountDetail()) });
+    const identity = asCaller({ role: "admin" }, { renameAccount: vi.fn(() => Promise.resolve(anAccountDetail())) });
     renderWithProviders(<AccountScreen accountId={ACCOUNT_ID} />, { identity });
 
     await screen.findByRole("heading", { level: 1 });
@@ -409,7 +403,7 @@ describe("renaming", () => {
 
   it("refuses a name the service would refuse, without asking it", async () => {
     signIn();
-    const identity = asCaller({ role: "admin" }, { renameAccount: vi.fn(async () => anAccountDetail()) });
+    const identity = asCaller({ role: "admin" }, { renameAccount: vi.fn(() => Promise.resolve(anAccountDetail())) });
     renderWithProviders(<AccountScreen accountId={ACCOUNT_ID} />, { identity });
 
     await screen.findByRole("heading", { level: 1 });
@@ -430,7 +424,7 @@ describe("renaming", () => {
     const identity = asCaller(
       { role: "admin" },
       {
-        getAccount: vi.fn(async () => current),
+        getAccount: vi.fn(() => Promise.resolve(current)),
         renameAccount: vi.fn(async (_token, _id, input: { name: string }) => {
           current = anAccountDetail({ name: input.name });
           return current;
@@ -458,11 +452,9 @@ describe("renaming", () => {
     const identity = asCaller(
       { role: "admin" },
       {
-        renameAccount: vi.fn(async () => {
-          throw anIdentityError(403, "forbidden", {
+        renameAccount: vi.fn(() => Promise.reject(anIdentityError(403, "forbidden", {
             detail: "your role in this account does not permit this action",
-          });
-        }),
+          }))),
       },
     );
     renderWithProviders(<AccountScreen accountId={ACCOUNT_ID} />, { identity });
@@ -532,7 +524,7 @@ describe("inviting", () => {
 
   it("sends the email and the role", async () => {
     signIn();
-    const identity = asCaller({}, { inviteMember: vi.fn(async () => anInvitation()) });
+    const identity = asCaller({}, { inviteMember: vi.fn(() => Promise.resolve(anInvitation())) });
     renderWithProviders(<AccountScreen accountId={ACCOUNT_ID} />, { identity });
 
     fireEvent.change(await screen.findByLabelText("Email"), {
@@ -553,7 +545,7 @@ describe("inviting", () => {
     // Until courier exists, this response is the only copy of the token that
     // will ever exist. Losing it means an invitation nobody can redeem.
     signIn();
-    const identity = asCaller({}, { inviteMember: vi.fn(async () => anInvitation()) });
+    const identity = asCaller({}, { inviteMember: vi.fn(() => Promise.resolve(anInvitation())) });
     renderWithProviders(<AccountScreen accountId={ACCOUNT_ID} />, { identity });
 
     fireEvent.change(await screen.findByLabelText("Email"), {
@@ -567,7 +559,7 @@ describe("inviting", () => {
 
   it("warns that the link is shown once and will not come back", async () => {
     signIn();
-    const identity = asCaller({}, { inviteMember: vi.fn(async () => anInvitation()) });
+    const identity = asCaller({}, { inviteMember: vi.fn(() => Promise.resolve(anInvitation())) });
     renderWithProviders(<AccountScreen accountId={ACCOUNT_ID} />, { identity });
 
     fireEvent.change(await screen.findByLabelText("Email"), {
@@ -583,11 +575,9 @@ describe("inviting", () => {
     const identity = asCaller(
       {},
       {
-        inviteMember: vi.fn(async () => {
-          throw anIdentityError(409, "conflict", {
+        inviteMember: vi.fn(() => Promise.reject(anIdentityError(409, "conflict", {
             detail: "there is already a pending invitation for that address on this account",
-          });
-        }),
+          }))),
       },
     );
     renderWithProviders(<AccountScreen accountId={ACCOUNT_ID} />, { identity });
@@ -605,9 +595,7 @@ describe("inviting", () => {
     const identity = asCaller(
       {},
       {
-        inviteMember: vi.fn(async () => {
-          throw anIdentityError(409, "conflict");
-        }),
+        inviteMember: vi.fn(() => Promise.reject(anIdentityError(409, "conflict"))),
       },
     );
     renderWithProviders(<AccountScreen accountId={ACCOUNT_ID} />, { identity });
@@ -627,9 +615,7 @@ describe("inviting", () => {
     const identity = asCaller(
       {},
       {
-        inviteMember: vi.fn(async () => {
-          throw anIdentityError(409, "conflict");
-        }),
+        inviteMember: vi.fn(() => Promise.reject(anIdentityError(409, "conflict"))),
       },
     );
     renderWithProviders(<AccountScreen accountId={ACCOUNT_ID} />, { identity });
@@ -671,7 +657,7 @@ describe("leaving an account", () => {
 
   it("removes the caller's own membership, addressed by their own id, once confirmed", async () => {
     signIn();
-    const identity = asCaller({ role: "member" }, { removeMember: vi.fn(async () => undefined) });
+    const identity = asCaller({ role: "member" }, { removeMember: vi.fn(() => Promise.resolve(undefined)) });
     renderWithProviders(<AccountScreen accountId={ACCOUNT_ID} />, { identity });
 
     fireEvent.click(await screen.findByRole("button", { name: /leave/i }));
@@ -690,7 +676,7 @@ describe("leaving an account", () => {
 
   it("does nothing when leaving is declined, which is the whole point of asking", async () => {
     signIn();
-    const identity = asCaller({ role: "member" }, { removeMember: vi.fn(async () => undefined) });
+    const identity = asCaller({ role: "member" }, { removeMember: vi.fn(() => Promise.resolve(undefined)) });
     renderWithProviders(<AccountScreen accountId={ACCOUNT_ID} />, { identity });
 
     fireEvent.click(await screen.findByRole("button", { name: /leave/i }));
@@ -705,7 +691,7 @@ describe("leaving an account", () => {
 
   it("goes back to the accounts list afterwards", async () => {
     signIn();
-    const identity = asCaller({ role: "member" }, { removeMember: vi.fn(async () => undefined) });
+    const identity = asCaller({ role: "member" }, { removeMember: vi.fn(() => Promise.resolve(undefined)) });
     renderWithProviders(<AccountScreen accountId={ACCOUNT_ID} />, { identity });
 
     fireEvent.click(await screen.findByRole("button", { name: /leave/i }));
@@ -735,7 +721,7 @@ describe("deleting an account", () => {
 
   it("asks before it deletes, because there is no undo", async () => {
     signIn();
-    const identity = asCaller({ role: "owner" }, { deleteAccount: vi.fn(async () => undefined) });
+    const identity = asCaller({ role: "owner" }, { deleteAccount: vi.fn(() => Promise.resolve(undefined)) });
     renderWithProviders(<AccountScreen accountId={ACCOUNT_ID} />, { identity });
 
     fireEvent.click(await screen.findByRole("button", { name: /delete/i }));
@@ -747,7 +733,7 @@ describe("deleting an account", () => {
 
   it("deletes once confirmed, and returns to the list", async () => {
     signIn();
-    const identity = asCaller({ role: "owner" }, { deleteAccount: vi.fn(async () => undefined) });
+    const identity = asCaller({ role: "owner" }, { deleteAccount: vi.fn(() => Promise.resolve(undefined)) });
     renderWithProviders(<AccountScreen accountId={ACCOUNT_ID} />, { identity });
 
     fireEvent.click(await screen.findByRole("button", { name: /delete/i }));
@@ -759,7 +745,7 @@ describe("deleting an account", () => {
 
   it("does nothing when the confirmation is declined", async () => {
     signIn();
-    const identity = asCaller({ role: "owner" }, { deleteAccount: vi.fn(async () => undefined) });
+    const identity = asCaller({ role: "owner" }, { deleteAccount: vi.fn(() => Promise.resolve(undefined)) });
     renderWithProviders(<AccountScreen accountId={ACCOUNT_ID} />, { identity });
 
     fireEvent.click(await screen.findByRole("button", { name: /delete/i }));
@@ -773,9 +759,7 @@ describe("deleting an account", () => {
     const identity = asCaller(
       { role: "owner" },
       {
-        deleteAccount: vi.fn(async () => {
-          throw anIdentityError(403, "forbidden");
-        }),
+        deleteAccount: vi.fn(() => Promise.reject(anIdentityError(403, "forbidden"))),
       },
     );
     renderWithProviders(<AccountScreen accountId={ACCOUNT_ID} />, { identity });
@@ -789,7 +773,7 @@ describe("deleting an account", () => {
 
   it("puts the confirmation in a named dialog, so it is a place and not a pair of buttons", async () => {
     signIn();
-    const identity = asCaller({ role: "owner" }, { deleteAccount: vi.fn(async () => undefined) });
+    const identity = asCaller({ role: "owner" }, { deleteAccount: vi.fn(() => Promise.resolve(undefined)) });
     renderWithProviders(<AccountScreen accountId={ACCOUNT_ID} />, { identity });
 
     // Before: no dialog at all, so the page has nothing named "delete".
@@ -809,7 +793,7 @@ describe("deleting an account", () => {
 
   it("offers the destructive action as a destructive button, not the primary one", async () => {
     signIn();
-    const identity = asCaller({ role: "owner" }, { deleteAccount: vi.fn(async () => undefined) });
+    const identity = asCaller({ role: "owner" }, { deleteAccount: vi.fn(() => Promise.resolve(undefined)) });
     renderWithProviders(<AccountScreen accountId={ACCOUNT_ID} />, { identity });
 
     fireEvent.click(await screen.findByRole("button", { name: /delete/i }));
@@ -827,7 +811,7 @@ describe("deleting an account", () => {
 
   it("sends nothing while the dialog is open, however many times it is focused", async () => {
     signIn();
-    const identity = asCaller({ role: "owner" }, { deleteAccount: vi.fn(async () => undefined) });
+    const identity = asCaller({ role: "owner" }, { deleteAccount: vi.fn(() => Promise.resolve(undefined)) });
     renderWithProviders(<AccountScreen accountId={ACCOUNT_ID} />, { identity });
 
     fireEvent.click(await screen.findByRole("button", { name: /delete/i }));

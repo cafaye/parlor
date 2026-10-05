@@ -32,7 +32,7 @@ const PAGE: CustomerPageType = {
   page: { next_cursor: null, has_more: false },
 };
 
-function renderCustomers(billing = stubBilling({ listCustomers: vi.fn(async () => PAGE) })) {
+function renderCustomers(billing = stubBilling({ listCustomers: vi.fn(() => Promise.resolve(PAGE)) })) {
   renderWithProviders(<CustomersPage />, { identity: stubIdentity(), billing });
   return billing;
 }
@@ -71,10 +71,10 @@ describe("when there are no customers", () => {
   it("says so, without calling it a failure", async () => {
     renderCustomers(
       stubBilling({
-        listCustomers: vi.fn(async () => ({
+        listCustomers: vi.fn(() => Promise.resolve(({
           data: [],
           page: { next_cursor: null, has_more: false },
-        })),
+        }))),
       }),
     );
 
@@ -85,10 +85,10 @@ describe("when there are no customers", () => {
   it("still offers the create form", async () => {
     renderCustomers(
       stubBilling({
-        listCustomers: vi.fn(async () => ({
+        listCustomers: vi.fn(() => Promise.resolve(({
           data: [],
           page: { next_cursor: null, has_more: false },
-        })),
+        }))),
       }),
     );
 
@@ -99,13 +99,13 @@ describe("when there are no customers", () => {
 describe("when the customers are there", () => {
   function withCustomers() {
     return stubBilling({
-      listCustomers: vi.fn(async () => ({
+      listCustomers: vi.fn(() => Promise.resolve(({
         data: [
           aCustomer({ id: "cus_1", email: "kaka@example.com", owner: { type: "User", id: "usr_1" } }),
           aCustomer({ id: "cus_2", email: null, owner: { type: "Account", id: "acc_0a1b2c3d" } }),
         ],
         page: { next_cursor: null, has_more: false },
-      })),
+      }))),
     });
   }
 
@@ -158,8 +158,8 @@ describe("creating a customer", () => {
   it("sends the owner kind and id, and the processor", async () => {
     const billing = renderCustomers(
       stubBilling({
-        listCustomers: vi.fn(async () => PAGE),
-        createCustomer: vi.fn(async () => aCustomer({ id: "cus_new" })),
+        listCustomers: vi.fn(() => Promise.resolve(PAGE)),
+        createCustomer: vi.fn(() => Promise.resolve(aCustomer({ id: "cus_new" }))),
       }),
     );
     await screen.findByRole("button", { name: /create customer/i });
@@ -181,8 +181,8 @@ describe("creating a customer", () => {
   it("sends only the fields the schema allows", async () => {
     const billing = renderCustomers(
       stubBilling({
-        listCustomers: vi.fn(async () => PAGE),
-        createCustomer: vi.fn(async () => aCustomer({ id: "cus_new" })),
+        listCustomers: vi.fn(() => Promise.resolve(PAGE)),
+        createCustomer: vi.fn(() => Promise.resolve(aCustomer({ id: "cus_new" }))),
       }),
     );
     await screen.findByRole("button", { name: /create customer/i });
@@ -209,7 +209,7 @@ describe("creating a customer", () => {
             data: [aCustomer({ id: "cus_new", email: "new@example.com" })],
             page: { next_cursor: null, has_more: false },
           }),
-        createCustomer: vi.fn(async () => aCustomer({ id: "cus_new", email: "new@example.com" })),
+        createCustomer: vi.fn(() => Promise.resolve(aCustomer({ id: "cus_new", email: "new@example.com" }))),
       }),
     );
 
@@ -225,12 +225,10 @@ describe("creating a customer", () => {
     // button here is a guaranteed second 409.
     const billing = renderCustomers(
       stubBilling({
-        listCustomers: vi.fn(async () => PAGE),
-        createCustomer: vi.fn(async () => {
-          throw aBillingError(409, "conflict", {
+        listCustomers: vi.fn(() => Promise.resolve(PAGE)),
+        createCustomer: vi.fn(() => Promise.reject(aBillingError(409, "conflict", {
             detail: "a customer already exists for that owner and processor",
-          });
-        }),
+          }))),
       }),
     );
     await screen.findByRole("button", { name: /create customer/i });
@@ -248,10 +246,8 @@ describe("creating a customer", () => {
   it("does not repeat the service's own wording", async () => {
     renderCustomers(
       stubBilling({
-        listCustomers: vi.fn(async () => PAGE),
-        createCustomer: vi.fn(async () => {
-          throw aBillingError(409, "conflict", { detail: "UNIQUE violation on customers_owner_key" });
-        }),
+        listCustomers: vi.fn(() => Promise.resolve(PAGE)),
+        createCustomer: vi.fn(() => Promise.reject(aBillingError(409, "conflict", { detail: "UNIQUE violation on customers_owner_key" }))),
       }),
     );
     await screen.findByRole("button", { name: /create customer/i });
@@ -266,12 +262,10 @@ describe("creating a customer", () => {
   it("puts a field failure on the field it names", async () => {
     renderCustomers(
       stubBilling({
-        listCustomers: vi.fn(async () => PAGE),
-        createCustomer: vi.fn(async () => {
-          throw aBillingError(422, "validation_failed", {
+        listCustomers: vi.fn(() => Promise.resolve(PAGE)),
+        createCustomer: vi.fn(() => Promise.reject(aBillingError(422, "validation_failed", {
             fieldErrors: [{ field: "email", code: "invalid_format" }],
-          });
-        }),
+          }))),
       }),
     );
     await screen.findByRole("button", { name: /create customer/i });
@@ -287,10 +281,8 @@ describe("creating a customer", () => {
   it("keeps what was typed after a failure", async () => {
     renderCustomers(
       stubBilling({
-        listCustomers: vi.fn(async () => PAGE),
-        createCustomer: vi.fn(async () => {
-          throw aBillingError(503, "unavailable");
-        }),
+        listCustomers: vi.fn(() => Promise.resolve(PAGE)),
+        createCustomer: vi.fn(() => Promise.reject(aBillingError(503, "unavailable"))),
       }),
     );
     await screen.findByRole("button", { name: /create customer/i });
@@ -306,7 +298,7 @@ describe("creating a customer", () => {
     const gate: { settle?: () => void } = {};
     renderCustomers(
       stubBilling({
-        listCustomers: vi.fn(async () => PAGE),
+        listCustomers: vi.fn(() => Promise.resolve(PAGE)),
         createCustomer: vi.fn(
           () =>
             new Promise<Customer>((resolve) => {
@@ -330,9 +322,7 @@ describe("creating a customer", () => {
 describe("when the customers cannot be loaded", () => {
   function failing() {
     return stubBilling({
-      listCustomers: vi.fn(async () => {
-        throw aBillingError(503, "unavailable");
-      }),
+      listCustomers: vi.fn(() => Promise.reject(aBillingError(503, "unavailable"))),
     });
   }
 
@@ -346,9 +336,7 @@ describe("when the customers cannot be loaded", () => {
   it("does not leak the service's own words", async () => {
     renderCustomers(
       stubBilling({
-        listCustomers: vi.fn(async () => {
-          throw aBillingError(500, "internal", { detail: "pq: dial tcp 10.0.3.11:5432 refused" });
-        }),
+        listCustomers: vi.fn(() => Promise.reject(aBillingError(500, "internal", { detail: "pq: dial tcp 10.0.3.11:5432 refused" }))),
       }),
     );
 

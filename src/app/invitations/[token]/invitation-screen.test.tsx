@@ -45,7 +45,7 @@ function signIn() {
 }
 
 function signedIn(overrides = {}) {
-  return stubIdentity({ me: vi.fn(async () => aUser()), ...overrides });
+  return stubIdentity({ me: vi.fn(() => Promise.resolve(aUser())), ...overrides });
 }
 
 /** An `IdentityError` shaped as `writeTenancyError` would send it. */
@@ -80,7 +80,7 @@ describe("an invitation that has not been redeemed", () => {
   it("does not accept on load, because joining an account is a consequence", async () => {
     signIn();
     const identity = signedIn({
-      acceptInvitation: vi.fn(async () => aMembership({ account_id: ACCOUNT_ID })),
+      acceptInvitation: vi.fn(() => Promise.resolve(aMembership({ account_id: ACCOUNT_ID }))),
     });
     renderWithProviders(<InvitationScreen token={INVITATION} />, { identity });
 
@@ -96,7 +96,7 @@ describe("an invitation that has not been redeemed", () => {
   it("sends the caller's session token and the invitation token", async () => {
     signIn();
     const identity = signedIn({
-      acceptInvitation: vi.fn(async () => aMembership({ account_id: ACCOUNT_ID })),
+      acceptInvitation: vi.fn(() => Promise.resolve(aMembership({ account_id: ACCOUNT_ID }))),
     });
     renderWithProviders(<InvitationScreen token={INVITATION} />, { identity });
 
@@ -121,7 +121,7 @@ describe("an invitation that has not been redeemed", () => {
   it("shows the role they ended up with, once accepted", async () => {
     signIn();
     const identity = signedIn({
-      acceptInvitation: vi.fn(async () => aMembership({ account_id: ACCOUNT_ID, role: "admin" })),
+      acceptInvitation: vi.fn(() => Promise.resolve(aMembership({ account_id: ACCOUNT_ID, role: "admin" }))),
     });
     renderWithProviders(<InvitationScreen token={INVITATION} />, { identity });
 
@@ -133,7 +133,7 @@ describe("an invitation that has not been redeemed", () => {
   it("links to the account they joined, which they can now see", async () => {
     signIn();
     const identity = signedIn({
-      acceptInvitation: vi.fn(async () => aMembership({ account_id: ACCOUNT_ID })),
+      acceptInvitation: vi.fn(() => Promise.resolve(aMembership({ account_id: ACCOUNT_ID }))),
     });
     renderWithProviders(<InvitationScreen token={INVITATION} />, { identity });
 
@@ -166,7 +166,7 @@ describe("an invitation that has not been redeemed", () => {
   it("does not offer to accept twice", async () => {
     signIn();
     const identity = signedIn({
-      acceptInvitation: vi.fn(async () => aMembership({ account_id: ACCOUNT_ID })),
+      acceptInvitation: vi.fn(() => Promise.resolve(aMembership({ account_id: ACCOUNT_ID }))),
     });
     renderWithProviders(<InvitationScreen token={INVITATION} />, { identity });
 
@@ -184,9 +184,7 @@ describe("an invitation that is not recognised", () => {
   it("says the invitation is not recognised", async () => {
     signIn();
     const identity = signedIn({
-      acceptInvitation: vi.fn(async () => {
-        throw failure(404, "not_found", "no invitation matches that token");
-      }),
+      acceptInvitation: vi.fn(() => Promise.reject(failure(404, "not_found", "no invitation matches that token"))),
     });
     renderWithProviders(<InvitationScreen token={INVITATION} />, { identity });
 
@@ -201,9 +199,7 @@ describe("an invitation that is not recognised", () => {
     // turns a guess into a probe.
     signIn();
     const identity = signedIn({
-      acceptInvitation: vi.fn(async () => {
-        throw failure(404, "not_found", "no invitation matches that token");
-      }),
+      acceptInvitation: vi.fn(() => Promise.reject(failure(404, "not_found", "no invitation matches that token"))),
     });
     renderWithProviders(<InvitationScreen token={INVITATION} />, { identity });
 
@@ -216,9 +212,7 @@ describe("an invitation that is not recognised", () => {
   it("offers a way to the accounts they can already see", async () => {
     signIn();
     const identity = signedIn({
-      acceptInvitation: vi.fn(async () => {
-        throw failure(404, "not_found", "no invitation matches that token");
-      }),
+      acceptInvitation: vi.fn(() => Promise.reject(failure(404, "not_found", "no invitation matches that token"))),
     });
     renderWithProviders(<InvitationScreen token={INVITATION} />, { identity });
 
@@ -237,9 +231,7 @@ describe("an invitation that can no longer be used", () => {
   it("says it can no longer be used, and to ask for a new one", async () => {
     signIn();
     const identity = signedIn({
-      acceptInvitation: vi.fn(async () => {
-        throw failure(410, "gone", "this invitation has expired; ask for a new one");
-      }),
+      acceptInvitation: vi.fn(() => Promise.reject(failure(410, "gone", "this invitation has expired; ask for a new one"))),
     });
     renderWithProviders(<InvitationScreen token={INVITATION} />, { identity });
 
@@ -254,9 +246,7 @@ describe("an invitation that can no longer be used", () => {
   it("is a different state from an unrecognised token", async () => {
     signIn();
     const expired = signedIn({
-      acceptInvitation: vi.fn(async () => {
-        throw failure(410, "gone", "this invitation has expired");
-      }),
+      acceptInvitation: vi.fn(() => Promise.reject(failure(410, "gone", "this invitation has expired"))),
     });
     const { unmount } = renderWithProviders(<InvitationScreen token={INVITATION} />, {
       identity: expired,
@@ -267,9 +257,7 @@ describe("an invitation that can no longer be used", () => {
     unmount();
 
     const unknown = signedIn({
-      acceptInvitation: vi.fn(async () => {
-        throw failure(404, "not_found", "no invitation matches that token");
-      }),
+      acceptInvitation: vi.fn(() => Promise.reject(failure(404, "not_found", "no invitation matches that token"))),
     });
     renderWithProviders(<InvitationScreen token={INVITATION} />, { identity: unknown });
     fireEvent.click(await screen.findByRole("button", { name: /accept/i }));
@@ -284,9 +272,7 @@ describe("an invitation that can no longer be used", () => {
   it("still says the right thing when the invitation was already accepted", async () => {
     signIn();
     const identity = signedIn({
-      acceptInvitation: vi.fn(async () => {
-        throw failure(410, "gone", "this invitation has already been accepted");
-      }),
+      acceptInvitation: vi.fn(() => Promise.reject(failure(410, "gone", "this invitation has already been accepted"))),
     });
     renderWithProviders(<InvitationScreen token={INVITATION} />, { identity });
 
@@ -301,9 +287,7 @@ describe("an invitation that can no longer be used", () => {
   it("does not repeat the service's own reason", async () => {
     signIn();
     const identity = signedIn({
-      acceptInvitation: vi.fn(async () => {
-        throw failure(410, "gone", "token digest 9f8e7d6c is not redeemable");
-      }),
+      acceptInvitation: vi.fn(() => Promise.reject(failure(410, "gone", "token digest 9f8e7d6c is not redeemable"))),
     });
     renderWithProviders(<InvitationScreen token={INVITATION} />, { identity });
 
@@ -318,9 +302,7 @@ describe("an invitation for an account you are already in", () => {
   it("says so, which is not the same as a bad token", async () => {
     signIn();
     const identity = signedIn({
-      acceptInvitation: vi.fn(async () => {
-        throw failure(409, "conflict", "you are already a member of this account");
-      }),
+      acceptInvitation: vi.fn(() => Promise.reject(failure(409, "conflict", "you are already a member of this account"))),
     });
     renderWithProviders(<InvitationScreen token={INVITATION} />, { identity });
 
@@ -335,9 +317,7 @@ describe("an invitation for an account you are already in", () => {
   it("offers no retry, because retrying gets the same 409", async () => {
     signIn();
     const identity = signedIn({
-      acceptInvitation: vi.fn(async () => {
-        throw failure(409, "conflict", "you are already a member of this account");
-      }),
+      acceptInvitation: vi.fn(() => Promise.reject(failure(409, "conflict", "you are already a member of this account"))),
     });
     renderWithProviders(<InvitationScreen token={INVITATION} />, { identity });
 
@@ -354,9 +334,7 @@ describe("when the service is down", () => {
   it("says it could not find out, and offers to try again", async () => {
     signIn();
     const identity = signedIn({
-      acceptInvitation: vi.fn(async () => {
-        throw failure(503, "unavailable", "identity is not accepting requests");
-      }),
+      acceptInvitation: vi.fn(() => Promise.reject(failure(503, "unavailable", "identity is not accepting requests"))),
     });
     renderWithProviders(<InvitationScreen token={INVITATION} />, { identity });
 
@@ -387,9 +365,7 @@ describe("when the service is down", () => {
   it("does not tell anybody their invitation is no good, because we did not find out", async () => {
     signIn();
     const identity = signedIn({
-      acceptInvitation: vi.fn(async () => {
-        throw failure(500, "internal", "pq: connection reset by peer");
-      }),
+      acceptInvitation: vi.fn(() => Promise.reject(failure(500, "internal", "pq: connection reset by peer"))),
     });
     renderWithProviders(<InvitationScreen token={INVITATION} />, { identity });
 

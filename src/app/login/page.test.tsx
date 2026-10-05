@@ -173,8 +173,8 @@ describe("login page", () => {
   describe("with correct credentials", () => {
     function acceptsLogin() {
       return stubIdentity({
-        login: vi.fn(async () => ({ token: "tok_abc", expires_at: "2026-10-01T00:00:00Z" })),
-        me: vi.fn(async () => aUser()),
+        login: vi.fn(() => Promise.resolve(({ token: "tok_abc", expires_at: "2026-10-01T00:00:00Z" }))),
+        me: vi.fn(() => Promise.resolve(aUser())),
       });
     }
 
@@ -239,9 +239,7 @@ describe("login page", () => {
   describe("when the service refuses the credentials", () => {
     function refusesLogin() {
       return stubIdentity({
-        login: vi.fn(async () => {
-          throw anIdentityError(401, "unauthorized");
-        }),
+        login: vi.fn(() => Promise.reject(anIdentityError(401, "unauthorized"))),
       });
     }
 
@@ -403,9 +401,7 @@ describe("login page", () => {
       // telling someone their password is invalid when the service is down
       // sends them off to reset a password that was fine.
       const identity = stubIdentity({
-        login: vi.fn(async () => {
-          throw anIdentityError(503, "unavailable");
-        }),
+        login: vi.fn(() => Promise.reject(anIdentityError(503, "unavailable"))),
       });
       renderWithProviders(await loginPage(), { identity });
 

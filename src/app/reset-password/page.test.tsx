@@ -19,7 +19,7 @@ vi.mock("@/lib/navigation", () => ({ useNavigation: () => ({ push, refresh: vi.f
 const TOKEN = "0Kq3Zs1oQw7bXn0K9dLpR2vT4yE6hJ8cF1gM5nA2qU0";
 const NEW_PASSWORD = "a brand new password";
 
-const redeemOk = () => vi.fn(async () => undefined);
+const redeemOk = () => vi.fn(() => Promise.resolve(undefined));
 
 /**
  * `NO_TOKEN` rather than `undefined` as the default sentinel.

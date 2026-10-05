@@ -127,13 +127,11 @@ const GLOBEX = anAccountDetail({
  */
 function service() {
   return stubIdentity({
-    me: vi.fn(async (token: string) => (token === TOKEN_A ? ALICE : BOB)),
-    listAccounts: vi.fn(async (token: string) =>
-      token === TOKEN_A
+    me: vi.fn((token: string) => Promise.resolve((token === TOKEN_A ? ALICE : BOB))),
+    listAccounts: vi.fn((token: string) => Promise.resolve(token === TOKEN_A
         ? [anAccountListItem({ id: ACCOUNT_A, name: "Acme Corp", slug: "acme-corp" }),
            anAccountListItem({ id: ACCOUNT_B, name: "Globex", slug: "globex", role: "member" })]
-        : [],
-    ),
+        : [],)),
     getAccount: vi.fn(async (token: string, accountId: string) => {
       if (token !== TOKEN_A) throw anIdentityError(404, "not_found");
       if (accountId === ACCOUNT_A) return ACME;

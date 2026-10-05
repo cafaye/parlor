@@ -16,7 +16,7 @@ vi.mock("@/lib/navigation", () => ({ useNavigation: () => ({ push, refresh: vi.f
  * unregistered one, and one inside the one-minute window. This is the body a
  * stub returns, and the tests below assert what the SCREEN does with it.
  */
-const accepted = () => vi.fn(async () => ({ status: "accepted" }));
+const accepted = () => vi.fn(() => Promise.resolve(({ status: "accepted" })));
 
 async function renderRequestPage(identity = stubIdentity({ requestEmailVerification: accepted() })) {
   const result = renderWithProviders(await VerifyEmailPage(), { identity });

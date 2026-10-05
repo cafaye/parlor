@@ -62,7 +62,7 @@ describe("the forgot password screen", () => {
 
 describe("asking for a link", () => {
   it("posts the address the person typed, trimmed", async () => {
-    const { identity } = renderPage(stubIdentity({ requestPasswordReset: vi.fn(async () => ({ status: "accepted" })) }));
+    const { identity } = renderPage(stubIdentity({ requestPasswordReset: vi.fn(() => Promise.resolve(({ status: "accepted" }))) }));
 
     typeAddress(`  ${ADDRESS}  `);
     submit();
@@ -74,7 +74,7 @@ describe("asking for a link", () => {
 
   it("sends nothing for an empty form rather than asking about a blank address", () => {
     const { identity } = renderPage(
-      stubIdentity({ requestPasswordReset: vi.fn(async () => ({ status: "accepted" })) }),
+      stubIdentity({ requestPasswordReset: vi.fn(() => Promise.resolve(({ status: "accepted" }))) }),
     );
 
     submit();
@@ -86,7 +86,7 @@ describe("asking for a link", () => {
 
   it("refuses a malformed address before a round trip", () => {
     const { identity } = renderPage(
-      stubIdentity({ requestPasswordReset: vi.fn(async () => ({ status: "accepted" })) }),
+      stubIdentity({ requestPasswordReset: vi.fn(() => Promise.resolve(({ status: "accepted" }))) }),
     );
 
     typeAddress("kaka@@example");
@@ -119,7 +119,7 @@ describe("asking for a link", () => {
 
 describe("the answer, which must not distinguish an address that exists", () => {
   it("says one sentence for an accepted request, naming no address", async () => {
-    renderPage(stubIdentity({ requestPasswordReset: vi.fn(async () => ({ status: "accepted" })) }));
+    renderPage(stubIdentity({ requestPasswordReset: vi.fn(() => Promise.resolve(({ status: "accepted" }))) }));
 
     typeAddress(ADDRESS);
     submit();
@@ -134,7 +134,7 @@ describe("the answer, which must not distinguish an address that exists", () => 
   it("renders the same sentence whichever address was typed", async () => {
     // The service's 202 is a constant, so the only thing that could reintroduce
     // the oracle on this screen is rendering something address-specific.
-    const accepted = vi.fn(async () => ({ status: "accepted" }));
+    const accepted = vi.fn(() => Promise.resolve(({ status: "accepted" })));
 
     const known = renderPage(stubIdentity({ requestPasswordReset: accepted }));
     typeAddress(ADDRESS);
@@ -154,7 +154,7 @@ describe("the answer, which must not distinguish an address that exists", () => 
   it("takes the form away on success, so a second message cannot be asked for", async () => {
     // A request inside identity's one-minute cooldown sends nothing and still
     // answers 202, so a second attempt would be a promise the service cannot keep.
-    renderPage(stubIdentity({ requestPasswordReset: vi.fn(async () => ({ status: "accepted" })) }));
+    renderPage(stubIdentity({ requestPasswordReset: vi.fn(() => Promise.resolve(({ status: "accepted" }))) }));
 
     typeAddress(ADDRESS);
     submit();

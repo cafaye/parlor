@@ -20,7 +20,7 @@ vi.mock("@/lib/navigation", () => ({ useNavigation: () => ({ push, refresh: vi.f
  */
 const TOKEN = "0Kq3Zs1oQw7bXn0K9dLpR2vT4yE6hJ8cF1gM5nA2qU0";
 
-const verifyOk = () => vi.fn(async () => undefined);
+const verifyOk = () => vi.fn(() => Promise.resolve(undefined));
 
 const SESSION_TOKEN = "tok_signed_in_for_the_verification_tests";
 
@@ -39,7 +39,7 @@ function signIn() {
 /** A signed-in stub: `me` answers, which is what resolves the session to `authed`. */
 function signedIn() {
   return stubIdentity({
-    me: vi.fn(async () => aUser()),
+    me: vi.fn(() => Promise.resolve(aUser())),
     redeemEmailVerification: verifyOk(),
   });
 }
