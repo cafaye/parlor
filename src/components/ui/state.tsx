@@ -82,7 +82,9 @@ export function ErrorState({
 }: {
   title: string;
   detail?: string;
-  onRetry(): void;
+  // Property, not method shorthand — see `ConfirmDialogProps` for why, and for
+  // why it is the same decision in every prop type in this directory.
+  onRetry: () => void;
   retryLabel?: string;
   /** The retry is in flight. Spins the button; never renames it. */
   retrying?: boolean;

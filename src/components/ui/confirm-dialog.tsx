@@ -71,8 +71,15 @@ export type ConfirmDialogProps = {
    */
   confirmLabel: string;
   cancelLabel?: string;
-  onConfirm(): void;
-  onCancel(): void;
+  // Property declarations, not method shorthand: a `onConfirm(): void`
+  // signature tells TypeScript the member has a `this`, and destructuring it
+  // out of the props — which this component does on line 123 — is then a method
+  // separated from its object under `@typescript-eslint/unbound-method`. The
+  // callbacks arrive from a caller's props and are never called on anything, so
+  // there is no `this` to lose. See `IdentityClient` for the same decision at
+  // the boundary.
+  onConfirm: () => void;
+  onCancel: () => void;
   /** The confirm is in flight. Disables it; never renames it. */
   busy?: boolean;
 };

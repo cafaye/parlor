@@ -183,35 +183,56 @@ export type TransportRequest = {
 
 export type Transport = (request: TransportRequest) => Promise<Response>;
 
+/**
+ * The one client every screen in this app talks to, and one of two things about
+ * it that are decisions rather than defaults.
+ *
+ * 1. **Property declarations, not method shorthand.** `register(credentials):
+ *    Promise<User>` reads to TypeScript as a method with an implicit `this`,
+ *    and then `const { register } = useAuth()` or a test's
+ *    `expect(identity.register)` is a method separated from its object — which
+ *    `@typescript-eslint/unbound-method` rejects, and rightly in general,
+ *    because a method that reads `this` and is called detached fails. These do
+ *    not read `this`: `createIdentityClient` below returns them from an object
+ *    literal of arrow functions closing over `transport` and `base`, so there
+ *    is no object for a `this` to belong to. The method spelling asserts a
+ *    binding that does not exist; this one states the truth and is the same
+ *    type at run time.
+ *
+ * 2. **No `this` is not the same as no contract.** Every member is still a
+ *    required, fully-typed call — a screen that reaches for `identity.me` is
+ *    reaching for exactly one thing, with the credential as its first
+ *    argument, which is the tenancy rule the service enforces.
+ */
 export type IdentityClient = {
-  register(credentials: Credentials): Promise<User>;
-  login(credentials: Credentials): Promise<Session>;
-  logout(token: string): Promise<void>;
-  me(token: string): Promise<User>;
+  register: (credentials: Credentials) => Promise<User>;
+  login: (credentials: Credentials) => Promise<Session>;
+  logout: (token: string) => Promise<void>;
+  me: (token: string) => Promise<User>;
 
   // The tenancy surface. Every one of these takes the session token, because
   // every account route resolves a session before it does anything else, and
   // the token doubles as the path segment's authority: a call without it is a
   // 401 rather than a 403.
-  listAccounts(token: string): Promise<AccountListItem[]>;
-  createAccount(token: string, input: { name: string }): Promise<Account>;
-  getAccount(token: string, accountId: string): Promise<AccountDetail>;
-  renameAccount(token: string, accountId: string, input: { name: string }): Promise<Account>;
-  deleteAccount(token: string, accountId: string): Promise<void>;
-  listMembers(token: string, accountId: string): Promise<MemberList>;
-  inviteMember(
+  listAccounts: (token: string) => Promise<AccountListItem[]>;
+  createAccount: (token: string, input: { name: string }) => Promise<Account>;
+  getAccount: (token: string, accountId: string) => Promise<AccountDetail>;
+  renameAccount: (token: string, accountId: string, input: { name: string }) => Promise<Account>;
+  deleteAccount: (token: string, accountId: string) => Promise<void>;
+  listMembers: (token: string, accountId: string) => Promise<MemberList>;
+  inviteMember: (
     token: string,
     accountId: string,
     input: { email: string; role: Role },
-  ): Promise<Invitation>;
-  acceptInvitation(token: string, input: { token: string }): Promise<Membership>;
-  changeMemberRole(
+  ) => Promise<Invitation>;
+  acceptInvitation: (token: string, input: { token: string }) => Promise<Membership>;
+  changeMemberRole: (
     token: string,
     accountId: string,
     userId: string,
     input: { role: Role },
-  ): Promise<Membership>;
-  removeMember(token: string, accountId: string, userId: string): Promise<void>;
+  ) => Promise<Membership>;
+  removeMember: (token: string, accountId: string, userId: string) => Promise<void>;
 
   // ---------------------------------------------------------------------------
   // The recovery surface — see the wiring below for why neither takes a token.
@@ -223,8 +244,8 @@ export type IdentityClient = {
   // mints nothing: a caller who redeems a reset is signed out by the same write
   // that changed the password. Both facts are load-bearing for the screens.
   // ---------------------------------------------------------------------------
-  requestPasswordReset(email: string): Promise<RecoveryAccepted>;
-  redeemPasswordReset(input: RedeemPasswordResetInput): Promise<void>;
+  requestPasswordReset: (email: string) => Promise<RecoveryAccepted>;
+  redeemPasswordReset: (input: RedeemPasswordResetInput) => Promise<void>;
 
   // ---------------------------------------------------------------------------
   // The verification surface, which is three routes rather than two and whose
@@ -245,9 +266,9 @@ export type IdentityClient = {
   // is the only one that answers a question about the caller rather than about a
   // token they were handed.
   // ---------------------------------------------------------------------------
-  requestEmailVerification(email: string): Promise<RecoveryAccepted>;
-  redeemEmailVerification(input: RedeemVerificationInput): Promise<void>;
-  verificationStatus(token: string): Promise<VerificationStatus>;
+  requestEmailVerification: (email: string) => Promise<RecoveryAccepted>;
+  redeemEmailVerification: (input: RedeemVerificationInput) => Promise<void>;
+  verificationStatus: (token: string) => Promise<VerificationStatus>;
 
   // ---------------------------------------------------------------------------
   // The social surface — two routes, and NEITHER ONE IS AN ORDINARY XHR.
@@ -277,11 +298,11 @@ export type IdentityClient = {
   // arm is `POST /v1/session/mfa`, which the forwarder's table deliberately
   // refuses. See the note on `ROUTES` in `src/lib/upstream.ts`.
   // ---------------------------------------------------------------------------
-  startSocialLogin(provider: SocialProvider): Promise<string>;
-  completeSocialLogin(
+  startSocialLogin: (provider: SocialProvider) => Promise<string>;
+  completeSocialLogin: (
     provider: SocialProvider,
     input: SocialCallbackInput,
-  ): Promise<SocialSignIn>;
+  ) => Promise<SocialSignIn>;
 };
 
 /**

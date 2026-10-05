@@ -52,11 +52,24 @@ export type SessionState =
   | { status: "anonymous" }
   | { status: "authed"; user: User };
 
+/**
+ * The session context's value.
+ *
+ * The three calls are PROPERTY declarations rather than method shorthand, and
+ * for the reason `IdentityClient` and `BillingClient` spell theirs that way: a
+ * method signature tells TypeScript the member has a `this`, so
+ * `const { login } = useAuth()` — which every form in this app does, and which
+ * is the whole point of a context — is a method separated from its object, and
+ * `@typescript-eslint/unbound-method` rejects it. `AuthProvider` below supplies
+ * arrow functions closing over `identity` and `store`, so there is no `this` to
+ * lose. The two client types spell it the same way because all three are the
+ * same shape of thing: a boundary this app injects into.
+ */
 export type AuthValue = {
   session: SessionState;
-  login(credentials: Credentials): Promise<void>;
-  register(credentials: Credentials): Promise<User>;
-  logout(): Promise<void>;
+  login: (credentials: Credentials) => Promise<void>;
+  register: (credentials: Credentials) => Promise<User>;
+  logout: () => Promise<void>;
   /**
    * Take a session identity has already minted, without asking it again.
    *
@@ -79,7 +92,7 @@ export type AuthValue = {
    * header would stay signed out; the reload would be signed in. That is the
    * bug this method exists to make unwriteable.
    */
-  adoptSession(session: Session): void;
+  adoptSession: (session: Session) => void;
   /** True while any of the three is in flight. */
   pending: boolean;
   /**

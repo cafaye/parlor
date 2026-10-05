@@ -20,8 +20,16 @@ import { SOCIAL_PROVIDERS } from "@/lib/social";
 import { stubIdentity } from "@/test/support/identity";
 import { renderWithProviders } from "@/test/support/render";
 
-/** Both screens, so a control that moved between them would go red. */
-const SCREENS: ReadonlyArray<{ name: string; render(): React.ReactElement }> = [
+/**
+ * Both screens, so a control that moved between them would go red.
+ *
+ * `render` is a property holding a function type rather than `render(): ...`
+ * method shorthand, for the reason every other type in this repository spells
+ * it that way — see `IdentityClient` in `src/lib/identity.ts`. The
+ * destructuring in `describe.each` below is a method separated from its object
+ * under `@typescript-eslint/unbound-method`, and these arrows read no `this`.
+ */
+const SCREENS: ReadonlyArray<{ name: string; render: () => React.ReactElement }> = [
   { name: "the sign in screen", render: () => <LoginPage searchParams={{}} /> },
   { name: "the registration screen", render: () => <RegisterPage /> },
 ];

@@ -125,17 +125,28 @@ export type BillingTransportRequest = {
 
 export type BillingTransport = (request: BillingTransportRequest) => Promise<Response>;
 
+/**
+ * Property declarations rather than method shorthand, for the same reason and
+ * with the same reasoning as `IdentityClient` in `src/lib/identity.ts`: a
+ * method signature tells TypeScript the member has a `this`, so reading one off
+ * the object is "a method separated from its object" and
+ * `@typescript-eslint/unbound-method` rejects it. `createBillingClient` below
+ * returns arrow functions closing over `transport` and `base`, so there is no
+ * `this` to lose. The two clients spell their types the same way because they
+ * are the same shape of thing — a boundary this app injects a stub into — and a
+ * reader comparing the two files is reading one decision rather than two.
+ */
 export type BillingClient = {
-  listPlans(options?: { cursor?: string; limit?: number; order?: "asc" | "desc" }): Promise<PlanPage>;
-  getPlanBySlug(slug: string): Promise<Plan>;
-  listCustomers(options?: { cursor?: string; limit?: number }): Promise<CustomerPage>;
-  getCustomer(id: string): Promise<Customer>;
+  listPlans: (options?: { cursor?: string; limit?: number; order?: "asc" | "desc" }) => Promise<PlanPage>;
+  getPlanBySlug: (slug: string) => Promise<Plan>;
+  listCustomers: (options?: { cursor?: string; limit?: number }) => Promise<CustomerPage>;
+  getCustomer: (id: string) => Promise<Customer>;
   /**
    * Creates a customer. The second argument is the `Idempotency-Key` uuid: pass
    * the same one to retry the same intent, or leave it and a fresh one is
    * generated per call.
    */
-  createCustomer(input: CustomerCreate, idempotencyKey?: string): Promise<Customer>;
+  createCustomer: (input: CustomerCreate, idempotencyKey?: string) => Promise<Customer>;
 };
 
 export class BillingError extends Error {

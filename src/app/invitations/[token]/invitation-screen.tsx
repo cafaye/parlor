@@ -259,7 +259,10 @@ function AlreadyMember() {
   );
 }
 
-function Retry({ onRetry, pending }: { onRetry(): void; pending: boolean }) {
+// Property, not method shorthand — see `ConfirmDialogProps` in
+// `src/components/ui/confirm-dialog.tsx`. Destructured on the left of this
+// line, which is the shape the rule is about.
+function Retry({ onRetry, pending }: { onRetry: () => void; pending: boolean }) {
   return (
     <div>
       <Button aria-busy={pending} busy={pending} disabled={pending} onClick={onRetry} variant="secondary">

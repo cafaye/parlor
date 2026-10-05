@@ -356,7 +356,10 @@ function RoleChangeControl({
   value: Role;
   disabled: boolean;
   pending: boolean;
-  onChange(role: Role): void;
+  // Property, not method shorthand — see `ConfirmDialogProps` in
+  // `src/components/ui/confirm-dialog.tsx`. Destructured out of the props on
+  // the line above, which is exactly the shape the rule is about.
+  onChange: (role: Role) => void;
 }) {
   return (
     <Select
