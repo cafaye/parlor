@@ -68,6 +68,15 @@ e2e-results.json
 e2e/.artifacts/
 playwright-report/
 
+# kit's lint configs, fetched into the tree by kit's shared `ci` job
+# (`KIT_LINT_DIR` is `<working-dir>/.kit`) and by the same checkout step a
+# developer makes to reproduce a lint finding locally. It is CI's scratch
+# space, not source: kit says so itself ("It is not copied into a service
+# repo"), and committing a copy would reinstate exactly the mechanism W15
+# ended. kit's own eslint config ignores `.kit/**` so the linted tree never
+# contains it either.
+/.kit/
+
 # caf dev's rendered stack. `caf.dev.json` IS committed — it is the catalog the
 # local stack is built from, and a catalog nobody commits is a catalog that only
 # exists on the machine that wrote it. This file is not: `caf dev` prints "Do
