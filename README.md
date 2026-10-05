@@ -288,7 +288,7 @@ the integration.
 ```sh
 npm test           # vitest, single run
 npm run test:watch # vitest, watching
-npm run lint       # eslint
+npm run lint       # the FLEET's ESLint config — see "The lint standard"
 npm run typecheck  # tsc --noEmit
 npm run dev        # vite dev alone — no identity behind it
 
@@ -347,8 +347,18 @@ than two tests passed or anything was skipped.
 
 Two decisions worth knowing about:
 
-- **`lint` is in CI, and it is kit's step.** `npm run lint` runs in the shared
-  `node` job, so there is no second copy of it here to drift.
+- **`lint` is in CI, and it is kit's step — and `npm run lint` is the same
+  step, not a lookalike.** The `ci (kit, node)` job runs
+  `npx --no-install eslint --config "$KIT_LINT_DIR/lint/eslint.config.mjs" .`
+  directly, deliberately *not* `npm run lint`, because a repository's own script
+  is whatever that repository happens to call a linter. `npm run lint` here is
+  `./bin/lint`, which is that same invocation with the config checkout done by
+  hand — so there is one lint command, it is the fleet's, and it cannot drift
+  from the gate. This repository used to carry its own `eslint.config.mjs`
+  (`recommended`, not `recommendedTypeChecked`, `no-explicit-any` demoted to a
+  warning) and `npm run lint` pointed at it; that file is gone, because two
+  configs in one tree is the drift the shared step exists to end. See
+  `./bin/lint` and AGENTS.md, "The lint standard".
 - **`typecheck` runs before the build, and the order is the assertion.** A
   typecheck that runs after a build can pass on types the build generated. The
   one generated module in this tree is `src/routeTree.gen.ts`, and it is
