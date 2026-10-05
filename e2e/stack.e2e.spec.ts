@@ -162,7 +162,18 @@ test("the gateway's browser surface is pointed at this stack's identity", async 
   // `type` is asserted as a URN rather than against a literal, because the
   // literal lives in `core` and moves when core moves; the shape and the
   // `detail` are what this file is about.
-  const body = await response.json();
+  //
+  // Typed rather than `await response.json()` bare, which is `any` and makes
+  // every line below an unsafe member access. The shape is core's problem
+  // document, transcribed; `unknown` rather than `string` for each field so a
+  // gateway that answered a number here would fail the assertion rather than
+  // satisfy it by being typed loosely.
+  const body = (await response.json()) as {
+    status?: unknown;
+    code?: unknown;
+    type?: unknown;
+    detail?: unknown;
+  };
   expect(body.status).toBe(401);
   expect(body.code).toBe("unauthorized");
   expect(body.type).toEqual(expect.stringContaining(":"));

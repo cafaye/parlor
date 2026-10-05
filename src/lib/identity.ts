@@ -719,10 +719,17 @@ function readSocialSignIn(body: unknown, status: number): SocialSignIn {
   if (isChallenge) {
     return {
       kind: "mfa_required",
+      // `readString`, not `String(…)`. The record is `unknown`-valued, and
+      // `String({})` is `"[object Object]"` — so a service that sent an object
+      // where the document says `challenge` is a string would have that literal
+      // handed to a second factor screen as somebody's challenge. `readString`
+      // returns a string or nothing, and "nothing" is the honest reading of a
+      // field that is not one. `@typescript-eslint/no-base-to-string` is what
+      // pointed at it.
       challenge: {
         mfa_required: true,
-        challenge: String(record.challenge ?? ""),
-        expires_at: String(record.expires_at ?? ""),
+        challenge: readString(record.challenge) ?? "",
+        expires_at: readString(record.expires_at) ?? "",
       },
     };
   }

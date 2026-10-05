@@ -59,7 +59,7 @@ function gate<T>() {
 /** A stub with the session, the account and the member panel all answering. */
 function asCaller(
   {
-    role = "owner" as Role,
+    role = "owner",
     members,
     account,
   }: { role?: Role; members?: Membership[]; account?: Partial<Account> } = {},
@@ -223,9 +223,18 @@ describe("the member panel", () => {
    * later. So every assertion about panel *contents* waits, and only assertions
    * about the panel's existence do not.
    */
-  async function loadedPanel() {
-    return (await screen.findByRole("region", { name: "Members" })) as HTMLElement;
-  }
+  /**
+ * The member panel, once it has arrived.
+ *
+ * `findByRole<HTMLElement>(…)` rather than `(await findByRole(…)) as HTMLElement`:
+ * the type argument says what the assertion needs and the await stays because
+ * it is what waits for it. `async` is load-bearing for the same reason —
+ * `@typescript-eslint/require-await` would have flagged it otherwise, and it was
+ * right to.
+ */
+function loadedPanel() {
+  return screen.findByRole<HTMLElement>("region", { name: "Members" });
+}
 
   it("counts the members by role, which is what the service actually sends", async () => {
     signIn();

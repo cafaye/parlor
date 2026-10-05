@@ -142,19 +142,35 @@ describe("the path config/deploy.yml gates the rollout on", () => {
   });
 });
 
+/**
+ * `/readyz`'s body, read as the shape `GET()` declares it writes.
+ *
+ * `Response.json()` is typed `Promise<any>`, and the assertion is where that
+ * `any` becomes something a reader can check — which is the whole of
+ * `@typescript-eslint/no-unsafe-assignment`, `no-unsafe-member-access` and
+ * `no-unsafe-argument` pointing at the four lines below. One declaration here
+ * rather than an assertion on each `body`, and the second test can then read
+ * `body.deps` and mean it.
+ *
+ * The assertion is a claim, not a conversion: nothing narrows the value, and a
+ * `/readyz` that answered something else would still fail every assertion in
+ * this describe rather than pass them by being typed.
+ */
+async function readyzBody(): Promise<{ status: unknown; deps: unknown }> {
+  return (await GET().json()) as { status: unknown; deps: unknown };
+}
+
 describe("GET /readyz", () => {
   it("returns 200", () => {
     expect(GET().status).toBe(200);
   });
 
   it("reports ok with no dependencies", async () => {
-    const body = await GET().json();
-
-    expect(body).toEqual({ status: "ok", deps: "none" });
+    expect(await readyzBody()).toEqual({ status: "ok", deps: "none" });
   });
 
   it("reserves the deps key for Phase 2 dependency checks", async () => {
-    const body = await GET().json();
+    const body = await readyzBody();
 
     // Shape contract: `deps` is a placeholder string today. Once Phase 2 wires
     // real dependency checks it must become an array without breaking the shape.

@@ -83,7 +83,7 @@ export function stubIdentity(overrides: Partial<IdentityClient> = {}): StubIdent
     completeSocialLogin: vi.fn(
       overrides.completeSocialLogin ?? unscripted("completeSocialLogin"),
     ),
-  } as StubIdentity;
+  };
 }
 
 export function aUser(overrides: Partial<User> = {}): User {

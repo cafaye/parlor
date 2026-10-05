@@ -240,7 +240,7 @@ function CreateCustomerForm() {
 
   return (
     <Panel headingId="new-customer" title="New customer">
-      <form className="flex flex-col gap-4" noValidate onSubmit={onSubmit}>
+      <form className="flex flex-col gap-4" noValidate onSubmit={(event) => void onSubmit(event)}>
         {state.kind === "conflict" ? (
           <FieldSummary>A customer already exists for that owner and processor.</FieldSummary>
         ) : null}

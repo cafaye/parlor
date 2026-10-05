@@ -128,7 +128,7 @@ export function ForgotPasswordForm() {
           nothing and sends nothing. Offering "send another" here would offer a
           control that silently does less than the button says.
         */}
-        <Button onClick={() => router.push("/login")} type="button" variant="secondary">
+        <Button onClick={() => void router.push("/login")} type="button" variant="secondary">
           Back to sign in
         </Button>
       </div>
@@ -136,7 +136,7 @@ export function ForgotPasswordForm() {
   }
 
   return (
-    <form className="flex flex-col gap-4" noValidate onSubmit={onSubmit}>
+    <form className="flex flex-col gap-4" noValidate onSubmit={(event) => void onSubmit(event)}>
       {state.kind === "local" || state.kind === "failed" ? (
         <FieldSummary>
           <ul className="list-inside list-disc">

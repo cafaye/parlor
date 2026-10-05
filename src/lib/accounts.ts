@@ -126,10 +126,12 @@ export function useCreateAccount() {
       // Seed the detail cache so opening the new account does not re-fetch what
       // was just created. `role` is the caller's, which is exactly what the
       // create response said it was.
-      queryClient.setQueryData(
-        accountKey(token, created.id),
-        created as AccountDetail,
-      );
+      //
+      // No assertion: `createAccount` is declared to return `Account`, and
+      // `AccountDetail` is `Account` with an optional `members`, so the cache
+      // entry is already the right type. The `as` that used to be here told
+      // `no-unnecessary-type-assertion` the truth — it converted nothing.
+      queryClient.setQueryData(accountKey(token, created.id), created);
     },
   });
 }

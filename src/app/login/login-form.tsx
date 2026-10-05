@@ -92,7 +92,16 @@ export function LoginForm({ passwordChanged = false }: { passwordChanged?: boole
       // No `refresh()`: nothing this process renders depends on the token yet.
       // It earns its place when the BFF packet puts the session in a cookie
       // and server components have to see it.
-      router.push("/");
+      //
+      // `void`, and NOT `await` — which is the fix that looks obvious and is
+      // wrong here. Awaiting puts the navigation inside this `try`, so a
+      // navigation that fails would be caught by the arm below and rendered as
+      // `INVALID_CREDENTIALS`: "Invalid email or password" to somebody who has
+      // just signed in correctly. A failed navigation is not a refused sign-in
+      // and this screen must never say it is. `void` says what happens instead:
+      // the navigation was requested, and if it does not complete the reader is
+      // still on a page that is now signed in.
+      void router.push("/");
     } catch (thrown) {
       setState(failureState(thrown));
     } finally {
@@ -101,7 +110,19 @@ export function LoginForm({ passwordChanged = false }: { passwordChanged?: boole
   }
 
   return (
-    <form className="flex flex-col gap-4" noValidate onSubmit={onSubmit}>
+    // `onSubmit` is called through `void` because React's prop is typed
+    // `(event) => void` and React does not await what it is handed —
+    // `@typescript-eslint/no-misused-promises` is right that a rejection would
+    // arrive nowhere. It does not matter here: `onSubmit` catches every failure
+    // itself and renders it into `state`, so nothing is left over. `void` and
+    // not `.catch(() => {})`, because the second would swallow a failure
+    // silently and there is no place on this screen to render a navigation error
+    // into. Behaviour is unchanged — the handler is still CALLED synchronously
+    // here, so `preventDefault()` runs before React's default.
+    //
+    // Every form in this app writes the same expression for the same reason;
+    // this is the one place the reasoning is spelled out.
+    <form className="flex flex-col gap-4" noValidate onSubmit={(event) => void onSubmit(event)}>
       {/* Polite and positive, not an alert. Nothing has failed here: a reset
           succeeded elsewhere and this page is reporting it on arrival. An
           assertive region would interrupt somebody who has just been redirected

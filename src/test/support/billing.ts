@@ -33,7 +33,7 @@ export function stubBilling(overrides: Partial<BillingClient> = {}): StubBilling
     listCustomers: vi.fn(overrides.listCustomers ?? unscripted("listCustomers")),
     getCustomer: vi.fn(overrides.getCustomer ?? unscripted("getCustomer")),
     createCustomer: vi.fn(overrides.createCustomer ?? unscripted("createCustomer")),
-  } as StubBilling;
+  };
 }
 
 /**

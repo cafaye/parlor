@@ -44,7 +44,7 @@ const ROUTE_SOURCE = readFileSync(
 type CallbackHandler = (ctx: {
   request: Request;
   params: { provider: string };
-  next(): { isNext: true };
+  next(): { isNext: true } | Record<string, unknown>;
 }) => unknown;
 
 const declared = Route.options?.server?.handlers;
@@ -156,7 +156,7 @@ describe("a document navigation to the callback", () => {
       }),
       params: { provider: "github" },
       next,
-    } as never);
+    });
 
     // The mechanism matters as much as the outcome: a handler that returned
     // `undefined` instead of calling `next()` would leave the chain with no
@@ -189,7 +189,7 @@ describe("a document navigation to the callback", () => {
       }),
       params: { provider: "github" },
       next,
-    } as never);
+    });
 
     expect(next).toHaveBeenCalledOnce();
     expect(result).toBe(nextResult);
@@ -213,7 +213,7 @@ describe("a programmatic request to the callback", () => {
       }),
       params: { provider: "github" },
       next,
-    } as never);
+    });
 
     expect(next).not.toHaveBeenCalled();
     // Not a Response here: with no reachable identity the forwarder answers its

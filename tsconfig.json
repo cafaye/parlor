@@ -17,6 +17,6 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["**/*.ts", "**/*.tsx", "**/*.mts"],
-  "exclude": ["node_modules"]
+  "include": ["**/*.ts", "**/*.tsx", "**/*.mts", "**/*.mjs"],
+  "exclude": ["node_modules", "dist", ".output", ".kit"]
 }

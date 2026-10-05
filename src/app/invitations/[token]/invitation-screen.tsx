@@ -124,7 +124,10 @@ export function InvitationScreen({ token }: { token: string }) {
     return (
       <section className="flex flex-col gap-4">
         <FieldSummary>{outcome.message}</FieldSummary>
-        <Retry onRetry={onAccept} pending={pending} />
+        {/* `void` for the reason `src/app/login/login-form.tsx` spells out on
+            its `onSubmit`: `Retry`'s prop is `() => void`, and `onAccept`
+            catches every failure itself and renders it into `outcome`. */}
+        <Retry onRetry={() => void onAccept()} pending={pending} />
       </section>
     );
   }
@@ -136,7 +139,7 @@ export function InvitationScreen({ token }: { token: string }) {
       <section className="flex flex-col gap-4">
         <ErrorState
           detail="We could not find out whether this invitation is still good."
-          onRetry={onAccept}
+          onRetry={() => void onAccept()}
           title="The service did not answer."
         />
       </section>

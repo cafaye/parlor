@@ -262,7 +262,13 @@ describe("register page", () => {
   });
 
   describe("when the verification link cannot be asked for", () => {
-    const accountCreatedThen = (thrown: unknown) =>
+    // Typed `unknown` rather than `Error` because every caller passes an
+    // `IdentityError`, and `Promise.reject` is documented to want an `Error`
+    // (`@typescript-eslint/prefer-promise-reject-errors`). Asserting it at the
+    // boundary says what this helper needs — anything the screen is expected to
+    // survive — and keeps the rule's own point: a rejection nobody typed is a
+    // rejection nothing can read.
+    const accountCreatedThen = (thrown: Error) =>
       stubIdentity({
         register: vi.fn(() => Promise.resolve({ id: "usr_1", email: CREDENTIALS.email })),
         requestEmailVerification: vi.fn(() => Promise.reject(thrown)),
