@@ -150,8 +150,9 @@ let provider: BasicTracerProvider | null = null;
  * because nothing is being recorded.
  *
  * Idempotent, because `src/start.ts` can be imported more than once in a dev
- * server's module graph and a second `provider.register()` would fight the first
- * over the global tracer.
+ * server's module graph and a second global registration is refused by the API
+ * anyway — which would leave the first provider registered and this function
+ * believing it had done the work.
  */
 export function install(): void {
   if (provider) return;
@@ -415,7 +416,7 @@ const headersGetter: TextMapGetter<Headers> = {
   },
 };
 
-/** The same getter for an outgoing carrier: a `Headers` we then hand to fetch. */
+/** The matching setter: a `Headers` we then hand to `fetch`. */
 const headersSetter: TextMapSetter<Headers> = {
   set(carrier, key, value) {
     carrier.set(key, value);
@@ -431,9 +432,13 @@ const headersSetter: TextMapSetter<Headers> = {
  * there is nothing to catch. A request is not an error because its trace
  * header was garbage, and this must never return 4xx for one.
  *
- * `context.with()` is what makes the span current for everything downstream,
- * including an outbound fetch. A span that is started but never made active
- * attributes nothing to the work it was started for.
+ * `context.with()` is the idiomatic way to make the span current for everything
+ * downstream. IT IS A NO-OP HERE, and the reason is in `tracedFetch`'s header:
+ * SDK 2.x removed the `provider.register()` that used to install a context
+ * manager, so `context.active()` is `ROOT_CONTEXT` unless one is installed
+ * explicitly. The wrapper is kept because it is correct the moment one is — a
+ * caller reading it should not have to know which of the two it is — and because
+ * removing it would mean `trace.setSpan` disappears with it.
  */
 export function traceRequest(
   request: Request,
