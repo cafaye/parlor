@@ -85,7 +85,17 @@ function recordingFetch(respond: () => Response = () => new Response("{}", { sta
   const fetchImpl = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const headers: Record<string, string> = {};
     for (const [name, value] of new Headers(init?.headers)) headers[name] = value;
-    hops.push({ url: typeof input === "string" ? input : String(input), headers });
+    // `input instanceof Request ? input.url : input.href` for the non-string
+    // case rather than `String(input)`: a `Request` stringifies to
+    // `[object Request]`, which would put that in a `Hop` and turn every URL
+    // assertion here into one that passes for the wrong reason.
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+    hops.push({ url, headers });
     return Promise.resolve(respond());
   });
   return { hops, fetchImpl };
@@ -189,7 +199,7 @@ describe("the forwarded fetch joins the trace", () => {
     // the assertion that fails when the setter is the default one: that writes
     // `carrier["traceparent"] = …` onto a `Headers` object, which sends nothing
     // and reads here as `null` rather than throwing.
-    const traceparent = hops[0]!.headers["traceparent"];
+    const traceparent = hops[0].headers["traceparent"];
     expect(traceparent).toMatch(
       new RegExp(`^00-${INBOUND_TRACE_ID}-[0-9a-f]{16}-01$`),
     );
@@ -270,7 +280,7 @@ describe("the forwarded fetch joins the trace", () => {
     // THAT one — so a `traceparent` is expected here, and its trace id is the
     // server span's, not the caller's absent one. Asserting the absence here
     // would be asserting a bug.
-    expect(hops[0]!.headers["traceparent"]).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/);
+    expect(hops[0].headers["traceparent"]).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/);
   });
 });
 
@@ -290,10 +300,10 @@ describe("with telemetry off, the forwarder is untouched", () => {
       expect(response.status).toBe(200);
       await expect(response.json()).resolves.toEqual({});
       expect(hops).toHaveLength(1);
-      expect(hops[0]!.url).toBe("http://identity.test/v1/me");
+      expect(hops[0].url).toBe("http://identity.test/v1/me");
       // The hop happened with the same headers as before and one fewer: no
       // `traceparent`. Nothing dials a collector and nothing is queued.
-      expect(Object.keys(hops[0]!.headers).sort()).toEqual(["authorization"]);
+      expect(Object.keys(hops[0].headers).sort()).toEqual(["authorization"]);
     } finally {
       delete process.env.OTEL_SDK_DISABLED;
     }

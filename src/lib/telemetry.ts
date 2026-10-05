@@ -617,7 +617,7 @@ export async function tracedFetch(
  * absent, because a client span that says nothing about what it sent is a span
  * that cannot answer "which verb was this".
  */
-function methodAttribute(method: string | undefined): { "http.request.method": string } | {} {
+function methodAttribute(method: string | undefined): Record<string, string> {
   const verb = (method ?? "GET").toUpperCase();
   return ALLOWED_METHODS.has(verb) ? { "http.request.method": verb } : {};
 }
