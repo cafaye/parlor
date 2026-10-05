@@ -128,7 +128,11 @@ export function ResetPasswordForm({ token }: { token: string | null }) {
         <p className="text-sm text-muted">
           Ask for a new link and use the one that arrives.
         </p>
-        <Button onClick={() => router.push("/forgot-password")} type="button" variant="secondary">
+        <Button
+          onClick={() => void router.push("/forgot-password")}
+          type="button"
+          variant="secondary"
+        >
           Request a new link
         </Button>
       </div>
@@ -154,7 +158,13 @@ export function ResetPasswordForm({ token }: { token: string | null }) {
       // holds — including one this browser is holding — so the stored token is
       // already dead and the sign-in screen will 401 it away on the next read.
       // Signing in again is the only route forward, which is what the 204 means.
-      router.push(`/login?${RESET_DONE_PARAM}=1`);
+      //
+      // `void`, not `await`, for the reason `login-form.tsx` gives on its own
+      // `router.push`: awaiting puts the navigation inside this `try`, so a
+      // navigation that failed would be reported as a refused password reset.
+      // The reset has already been redeemed at this point — there is no reading
+      // of a failure here under which the form should say "that did not work".
+      void router.push(`/login?${RESET_DONE_PARAM}=1`);
     } catch (thrown) {
       setState(failureState(thrown));
     } finally {
@@ -167,7 +177,11 @@ export function ResetPasswordForm({ token }: { token: string | null }) {
     return (
       <div className="flex flex-col gap-4">
         <FieldSummary>{LINK_UNUSABLE}</FieldSummary>
-        <Button onClick={() => router.push("/forgot-password")} type="button" variant="secondary">
+        <Button
+          onClick={() => void router.push("/forgot-password")}
+          type="button"
+          variant="secondary"
+        >
           Request a new link
         </Button>
       </div>
@@ -175,7 +189,7 @@ export function ResetPasswordForm({ token }: { token: string | null }) {
   }
 
   return (
-    <form className="flex flex-col gap-4" noValidate onSubmit={onSubmit}>
+    <form className="flex flex-col gap-4" noValidate onSubmit={(event) => void onSubmit(event)}>
       {state.kind === "local" || state.kind === "failed" ? (
         <FieldSummary>
           <ul className="list-inside list-disc">

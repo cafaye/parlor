@@ -19,7 +19,7 @@ vi.mock("@/lib/navigation", () => ({ useNavigation: () => ({ push, refresh: vi.f
 const TOKEN = "0Kq3Zs1oQw7bXn0K9dLpR2vT4yE6hJ8cF1gM5nA2qU0";
 const NEW_PASSWORD = "a brand new password";
 
-const redeemOk = () => vi.fn(async () => undefined);
+const redeemOk = () => vi.fn(() => Promise.resolve(undefined));
 
 /**
  * `NO_TOKEN` rather than `undefined` as the default sentinel.
@@ -31,16 +31,27 @@ const redeemOk = () => vi.fn(async () => undefined);
  */
 const NO_TOKEN = Symbol("no token in the query string");
 
-async function renderResetPage(
+/**
+ * Renders `/reset-password` with the given query string, and hands back the
+ * identity stub alongside the render result so a test can assert on what was
+ * sent.
+ *
+ * NOT `async`. It used to be, back when the page component awaited its
+ * `searchParams`; the route resolves the location and hands the page a plain
+ * object now, so the page is a synchronous function and so is this. The
+ * call sites kept their `await` after that change and nothing noticed, because
+ * awaiting a non-promise is legal and yields a microtask — which is exactly
+ * what makes it worth removing rather than leaving:
+ * `@typescript-eslint/await-thenable` reports every one of them.
+ */
+function renderResetPage(
   token: string | typeof NO_TOKEN = TOKEN,
   identity = stubIdentity(),
 ) {
-  const searchParams =
-    token === NO_TOKEN ? {} : { token: token as unknown as string };
-  const result = renderWithProviders(
-    ResetPasswordPage({ searchParams: searchParams }),
-    { identity },
-  );
+  const searchParams = token === NO_TOKEN ? {} : { token };
+  const result = renderWithProviders(ResetPasswordPage({ searchParams: searchParams }), {
+    identity,
+  });
   return { identity, ...result };
 }
 
@@ -71,30 +82,30 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("the reset screen", () => {
-  it("names itself", async () => {
-    await renderResetPage();
+  it("names itself", () => {
+    renderResetPage();
 
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(/new password/i);
   });
 
-  it("says the link works once, because it does", async () => {
-    await renderResetPage();
+  it("says the link works once, because it does", () => {
+    renderResetPage();
 
     expect(screen.getByText(/works once/i)).toBeTruthy();
   });
 
-  it("asks for the password as a NEW one, so a manager offers to generate it", async () => {
+  it("asks for the password as a NEW one, so a manager offers to generate it", () => {
     // `current-password` here would be a password manager offering to fill in the
     // password somebody is trying to replace.
-    await renderResetPage();
+    renderResetPage();
 
     expect(screen.getByLabelText("New password")).toHaveAttribute("autocomplete", "new-password");
   });
 
-  it("does not redeem on load, because a link preview would spend the token", async () => {
+  it("does not redeem on load, because a link preview would spend the token", () => {
     const identity = stubIdentity({ redeemPasswordReset: redeemOk() });
 
-    await renderResetPage(TOKEN, identity);
+    renderResetPage(TOKEN, identity);
 
     // Mail clients, chat apps and link scanners fetch a URL to preview it. A
     // redeem-on-load screen would set somebody's password before they chose one,
@@ -108,7 +119,7 @@ describe("spending the link", () => {
   it("posts the token from the URL with the new password", async () => {
     const identity = stubIdentity({ redeemPasswordReset: redeemOk() });
 
-    await renderResetPage(TOKEN, identity);
+    renderResetPage(TOKEN, identity);
     typePair(NEW_PASSWORD, NEW_PASSWORD);
     submit();
 
@@ -123,7 +134,7 @@ describe("spending the link", () => {
   it("returns to sign in saying the password changed", async () => {
     const identity = stubIdentity({ redeemPasswordReset: redeemOk() });
 
-    await renderResetPage(TOKEN, identity);
+    renderResetPage(TOKEN, identity);
     typePair(NEW_PASSWORD, NEW_PASSWORD);
     submit();
 
@@ -142,7 +153,7 @@ describe("spending the link", () => {
     const redeemPasswordReset = vi.fn(
       () => new Promise<void>((settle) => (resolve = settle)),
     );
-    await renderResetPage(TOKEN, stubIdentity({ redeemPasswordReset }));
+    renderResetPage(TOKEN, stubIdentity({ redeemPasswordReset }));
 
     typePair(NEW_PASSWORD, NEW_PASSWORD);
     submit();
@@ -154,10 +165,10 @@ describe("spending the link", () => {
     await waitFor(() => expect(push).toHaveBeenCalled());
   });
 
-  it("refuses a mismatched pair without asking the service", async () => {
+  it("refuses a mismatched pair without asking the service", () => {
     const identity = stubIdentity({ redeemPasswordReset: redeemOk() });
 
-    await renderResetPage(TOKEN, identity);
+    renderResetPage(TOKEN, identity);
     typePair(NEW_PASSWORD, `${NEW_PASSWORD}x`);
     submit();
 
@@ -165,10 +176,10 @@ describe("spending the link", () => {
     expect(identity.redeemPasswordReset).not.toHaveBeenCalled();
   });
 
-  it("refuses a short password without asking the service", async () => {
+  it("refuses a short password without asking the service", () => {
     const identity = stubIdentity({ redeemPasswordReset: redeemOk() });
 
-    await renderResetPage(TOKEN, identity);
+    renderResetPage(TOKEN, identity);
     typePair("short", "short");
     submit();
 
@@ -182,7 +193,7 @@ describe("a link that cannot be used", () => {
     // One 404 covers a token that never existed, one that expired, one already
     // spent, and one belonging to another flow. The screen says one sentence for
     // all four because there is no honest way to tell them apart.
-    await renderResetPage(
+    renderResetPage(
       TOKEN,
       stubIdentity({
         redeemPasswordReset: vi.fn().mockRejectedValue(anIdentityError(404, "not_found")),
@@ -197,7 +208,7 @@ describe("a link that cannot be used", () => {
   });
 
   it("never says a 404 link expired, which would confirm the token was real", async () => {
-    await renderResetPage(
+    renderResetPage(
       TOKEN,
       stubIdentity({
         redeemPasswordReset: vi.fn().mockRejectedValue(anIdentityError(404, "not_found")),
@@ -214,7 +225,7 @@ describe("a link that cannot be used", () => {
   });
 
   it("does not render the service's detail, which is where an internal code lives", async () => {
-    await renderResetPage(
+    renderResetPage(
       TOKEN,
       stubIdentity({
         redeemPasswordReset: vi.fn().mockRejectedValue(
@@ -229,21 +240,21 @@ describe("a link that cannot be used", () => {
     expect(await screen.findByRole("alert")).not.toHaveTextContent(/shard/);
   });
 
-  it("explains a link with no token in it, and offers a new one", async () => {
+  it("explains a link with no token in it, and offers a new one", () => {
     // `RECOVERY_LINK_TEMPLATE` is deployment configuration: a deployment can put
     // the credential in a path segment, and then this screen has nothing to read.
     // That is a state with a way forward, not an exception.
-    await renderResetPage(NO_TOKEN);
+    renderResetPage(NO_TOKEN);
 
     expect(screen.getByRole("alert")).toHaveTextContent(/missing its reset code/i);
     expect(screen.getByRole("button", { name: "Request a new link" })).toBeTruthy();
     expect(screen.queryByLabelText("New password")).toBeNull();
   });
 
-  it("does not post anything when there is no token to post", async () => {
+  it("does not post anything when there is no token to post", () => {
     const identity = stubIdentity({ redeemPasswordReset: redeemOk() });
 
-    await renderResetPage(undefined, identity);
+    renderResetPage(undefined, identity);
 
     expect(identity.redeemPasswordReset).not.toHaveBeenCalled();
   });
@@ -253,7 +264,7 @@ describe("the failures a person hits after the form", () => {
   it("puts the service's own weak-password 422 on the password field", async () => {
     // The service validates before it hashes, so a short value comes back as a
     // `{field: "password", code: "too_short"}` rather than as a sentence.
-    await renderResetPage(
+    renderResetPage(
       TOKEN,
       stubIdentity({
         redeemPasswordReset: vi.fn().mockRejectedValue(
@@ -274,7 +285,7 @@ describe("the failures a person hits after the form", () => {
   });
 
   it("does not send somebody to their inbox when the deployment cannot send", async () => {
-    await renderResetPage(
+    renderResetPage(
       TOKEN,
       stubIdentity({
         redeemPasswordReset: vi.fn().mockRejectedValue(anIdentityError(503, "service_unavailable")),
@@ -291,7 +302,7 @@ describe("the failures a person hits after the form", () => {
 
   it("renders a network failure as one plain sentence", async () => {
     const thrown = new TypeError("Failed to fetch. ECONNREFUSED 10.0.0.4:8080");
-    await renderResetPage(
+    renderResetPage(
       TOKEN,
       stubIdentity({ redeemPasswordReset: vi.fn().mockRejectedValue(thrown) }),
     );
@@ -308,7 +319,7 @@ describe("the failures a person hits after the form", () => {
   it("keeps the token out of the rendered page on a failure", async () => {
     // The token is in the URL and must not be copied into anything a person reads
     // or a screenshot captures.
-    await renderResetPage(
+    renderResetPage(
       TOKEN,
       stubIdentity({
         redeemPasswordReset: vi.fn().mockRejectedValue(anIdentityError(404, "not_found")),

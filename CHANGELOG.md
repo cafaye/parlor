@@ -8,6 +8,69 @@ All notable changes to parlor are recorded here. The format follows
 
 ### Fixed
 
+- **`ci (kit, node) / node` is green: 335 lint errors → 0.** kit's shared `node`
+  job ran ESLint against this tree for the first time ever and reported
+  `✖ 335 problems (335 errors, 0 warnings)`. Every one was real and none was a
+  regression — the linter had been asleep for four days (W14 found why, W15 fixed
+  it) and this is what it had to say once it woke up. The tree is now
+  `recommendedTypeChecked`-clean under `kit/lint/eslint.config.mjs` with **no
+  override, no inline disable and no edit to kit's config**.
+
+  Three of the ten rules were one decision each, and finding the boundary was
+  most of the work:
+
+  - **`unbound-method`, 84 findings, one root cause.** `IdentityClient`,
+    `BillingClient`, `AuthValue`, `TokenStore` and every callback prop type in
+    `src/components/ui/` were declared with **method shorthand**, which tells
+    TypeScript the member has a `this` — so reading one off its object is "a
+    method separated from its object" and the rule rejects it. The objects are
+    literals of arrow functions with no `this` to lose, so the **property**
+    spelling is both what the rule asks for and the truth. Measured in isolation
+    before touching 20 files: the two spellings of one type produce exactly one
+    finding between them. 84 → 0.
+  - **`require-await`, 175 findings, one root cause** — `vi.fn(async () => x)`
+    written 155 times, plus four render helpers that were `async` when the page
+    component was and had not been since the route started handing the page a
+    plain object. Those four were hiding **21 `await-thenable` findings** behind
+    them: `await` on a non-promise is legal, so 53 inert awaits survived a
+    refactor nobody noticed.
+  - **`no-unsafe-*`, 11 findings, four boundaries.** `await response.json()` is
+    `any`, and every probe read went straight through it.
+
+  **Two of the fixes found real defects rather than style.** `String(record.challenge
+  ?? "")` on an unknown-valued field would have put the literal text
+  `[object Object]` into a second-factor screen as somebody's MFA challenge; it
+    is `readString(...)` now, the helper `src/lib/identity.ts` already had. And
+    the four `router.push` calls are `void` and specifically **not** `await`,
+    because awaiting puts the navigation inside the surrounding `try` — a
+    navigation that failed would then be rendered as `INVALID_CREDENTIALS`, i.e.
+    "Invalid email or password" to somebody who had just signed in correctly.
+
+- **`npm run lint` is the gate's lint, and the tree no longer carries a second
+  standard.** This repository shipped an `eslint.config.mjs` — `recommended`, not
+  `recommendedTypeChecked`, with `no-explicit-any` demoted to a warning — left
+  behind by `eslint-config-next` going with the framework that named it. CI never
+  read it: kit's job runs
+  `npx --no-install eslint --config "$KIT_LINT_DIR/lint/eslint.config.mjs" .`
+  **directly, deliberately not `npm run lint`**, because a repository's own script
+  is whatever that repository calls a linter. So the command this README told a
+  developer to run was a *looser* gate than the one that fails the build, and it
+  was green the whole time. `npm run lint` is now `./bin/lint` — kit's config,
+  fetched into `.kit/`, which is what CI's step is — and the second config is
+  deleted. Two configs in one tree is exactly the drift the shared step exists to
+  end.
+
+- **`tests/assert-e2e-ran.mjs` is linted, and it had never been.** It is the
+  script that fails a run of the end-to-end tier that verified nothing, and kit's
+  config could not see it: `.mjs` files were in no tsconfig, so every type-aware
+  rule on one died as a single parse error and the file was effectively unlinted.
+  `**/*.mjs` is now in the tsconfig's `include`, with `dist`, `.output` and
+  `.kit` in `exclude` so a build cannot put its own output into the program
+  (`npm run typecheck` has to pass without a build). Three parse errors became
+  twelve findings in that one file; all twelve are fixed at the boundary they
+  describe, and the JSDoc-versus-`as` measurement that came out of it is in the
+  file's own header.
+
 - **The end-to-end tier runs past its migrations, so the row-level-security
   boundary it was assembled to test is now enforcing rather than merely
   declared.** The tier was red at `../identity/migrations/00016_account_isolation.sql`

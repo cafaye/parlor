@@ -161,7 +161,7 @@ export function VerifyEmailForm() {
           request inside it mints nothing and sends nothing, so "send another"
           here is a control that silently does less than the button says.
         */}
-        <Button onClick={() => router.push("/login")} type="button" variant="secondary">
+        <Button onClick={() => void router.push("/login")} type="button" variant="secondary">
           Back to sign in
         </Button>
       </div>
@@ -178,7 +178,7 @@ export function VerifyEmailForm() {
           for news they did not need urgently.
         */}
         <Callout tone="note">{ALREADY_VERIFIED}</Callout>
-        <Button onClick={() => router.push("/login")} type="button" variant="secondary">
+        <Button onClick={() => void router.push("/login")} type="button" variant="secondary">
           Back to sign in
         </Button>
       </div>
@@ -186,7 +186,7 @@ export function VerifyEmailForm() {
   }
 
   return (
-    <form className="flex flex-col gap-4" noValidate onSubmit={onSubmit}>
+    <form className="flex flex-col gap-4" noValidate onSubmit={(event) => void onSubmit(event)}>
       {state.kind === "local" || state.kind === "failed" ? (
         <FieldSummary>
           <ul className="list-inside list-disc">

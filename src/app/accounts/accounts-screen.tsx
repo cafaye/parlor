@@ -172,7 +172,7 @@ function CreateAccountForm() {
 
   return (
     <Panel headingId="new-account" title="New account">
-      <form className="flex flex-col gap-4" noValidate onSubmit={onSubmit}>
+      <form className="flex flex-col gap-4" noValidate onSubmit={(event) => void onSubmit(event)}>
         {state.kind === "failed" ? <FieldSummary>{TRY_AGAIN}</FieldSummary> : null}
 
         <Field

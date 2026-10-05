@@ -1439,7 +1439,11 @@ describe("social login: reaching the callback", () => {
     const { transport, calls } = stubTransport(() => json(200, { linked_provider: "google" }));
     const client = createIdentityClient({ baseUrl, transport });
 
-    await client.completeSocialLogin("../google/../../me" as "google", { state: "s", code: "c" });
+    // `SocialProvider` is `string`, so this needs no cast to be a legal argument —
+// and the point of the case is that the client's own type will not stop a
+// traversal string from reaching `encodeURIComponent`. The forwarder's
+// `SEGMENT_PATTERNS` is what refuses it; see `upstream.test.ts`.
+await client.completeSocialLogin("../google/../../me", { state: "s", code: "c" });
 
     expect(calls[0].url).toBe(
       `${baseUrl}/v1/auth/oauth/..%2Fgoogle%2F..%2F..%2Fme/callback?state=s&code=c`,

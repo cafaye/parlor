@@ -84,7 +84,7 @@ describe("shell header", () => {
     });
 
     it("asks the service who we are", async () => {
-      const identity = stubIdentity({ me: vi.fn(async () => aUser()) });
+      const identity = stubIdentity({ me: vi.fn(() => Promise.resolve(aUser())) });
       storeToken("tok_abc");
 
       renderWithProviders(<ShellHeader />, { identity });
@@ -93,7 +93,7 @@ describe("shell header", () => {
     });
 
     it("shows the signed in email", async () => {
-      const identity = stubIdentity({ me: vi.fn(async () => aUser()) });
+      const identity = stubIdentity({ me: vi.fn(() => Promise.resolve(aUser())) });
       storeToken("tok_abc");
 
       renderWithProviders(<ShellHeader />, { identity });
@@ -102,7 +102,7 @@ describe("shell header", () => {
     });
 
     it("offers sign out instead of sign in", async () => {
-      const identity = stubIdentity({ me: vi.fn(async () => aUser()) });
+      const identity = stubIdentity({ me: vi.fn(() => Promise.resolve(aUser())) });
       storeToken("tok_abc");
 
       renderWithProviders(<ShellHeader />, { identity });
@@ -115,9 +115,7 @@ describe("shell header", () => {
       // An expired or revoked token is the normal case after a server restart.
       // It must land on the signed out header, not on a broken one.
       const identity = stubIdentity({
-        me: vi.fn(async () => {
-          throw anIdentityError(401, "unauthorized");
-        }),
+        me: vi.fn(() => Promise.reject(anIdentityError(401, "unauthorized"))),
       });
       storeToken("tok_stale");
 
@@ -128,9 +126,7 @@ describe("shell header", () => {
 
     it("forgets a rejected token so the next load does not retry it", async () => {
       const identity = stubIdentity({
-        me: vi.fn(async () => {
-          throw anIdentityError(401, "unauthorized");
-        }),
+        me: vi.fn(() => Promise.reject(anIdentityError(401, "unauthorized"))),
       });
       storeToken("tok_stale");
 
@@ -143,8 +139,8 @@ describe("shell header", () => {
   describe("signing out", () => {
     it("sends the stored token when the control is used", async () => {
       const identity = stubIdentity({
-        me: vi.fn(async () => aUser()),
-        logout: vi.fn(async () => undefined),
+        me: vi.fn(() => Promise.resolve(aUser())),
+        logout: vi.fn(() => Promise.resolve(undefined)),
       });
       storeToken("tok_abc");
 
@@ -156,8 +152,8 @@ describe("shell header", () => {
 
     it("clears the stored token", async () => {
       const identity = stubIdentity({
-        me: vi.fn(async () => aUser()),
-        logout: vi.fn(async () => undefined),
+        me: vi.fn(() => Promise.resolve(aUser())),
+        logout: vi.fn(() => Promise.resolve(undefined)),
       });
       storeToken("tok_abc");
 
@@ -169,8 +165,8 @@ describe("shell header", () => {
 
     it("returns to the signed out header", async () => {
       const identity = stubIdentity({
-        me: vi.fn(async () => aUser()),
-        logout: vi.fn(async () => undefined),
+        me: vi.fn(() => Promise.resolve(aUser())),
+        logout: vi.fn(() => Promise.resolve(undefined)),
       });
       storeToken("tok_abc");
 
@@ -184,10 +180,8 @@ describe("shell header", () => {
       // Waiting on a DELETE that is already failing would strand someone in a
       // session they asked to leave. The local half always happens.
       const identity = stubIdentity({
-        me: vi.fn(async () => aUser()),
-        logout: vi.fn(async () => {
-          throw anIdentityError(502, "unavailable");
-        }),
+        me: vi.fn(() => Promise.resolve(aUser())),
+        logout: vi.fn(() => Promise.reject(anIdentityError(502, "unavailable"))),
       });
       storeToken("tok_abc");
 
@@ -213,7 +207,7 @@ describe("navigation", () => {
   it("offers the accounts list once there is a session", async () => {
     storeToken("tok_abc");
     renderWithProviders(<ShellHeader />, {
-      identity: stubIdentity({ me: vi.fn(async () => aUser()) }),
+      identity: stubIdentity({ me: vi.fn(() => Promise.resolve(aUser())) }),
     });
 
     expect(await screen.findByRole("link", { name: "Accounts" })).toHaveAttribute("href", "/accounts");

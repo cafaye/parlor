@@ -356,7 +356,10 @@ function RoleChangeControl({
   value: Role;
   disabled: boolean;
   pending: boolean;
-  onChange(role: Role): void;
+  // Property, not method shorthand — see `ConfirmDialogProps` in
+  // `src/components/ui/confirm-dialog.tsx`. Destructured out of the props on
+  // the line above, which is exactly the shape the rule is about.
+  onChange: (role: Role) => void;
 }) {
   return (
     <Select
@@ -434,7 +437,7 @@ function RenameForm({ account }: { account: AccountDetail }) {
 
   return (
     <Panel headingId="rename" title="Rename account">
-      <form className="flex flex-col gap-4" noValidate onSubmit={onSubmit}>
+      <form className="flex flex-col gap-4" noValidate onSubmit={(event) => void onSubmit(event)}>
         {state.kind === "refused" || state.kind === "failed" ? (
           <FieldSummary>
             {state.kind === "refused"
@@ -516,7 +519,7 @@ function InviteForm({ role, accountId }: { role: Role; accountId: string }) {
 
   return (
     <Panel headingId="invite" title="Invite somebody">
-      <form className="flex flex-col gap-4" noValidate onSubmit={onSubmit}>
+      <form className="flex flex-col gap-4" noValidate onSubmit={(event) => void onSubmit(event)}>
         {error ? <FieldSummary>{error}</FieldSummary> : null}
 
         {sent ? (
@@ -625,7 +628,11 @@ function DangerZone({ role, accountId }: { role: Role; accountId: string }) {
       // `GET /v1/me`. It is the only per-member action that works while the
       // service sends no user ids in the list.
       await remove.mutateAsync(session.user.id);
-      router.push("/accounts");
+      // `void`, not `await`: awaiting puts the navigation inside this `try`, so a
+      // navigation that failed would be rendered by the `catch` below as a
+      // refusal to leave — for a membership that is already gone. See
+      // `login-form.tsx`, which is where the same decision is spelled out.
+      void router.push("/accounts");
     } catch (thrown) {
       setError(leaveFailure(thrown));
       inFlight.current = false;
@@ -638,7 +645,10 @@ function DangerZone({ role, accountId }: { role: Role; accountId: string }) {
     setError(null);
     try {
       await removeAccount.mutateAsync(accountId);
-      router.push("/accounts");
+      // `void`, not `await`, for the reason the `router.push` in `leave()` above
+      // gives: the account is already deleted by this line, so a navigation that
+      // failed must not be reported as a refusal to delete.
+      void router.push("/accounts");
     } catch (thrown) {
       setError(deleteFailure(thrown));
       inFlight.current = false;

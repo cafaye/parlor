@@ -62,7 +62,7 @@ describe("register page", () => {
   describe("with a valid address", () => {
     it("sends the credentials to the service", async () => {
       const identity = stubIdentity({
-        register: vi.fn(async () => ({ id: "usr_1", email: CREDENTIALS.email })),
+        register: vi.fn(() => Promise.resolve({ id: "usr_1", email: CREDENTIALS.email })),
       });
       renderWithProviders(<RegisterPage />, { identity });
 
@@ -74,7 +74,7 @@ describe("register page", () => {
 
     it("confirms the account was created", async () => {
       const identity = stubIdentity({
-        register: vi.fn(async () => ({ id: "usr_1", email: CREDENTIALS.email })),
+        register: vi.fn(() => Promise.resolve({ id: "usr_1", email: CREDENTIALS.email })),
       });
       renderWithProviders(<RegisterPage />, { identity });
 
@@ -89,7 +89,7 @@ describe("register page", () => {
       // nothing to persist. Pretending otherwise would show a signed-in header
       // over a session the service has never heard of.
       const identity = stubIdentity({
-        register: vi.fn(async () => ({ id: "usr_1", email: CREDENTIALS.email })),
+        register: vi.fn(() => Promise.resolve({ id: "usr_1", email: CREDENTIALS.email })),
       });
       renderWithProviders(<RegisterPage />, { identity });
 
@@ -105,7 +105,7 @@ describe("register page", () => {
       // hidden input would be one shoulder-surf away from a shoulder's next
       // session.
       const identity = stubIdentity({
-        register: vi.fn(async () => ({ id: "usr_1", email: CREDENTIALS.email })),
+        register: vi.fn(() => Promise.resolve({ id: "usr_1", email: CREDENTIALS.email })),
       });
       renderWithProviders(<RegisterPage />, { identity });
 
@@ -137,8 +137,8 @@ describe("register page", () => {
   describe("after the account exists", () => {
     const registered = (extra = {}) =>
       stubIdentity({
-        register: vi.fn(async () => ({ id: "usr_1", email: CREDENTIALS.email })),
-        requestEmailVerification: vi.fn(async () => ({ status: "accepted" })),
+        register: vi.fn(() => Promise.resolve({ id: "usr_1", email: CREDENTIALS.email })),
+        requestEmailVerification: vi.fn(() => Promise.resolve({ status: "accepted" })),
         ...extra,
       });
 
@@ -159,7 +159,7 @@ describe("register page", () => {
       // stored address back. Following the echo rather than the input is what keeps
       // a lookup keyed on the account's own row.
       const identity = registered({
-        register: vi.fn(async () => ({ id: "usr_1", email: "kaka@example.com" })),
+        register: vi.fn(() => Promise.resolve({ id: "usr_1", email: "kaka@example.com" })),
       });
 
       renderWithProviders(<RegisterPage />, { identity });
@@ -262,12 +262,16 @@ describe("register page", () => {
   });
 
   describe("when the verification link cannot be asked for", () => {
-    const accountCreatedThen = (thrown: unknown) =>
+    // Typed `unknown` rather than `Error` because every caller passes an
+    // `IdentityError`, and `Promise.reject` is documented to want an `Error`
+    // (`@typescript-eslint/prefer-promise-reject-errors`). Asserting it at the
+    // boundary says what this helper needs — anything the screen is expected to
+    // survive — and keeps the rule's own point: a rejection nobody typed is a
+    // rejection nothing can read.
+    const accountCreatedThen = (thrown: Error) =>
       stubIdentity({
-        register: vi.fn(async () => ({ id: "usr_1", email: CREDENTIALS.email })),
-        requestEmailVerification: vi.fn(async () => {
-          throw thrown;
-        }),
+        register: vi.fn(() => Promise.resolve({ id: "usr_1", email: CREDENTIALS.email })),
+        requestEmailVerification: vi.fn(() => Promise.reject(thrown)),
       });
 
     it("still says the account was created, because it was", async () => {
@@ -339,12 +343,10 @@ describe("register page", () => {
   describe("when the service rejects the address", () => {
     const rejects422 = () =>
       stubIdentity({
-        register: vi.fn(async () => {
-          throw anIdentityError(422, "validation_failed", {
+        register: vi.fn(() => Promise.reject(anIdentityError(422, "validation_failed", {
             title: "Validation failed",
             fieldErrors: [{ field: "email", code: "invalid_format" }],
-          });
-        }),
+          }))),
       });
 
     it("says the submission failed", async () => {
@@ -390,11 +392,9 @@ describe("register page", () => {
 
     it("reports a short password under the password field", async () => {
       const identity = stubIdentity({
-        register: vi.fn(async () => {
-          throw anIdentityError(422, "validation_failed", {
+        register: vi.fn(() => Promise.reject(anIdentityError(422, "validation_failed", {
             fieldErrors: [{ field: "password", code: "too_short" }],
-          });
-        }),
+          }))),
       });
       renderWithProviders(<RegisterPage />, { identity });
 
@@ -433,9 +433,7 @@ describe("register page", () => {
       // answer the person needs, and it is already known to whoever owns the
       // inbox. Login below is the opposite case.
       const identity = stubIdentity({
-        register: vi.fn(async () => {
-          throw anIdentityError(409, "conflict", { detail: "email already registered" });
-        }),
+        register: vi.fn(() => Promise.reject(anIdentityError(409, "conflict", { detail: "email already registered" }))),
       });
       renderWithProviders(<RegisterPage />, { identity });
 
@@ -447,9 +445,7 @@ describe("register page", () => {
 
     it("does not echo the address back", async () => {
       const identity = stubIdentity({
-        register: vi.fn(async () => {
-          throw anIdentityError(409, "conflict");
-        }),
+        register: vi.fn(() => Promise.reject(anIdentityError(409, "conflict"))),
       });
       renderWithProviders(<RegisterPage />, { identity });
 
@@ -543,9 +539,7 @@ describe("register page", () => {
   describe("when the service is unreachable", () => {
     it("says something went wrong without leaking the failure", async () => {
       const identity = stubIdentity({
-        register: vi.fn(async () => {
-          throw anIdentityError(503, "unavailable", { detail: "dial tcp 10.0.0.4:5432" });
-        }),
+        register: vi.fn(() => Promise.reject(anIdentityError(503, "unavailable", { detail: "dial tcp 10.0.0.4:5432" }))),
       });
       renderWithProviders(<RegisterPage />, { identity });
 

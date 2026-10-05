@@ -19,19 +19,30 @@
 /** Storage key for the session token. The BFF packet renames this. */
 export const SESSION_TOKEN_KEY = "parlor.session.token";
 
-export type TokenStore = {
-  get(): string | null;
-  set(token: string | null): void;
-  /** Returns the unsubscribe. */
-  subscribe(listener: () => void): () => void;
-};
-
 /**
- * The three methods close over `storage` and `listeners` rather than reading
- * `this`, so they are safe to hand to `useSyncExternalStore` detached — which
- * is exactly what `AuthProvider` does. Keep it that way: a `this`-based method
- * would work in a test that calls `store.get()` and fail silently in the app.
+ * Written as PROPERTY declarations holding function types, not as method
+ * shorthand, and that is not a formatting preference.
+ *
+ * TypeScript reads `get(): string | null` as a method with an implicit `this`,
+ * and `subscribe(listener)` handed to `useSyncExternalStore` — which is
+ * exactly what `AuthProvider` does, since that hook takes two loose
+ * functions — is therefore a method separated from its object. Under
+ * `@typescript-eslint/unbound-method` that is an error, and it is right to be
+ * suspicious of it in general: a method that reads `this` and is called
+ * detached fails.
+ *
+ * These three do not read `this`. They close over `storage` and `listeners`,
+ * and `createTokenStore` below returns them from an object literal, so there
+ * is no object for a `this` to belong to. The method spelling asserts a
+ * binding that does not exist; the property spelling states the truth and is
+ * the same type at run time.
  */
+export type TokenStore = {
+  get: () => string | null;
+  set: (token: string | null) => void;
+  /** Returns the unsubscribe. */
+  subscribe: (listener: () => void) => () => void;
+};
 type Options = {
   key?: string;
   storage?: Storage | null;

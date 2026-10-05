@@ -130,7 +130,7 @@ export function VerifyEmailConfirmForm({ token }: { token: string | null }) {
     return (
       <div className="flex flex-col gap-4">
         <FieldSummary>That link is missing its verification code.</FieldSummary>
-        <Button onClick={() => router.push("/verify-email")} type="button" variant="secondary">
+        <Button onClick={() => void router.push("/verify-email")} type="button" variant="secondary">
           Request a new link
         </Button>
       </div>
@@ -141,7 +141,7 @@ export function VerifyEmailConfirmForm({ token }: { token: string | null }) {
     return (
       <div className="flex flex-col gap-4">
         <FieldSummary>{LINK_UNUSABLE}</FieldSummary>
-        <Button onClick={() => router.push("/verify-email")} type="button" variant="secondary">
+        <Button onClick={() => void router.push("/verify-email")} type="button" variant="secondary">
           Request a new link
         </Button>
       </div>
@@ -159,7 +159,7 @@ export function VerifyEmailConfirmForm({ token }: { token: string | null }) {
           screen does not narrate a branch it did not take.
         */}
         <Button
-          onClick={() => router.push(signedIn ? "/accounts" : "/login")}
+          onClick={() => void router.push(signedIn ? "/accounts" : "/login")}
           type="button"
           variant="secondary"
         >
@@ -192,7 +192,10 @@ export function VerifyEmailConfirmForm({ token }: { token: string | null }) {
         aria-busy={pending}
         busy={pending}
         disabled={pending}
-        onClick={onConfirm}
+        // `void` for the same reason every form's `onSubmit` is written that
+        // way — see `src/app/login/login-form.tsx`, which is where the reasoning
+        // is written out. `onConfirm` catches every failure itself.
+        onClick={() => void onConfirm()}
         type="button"
       >
         Verify my email

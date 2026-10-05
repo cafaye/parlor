@@ -214,7 +214,7 @@ export function RegisterForm() {
   }
 
   return (
-    <form className="flex flex-col gap-4" noValidate onSubmit={onSubmit}>
+    <form className="flex flex-col gap-4" noValidate onSubmit={(event) => void onSubmit(event)}>
       {state.kind === "local" || state.kind === "failed" ? (
         <FieldSummary>
           {/* Every sentence that names a problem, in one region, so the

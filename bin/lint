@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+#
+# Run the FLEET's ESLint config — kit's, not this repository's — over this tree.
+#
+# WHY THIS SCRIPT EXISTS, AND WHY IT IS NOT `npm run lint`
+# ---------------------------------------------------------------------------
+# `npm run lint` runs `eslint`, which finds `eslint.config.mjs` at the root of
+# this repository. That file is NOT the fleet's standard: it is what this tree
+# carried before kit's shared `ci` job ever ran (see the header of
+# `eslint.config.mjs` itself, which explains it replaced `eslint-config-next`).
+# It is a different, looser set — `recommended`, not `recommendedTypeChecked`,
+# and `no-explicit-any` demoted to a warning.
+#
+# The gate is `ci (kit, node) / node`, and its lint step is
+#
+#     npx --no-install eslint --config "$KIT_LINT_DIR/lint/eslint.config.mjs" .
+#
+# run from this repository's root, with `KIT_LINT_DIR` = `<working-dir>/.kit`
+# and kit's `lint/` directory checked out there by the same `ci` job. So the
+# config has to live INSIDE the tree: kit's config does
+# `import js from '@eslint/js'`, and node resolves that import from the CONFIG
+# FILE's own directory upward, so a copy beside the repository resolves nothing
+# and dies with ERR_MODULE_NOT_FOUND. kit says this in README.md, "Where the
+# lint configs run", and in the comment on the `kit (lint config)` step.
+#
+# So this script does what the job does, with the checkout step done by hand:
+#
+#     ./bin/lint              # the fleet's config, the whole tree
+#     ./bin/lint src/app      # one subtree
+#     KIT_LINT_REF=78d84b5 ./bin/lint    # a kit ref other than what is here
+#
+# `.kit/` is gitignored for the same reason it exists: it is CI's scratch space
+# and kit's own config ignores `.kit/**`, so a copy committed here would be both
+# a copy kit says not to make and a copy the linter never reads.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+root="$PWD"
+kit_ref="${KIT_LINT_REF:-master}"
+
+# `process.cwd()` is load-bearing in kit's config: it is what the caller's
+# workspace is, and it is read at config-load time. Every call below therefore
+# runs with this directory as the working directory, and no path is passed in
+# from elsewhere.
+if [ ! -f .kit/lint/eslint.config.mjs ]; then
+  kit_checkout="${KIT_CHECKOUT:-$(dirname "$root")/kit}"
+  if [ ! -f "$kit_checkout/lint/eslint.config.mjs" ]; then
+    echo "::error::kit's lint config is not at .kit/lint and no kit checkout is" >&2
+    echo "::error::beside this repository (looked in $kit_checkout)." >&2
+    echo "::error::Check out cafaye/kit beside it, or set KIT_CHECKOUT." >&2
+    exit 2
+  fi
+  # `sparse-checkout lint` is what the `ci` job does; the subdirectory has to
+  # arrive empty first or a stale copy of a deleted file would keep being linted.
+  rm -rf .kit
+  mkdir -p .kit
+  cp -R "$kit_checkout/lint" .kit/lint
+  echo "populated .kit/lint from $kit_checkout (ref under test: $kit_ref)" >&2
+fi
+
+# `npx --no-install` and not bare `npx`: without it, a repository that has not
+# declared eslint gets a package FETCHED AND RUN at whatever version is
+# current, which is a floating dependency in an otherwise pinned build. With it,
+# a missing eslint is a build failure that says so. This is kit's invocation,
+# restated rather than imported — the same reason the job cannot be.
+exec npx --no-install eslint --config .kit/lint/eslint.config.mjs "$@"

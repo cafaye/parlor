@@ -40,14 +40,39 @@ type Hop = {
 const IDENTITY_URL = "http://identity.test";
 const BILLING_URL = "http://billing.test";
 
+/**
+ * The URL out of whatever spelling of a request `fetch` was handed.
+ *
+ * `fetch` takes `string | URL | Request`, and the forwarder under test calls it
+ * with a string, so the other two are not exercised here — but they are all
+ * legitimate and a narrowing helper is wrong for two of them.
+ *
+ * `String(input)` is the obvious thing and it is wrong for one of the three: a
+ * `Request` stringifies to `[object Request]`, which would put that in a `Hop`
+ * and turn any assertion about a URL into one that passes for the wrong reason.
+ * A `URL` is handled by its own case rather than by stringification for the
+ * same reason — `String(new URL(href))` happens to be `href` today and is not a
+ * contract.
+ */
+function requestUrl(input: RequestInfo | URL): string {
+  if (typeof input === "string") return input;
+  if (input instanceof URL) return input.href;
+  return input.url;
+}
+
 /** Records every hop and answers with whatever the test queued. */
 function recordingFetch(respond?: (hop: Hop) => Response) {
   const hops: Hop[] = [];
   // `RequestInfo | URL` rather than `string | URL`, because the seam is typed as
   // the platform's `fetch` and a narrower parameter type is not assignable to
   // it. Widening the parameter is what makes this a drop-in; the recorder only
-  // ever reads `String(input)`, which is correct for all three spellings.
-  const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+  // ever reads `requestUrl(input)` below, which is correct for all three
+  // spellings.
+  //
+  // NOT `async`, and the seam is typed as returning a promise — so this returns
+  // one explicitly. `async` was contributing nothing but the wrapper, and
+  // `@typescript-eslint/require-await` is right that there is no `await` in it.
+  const fetchImpl = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     // `init.headers` is a `Headers` instance and spreading one yields `{}` — a
     // spread reads own enumerable properties and a Headers keeps its map
     // internal. Reading it through `entries()` is the only way to see what would
@@ -58,13 +83,13 @@ function recordingFetch(respond?: (hop: Hop) => Response) {
     for (const [name, value] of sent) headers[name] = value;
 
     const hop: Hop = {
-      url: String(input),
+      url: requestUrl(input),
       method: init?.method ?? "GET",
       headers,
       body: typeof init?.body === "string" ? init.body : null,
     };
     hops.push(hop);
-    return respond ? respond(hop) : new Response("{}", { status: 200 });
+    return Promise.resolve(respond ? respond(hop) : new Response("{}", { status: 200 }));
   });
   return { fetchImpl, hops };
 }

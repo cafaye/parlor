@@ -55,8 +55,8 @@ function signIn() {
 /** A signed-in stub whose account list is whatever `accounts` says. */
 function signedIn(accounts: AccountListItem[] = [], overrides = {}) {
   return stubIdentity({
-    me: vi.fn(async () => aUser()),
-    listAccounts: vi.fn(async () => accounts),
+    me: vi.fn(() => Promise.resolve(aUser())),
+    listAccounts: vi.fn(() => Promise.resolve(accounts)),
     ...overrides,
   });
 }
@@ -215,9 +215,7 @@ describe("when the account list cannot be loaded", () => {
   it("says so, in an alert, and offers a retry", async () => {
     signIn();
     const identity = signedIn([], {
-      listAccounts: vi.fn(async () => {
-        throw anIdentityError(503, "unavailable");
-      }),
+      listAccounts: vi.fn(() => Promise.reject(anIdentityError(503, "unavailable"))),
     });
     renderWithProviders(<AccountsPage />, { identity });
 
@@ -228,12 +226,9 @@ describe("when the account list cannot be loaded", () => {
   it("does not leak the service's own words about the failure", async () => {
     signIn();
     const identity = signedIn([], {
-      listAccounts: vi.fn(async () => {
-        // The service's `detail` is where a host or an internal class lives.
-        throw anIdentityError(500, "internal", {
+      listAccounts: vi.fn(() => Promise.reject(anIdentityError(500, "internal", {
           detail: "dial tcp 10.0.3.11:5432: connection refused",
-        });
-      }),
+        }))),
     });
     renderWithProviders(<AccountsPage />, { identity });
 
@@ -245,9 +240,7 @@ describe("when the account list cannot be loaded", () => {
   it("asks again when the retry button is used", async () => {
     signIn();
     const identity = signedIn([], {
-      listAccounts: vi.fn(async () => {
-        throw anIdentityError(503, "unavailable");
-      }),
+      listAccounts: vi.fn(() => Promise.reject(anIdentityError(503, "unavailable"))),
     });
     renderWithProviders(<AccountsPage />, { identity });
 
@@ -299,7 +292,7 @@ describe("creating an account", () => {
   it("sends the trimmed name", async () => {
     signIn();
     const identity = signedIn([], {
-      createAccount: vi.fn(async () => anAccount({ id: "acc_new", name: "Acme Corp" })),
+      createAccount: vi.fn(() => Promise.resolve(anAccount({ id: "acc_new", name: "Acme Corp" }))),
     });
     renderWithProviders(<AccountsPage />, { identity });
 
@@ -316,7 +309,7 @@ describe("creating an account", () => {
   it("sends the caller's token, because that is what authorises the account", async () => {
     signIn();
     const identity = signedIn([], {
-      createAccount: vi.fn(async () => anAccount()),
+      createAccount: vi.fn(() => Promise.resolve(anAccount())),
     });
     renderWithProviders(<AccountsPage />, { identity });
 
@@ -337,7 +330,7 @@ describe("creating an account", () => {
       .mockResolvedValue([anAccountListItem({ id: "acc_new", name: "Acme Corp" })]);
     const identity = signedIn([], {
       listAccounts,
-      createAccount: vi.fn(async () => anAccount({ id: "acc_new", name: "Acme Corp" })),
+      createAccount: vi.fn(() => Promise.resolve(anAccount({ id: "acc_new", name: "Acme Corp" }))),
     });
     renderWithProviders(<AccountsPage />, { identity });
 
@@ -356,7 +349,7 @@ describe("creating an account", () => {
     renderWithProviders(
       <AccountsPage />,
       {
-        identity: signedIn([], { createAccount: vi.fn(async () => anAccount({ id: "acc_new" })) }),
+        identity: signedIn([], { createAccount: vi.fn(() => Promise.resolve(anAccount({ id: "acc_new" }))) }),
       },
     );
 
@@ -407,14 +400,9 @@ describe("creating an account", () => {
   it("puts a name conflict on the name field, not in a banner", async () => {
     signIn();
     const identity = signedIn([], {
-      createAccount: vi.fn(async () => {
-        // ErrSlugTaken: the handle, derived from the name, is taken. The only
-        // conflict this endpoint declares is about the name, so the message
-        // belongs on the name.
-        throw anIdentityError(409, "conflict", {
+      createAccount: vi.fn(() => Promise.reject(anIdentityError(409, "conflict", {
           detail: "an account with that name already exists",
-        });
-      }),
+        }))),
     });
     renderWithProviders(<AccountsPage />, { identity });
 
@@ -428,9 +416,7 @@ describe("creating an account", () => {
   it("does not repeat the service's own wording for the conflict", async () => {
     signIn();
     const identity = signedIn([], {
-      createAccount: vi.fn(async () => {
-        throw anIdentityError(409, "conflict", { detail: "handle acme-corp is UNIQUE-violated" });
-      }),
+      createAccount: vi.fn(() => Promise.reject(anIdentityError(409, "conflict", { detail: "handle acme-corp is UNIQUE-violated" }))),
     });
     renderWithProviders(<AccountsPage />, { identity });
 
@@ -447,9 +433,7 @@ describe("creating an account", () => {
   it("reports a service failure in a banner, without blaming the name", async () => {
     signIn();
     const identity = signedIn([], {
-      createAccount: vi.fn(async () => {
-        throw anIdentityError(500, "internal");
-      }),
+      createAccount: vi.fn(() => Promise.reject(anIdentityError(500, "internal"))),
     });
     renderWithProviders(<AccountsPage />, { identity });
 
@@ -467,9 +451,7 @@ describe("creating an account", () => {
   it("keeps what was typed so a retry does not lose it", async () => {
     signIn();
     const identity = signedIn([], {
-      createAccount: vi.fn(async () => {
-        throw anIdentityError(503, "unavailable");
-      }),
+      createAccount: vi.fn(() => Promise.reject(anIdentityError(503, "unavailable"))),
     });
     renderWithProviders(<AccountsPage />, { identity });
 

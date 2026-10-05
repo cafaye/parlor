@@ -34,6 +34,13 @@ doing so on purpose; text that tells you how to add a screen describes
 mise install      # node version from mise.toml
 ```
 
+- **`npm run lint` needs `cafaye/kit` checked out BESIDE this repository**, and
+  that is not this repository's quirk — it is how kit's shared lint configs are
+  delivered, and `e2e/docker-compose.yml` bind-mounts `../kit` for the same
+  reason. `./bin/lint` will find it at `../kit` and say so if it cannot. It is
+  NOT in `bin/prime`, because a fresh clone does not have it; see "The lint
+  standard".
+
 - **The runtime pin of record is `engines.node` in `package.json`** (22.22.2 —
   the floor jsdom@30 demands; bump the pin rather than downgrading the test
   rig). `packageManager` records the npm that ships with it, and `.npmrc`'s
@@ -289,6 +296,70 @@ back, and this job does not set it.
   verified nothing. The end-to-end tier is the same rule with one fewer moving
   part: it has no skip mechanism at all, and two readers of its report fail the
   run when fewer than two tests passed.
+
+## The lint standard
+
+The gate is `ci (kit, node) / node`, and its lint step is kit's, not this
+repository's:
+
+```
+npx --no-install eslint --config "$KIT_LINT_DIR/lint/eslint.config.mjs" .
+```
+
+with `KIT_LINT_DIR` = `<working-dir>/.kit` and kit's `lint/` directory checked out
+**inside the tree** by the same job. Inside is the only thing that works: kit's
+config does `import js from '@eslint/js'`, and node resolves that from the config
+file's own directory upward, so a copy *beside* the repository resolves nothing
+and dies with `ERR_MODULE_NOT_FOUND`.
+
+- **`npm run lint` is that same invocation.** It is `./bin/lint`, which is the
+  command above with the config checkout done by hand — it populates `.kit/lint`
+  from a kit checkout beside the repository if it is not already there, and says
+  so which one it used. `.kit/` is gitignored: kit's own config ignores
+  `.kit/**`, and kit says the config is not copied into a service repo, so a
+  committed copy would be both a copy nobody reviewed and a copy the linter never
+  reads.
+- **There is no `eslint.config.mjs` here any more, and that is the point.** This
+  tree used to carry one (`recommended`, not `recommendedTypeChecked`,
+  `no-explicit-any` demoted to a warning) because `eslint-config-next` had gone
+  with the framework that named it. It was a *second, looser* standard that
+  `npm run lint` read and CI never did — and a developer who ran the documented
+  command got a green they had not earned. One lint command, the fleet's, and it
+  cannot drift from the gate. (`HANDOFF-parlor-eslint-335-01.md` is the packet
+  that removed it, with the measurements.)
+- **`kit/lint/eslint.config.mjs` is not this repository's to edit.** Overriding a
+  rule there, or with an inline disable that is really an override, is how a
+  shared standard dies quietly. If a rule is genuinely wrong here, that is a
+  finding to write down in a handoff, not a flag to add.
+- **`bin/lint` is not in `bin/prime`, for the same reason `bin/deploy-config` is
+  not.** It needs kit checked out beside the repository, which a CI runner and a
+  fresh `npm ci` do not have. That is a real cost and the right trade: a check
+  that only runs on a runner is a check its author never watched run, and this
+  one *was* only on a runner for four days.
+
+The rules that carry weight in this tree, and what each one is protecting:
+
+| rule | what it means here |
+|---|---|
+| `require-await` | an `async` that never awaits. In test stubs the promise is real (`IdentityClient` returns `Promise<T>`), so the fix is `() => Promise.resolve(x)` / `Promise.reject(e)`, never a bare `throw` and never `vi.fn().mockResolvedValue` (which gives up the check on what resolved). |
+| `unbound-method` | a member declared with **method shorthand** read off its object. `IdentityClient`, `BillingClient`, `AuthValue`, `TokenStore` and every prop type in `src/components/ui/` are **property** declarations holding function types, which is both what the rule asks for and the truth: they are object literals of arrow functions with no `this` to lose. Do not reintroduce `foo(): void`. |
+| `no-misused-promises` | a promise handed to something typed `=> void` — React's `onSubmit`/`onClick`, `Retry`'s `onRetry`. `void` at the JSX boundary. `src/app/login/login-form.tsx` is where the reasoning is written out. |
+| `no-floating-promises` | a promise with nobody waiting. Every `router.push` in a form is `void` and specifically **not** `await` — awaiting puts the navigation inside the surrounding `try`, so a failed navigation would be rendered as a refused sign-in. |
+| `no-base-to-string` | `String(x)` on something that may not be a string. `identity.ts` uses `readString`, which returns a string or nothing; the alternative put `[object Object]` into an MFA challenge. |
+| `no-unsafe-*` | an `any` travelling further than it should. `Response.json()` is `any`, so every read of a probe body goes through a named helper that states the shape once. |
+
+**`.mjs` files are in the tsconfig on purpose.** `**/*.mjs` is in `include`
+because kit's config lints `**/*.mjs` and typescript-eslint's project service
+cannot place a linted file that belongs to no program — without it, every
+type-aware rule on a `.mjs` file dies as one parse error and the file is
+effectively unlinted. That is what was happening to `tests/assert-e2e-ran.mjs`,
+which is the script that decides whether the end-to-end tier verified anything.
+The cost is real and stated in `dist`/`.output`/`.kit` being listed in
+`exclude`: without them, a build would put its own output into the program, and
+`npm run typecheck` must pass *without* a build. Note `checkJs` is off, so
+`tsc --noEmit` still reports nothing about a `.mjs` file's types — ESLint's
+project service does read them, and a TypeScript `as` in one of those files will
+make ESLint happy and `node` refuse to run it.
 
 ## Deploying to Cloudflare Workers
 
@@ -914,6 +985,13 @@ bin/deploy-config   the tier that runs the real kamal binary against the
                     rendered config. NOT in bin/prime — kamal and ruby are on
                     neither a CI runner nor a node-only checkout. Three-valued
                     exit: 0 proven, 1 failed, 2 could not run
+bin/lint            `npm run lint` is this: kit's ESLint config, fetched into
+                    .kit/ and run over the tree, which is what CI's
+                    `ci (kit, node)` lint step does. NOT in bin/prime — it needs
+                    a kit checkout beside the repository, for the same reason
+                    the deploy tier is not. Two-valued exit like every other
+                    command. There is NO eslint.config.mjs in this tree; see
+                    "The lint standard" for why there is not
 e2e/                the whole-stack end-to-end tier: the compose topology, the
                     Playwright specs, and the guards that make a green run mean
                     something

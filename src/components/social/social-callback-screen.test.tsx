@@ -43,11 +43,11 @@ describe("a completed round trip", () => {
     // The exchange happens in an effect, so this is the first thing that can
     // possibly be true — there is no synchronous path to a token.
     const identity = stubIdentity({
-      completeSocialLogin: vi.fn(async () => ({
+      completeSocialLogin: vi.fn(() => Promise.resolve({
         kind: "session" as const,
         session: { token: "tok_social", expires_at: "2026-10-01T00:00:00Z" },
       })),
-      me: vi.fn(async () => ({ id: "usr_1", email: "kaka@example.com" })),
+      me: vi.fn(() => Promise.resolve({ id: "usr_1", email: "kaka@example.com" })),
     });
     renderWithProviders(callback(), { identity });
 
@@ -56,7 +56,7 @@ describe("a completed round trip", () => {
 
   it("sends the provider and the three parameters to the service", async () => {
     const identity = stubIdentity({
-      completeSocialLogin: vi.fn(async () => ({
+      completeSocialLogin: vi.fn(() => Promise.resolve({
         kind: "session" as const,
         session: { token: "tok_social", expires_at: "2026-10-01T00:00:00Z" },
       })),
@@ -70,7 +70,7 @@ describe("a completed round trip", () => {
 
   it("goes home afterwards, the way the password path does", async () => {
     const identity = stubIdentity({
-      completeSocialLogin: vi.fn(async () => ({
+      completeSocialLogin: vi.fn(() => Promise.resolve({
         kind: "session" as const,
         session: { token: "tok_social", expires_at: "2026-10-01T00:00:00Z" },
       })),
@@ -85,7 +85,7 @@ describe("a completed round trip", () => {
     // then an alert would be telling somebody a sign-in failed while it was
     // succeeding, and the alert is the assertive one.
     const identity = stubIdentity({
-      completeSocialLogin: vi.fn(async () => ({
+      completeSocialLogin: vi.fn(() => Promise.resolve({
         kind: "session" as const,
         session: { token: "tok_social", expires_at: "2026-10-01T00:00:00Z" },
       })),
@@ -162,9 +162,7 @@ describe("a round trip the provider refused", () => {
     // something anybody can type into a URL, and it would leave the one-shot
     // state cookie sitting in the browser because nothing ever cleared it.
     const identity = stubIdentity({
-      completeSocialLogin: vi.fn(async () => {
-        throw anIdentityError(400, "invalid_request");
-      }),
+      completeSocialLogin: vi.fn(() => Promise.reject(anIdentityError(400, "invalid_request"))),
     });
     renderWithProviders(callback({ error: "access_denied", state: "st_1" }), { identity });
 
@@ -178,9 +176,7 @@ describe("a round trip the provider refused", () => {
 
   it("offers a way back rather than a blank screen", async () => {
     const identity = stubIdentity({
-      completeSocialLogin: vi.fn(async () => {
-        throw anIdentityError(400, "invalid_request");
-      }),
+      completeSocialLogin: vi.fn(() => Promise.reject(anIdentityError(400, "invalid_request"))),
     });
     renderWithProviders(callback({ error: "access_denied", state: "st_1" }), { identity });
 
@@ -192,9 +188,7 @@ describe("a round trip the provider refused", () => {
 
   it("offers to start the same flow again", async () => {
     const identity = stubIdentity({
-      completeSocialLogin: vi.fn(async () => {
-        throw anIdentityError(400, "invalid_request");
-      }),
+      completeSocialLogin: vi.fn(() => Promise.reject(anIdentityError(400, "invalid_request"))),
     });
     renderWithProviders(callback({ error: "access_denied", state: "st_1" }), { identity });
 
@@ -206,9 +200,7 @@ describe("a round trip the provider refused", () => {
 
   it("signs nobody in", async () => {
     const identity = stubIdentity({
-      completeSocialLogin: vi.fn(async () => {
-        throw anIdentityError(400, "invalid_request");
-      }),
+      completeSocialLogin: vi.fn(() => Promise.reject(anIdentityError(400, "invalid_request"))),
     });
     renderWithProviders(callback({ error: "access_denied", state: "st_1" }), { identity });
 
@@ -223,9 +215,7 @@ describe("a round trip the provider refused", () => {
     // those it was is an oracle about the cookie, and the service collapses them
     // into one answer for that reason. So does this screen.
     const identity = stubIdentity({
-      completeSocialLogin: vi.fn(async () => {
-        throw new Error("dial tcp 10.0.0.4:5432: connection refused");
-      }),
+      completeSocialLogin: vi.fn(() => Promise.reject(new Error("dial tcp 10.0.0.4:5432: connection refused"))),
     });
     renderWithProviders(callback({ error: "access_denied", state: "st_1" }), { identity });
 
@@ -261,7 +251,7 @@ describe("a link instead of a sign-in", () => {
     // that does not exist, and treating this arm as a sign-in is the defect this
     // state exists to prevent.
     const identity = stubIdentity({
-      completeSocialLogin: vi.fn(async () => ({
+      completeSocialLogin: vi.fn(() => Promise.resolve({
         kind: "linked" as const,
         linked: { linked_provider: "github" },
       })),
@@ -275,7 +265,7 @@ describe("a link instead of a sign-in", () => {
 
   it("says what actually happened", async () => {
     const identity = stubIdentity({
-      completeSocialLogin: vi.fn(async () => ({
+      completeSocialLogin: vi.fn(() => Promise.resolve({
         kind: "linked" as const,
         linked: { linked_provider: "github" },
       })),
@@ -291,7 +281,7 @@ describe("a link instead of a sign-in", () => {
 
   it("offers a way back rather than leaving the person on a dead page", async () => {
     const identity = stubIdentity({
-      completeSocialLogin: vi.fn(async () => ({
+      completeSocialLogin: vi.fn(() => Promise.resolve({
         kind: "linked" as const,
         linked: { linked_provider: "github" },
       })),
@@ -312,7 +302,7 @@ describe("a second factor", () => {
     // A 202 that is NOT a session. A social sign-in that reads a challenge as a
     // success is a security defect, not a missing feature: the whole reason the
     // service sent it is that this login is not finished.
-    const identity = stubIdentity({ completeSocialLogin: vi.fn(async () => CHALLENGE) });
+    const identity = stubIdentity({ completeSocialLogin: vi.fn(() => Promise.resolve(CHALLENGE)) });
     renderWithProviders(callback(), { identity });
 
     await screen.findByText(/second factor/i);
@@ -321,7 +311,7 @@ describe("a second factor", () => {
   });
 
   it("says the sign-in is not finished", async () => {
-    const identity = stubIdentity({ completeSocialLogin: vi.fn(async () => CHALLENGE) });
+    const identity = stubIdentity({ completeSocialLogin: vi.fn(() => Promise.resolve(CHALLENGE)) });
     renderWithProviders(callback(), { identity });
 
     expect(await screen.findByText(/second factor/i)).toBeInTheDocument();
@@ -333,7 +323,7 @@ describe("a second factor", () => {
     // an MFA login from any surface — `POST /v1/session/mfa` is deliberately
     // absent from the forwarder's table — so this points at the screen that
     // exists rather than inventing a code entry form that could not be redeemed.
-    const identity = stubIdentity({ completeSocialLogin: vi.fn(async () => CHALLENGE) });
+    const identity = stubIdentity({ completeSocialLogin: vi.fn(() => Promise.resolve(CHALLENGE)) });
     renderWithProviders(callback(), { identity });
 
     expect(await screen.findByRole("link", { name: "Back to sign in" })).toHaveAttribute(
@@ -351,9 +341,7 @@ describe("a provider this app does not offer", () => {
     // for it because following it would offer a control for a provider this app
     // has no button for.
     const identity = stubIdentity({
-      completeSocialLogin: vi.fn(async () => {
-        throw anIdentityError(400, "invalid_request");
-      }),
+      completeSocialLogin: vi.fn(() => Promise.reject(anIdentityError(400, "invalid_request"))),
     });
     renderWithProviders(
       <SocialCallbackScreen provider="internal-sso" searchParams={ROUND_TRIP} />,
@@ -371,9 +359,7 @@ describe("a provider that could not be reached", () => {
     // Telling somebody they did it wrong when a provider is down sends them away
     // from a page that would work on the second attempt.
     const identity = stubIdentity({
-      completeSocialLogin: vi.fn(async () => {
-        throw anIdentityError(502, "service_unavailable");
-      }),
+      completeSocialLogin: vi.fn(() => Promise.reject(anIdentityError(502, "service_unavailable"))),
     });
     renderWithProviders(callback(), { identity });
 
@@ -382,9 +368,7 @@ describe("a provider that could not be reached", () => {
 
   it("offers to try again", async () => {
     const identity = stubIdentity({
-      completeSocialLogin: vi.fn(async () => {
-        throw anIdentityError(502, "service_unavailable");
-      }),
+      completeSocialLogin: vi.fn(() => Promise.reject(anIdentityError(502, "service_unavailable"))),
     });
     renderWithProviders(callback(), { identity });
 
@@ -399,11 +383,9 @@ describe("an address that already has an account", () => {
     // same reason registration may say "that address is taken". It names the
     // STATE and never an address, which the service's own detail does.
     const identity = stubIdentity({
-      completeSocialLogin: vi.fn(async () => {
-        throw anIdentityError(409, "conflict", {
+      completeSocialLogin: vi.fn(() => Promise.reject(anIdentityError(409, "conflict", {
           detail: "an account already exists for kaka@example.com",
-        });
-      }),
+        }))),
     });
     renderWithProviders(callback(), { identity });
 
