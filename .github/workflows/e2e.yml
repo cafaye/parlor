@@ -27,6 +27,28 @@
 #     reads. `E2E_BUILD_SIBLINGS=1` is the developer's hatch that puts the
 #     `build:` stanzas back (e2e/docker-compose.siblings.yml), and this job does
 #     not set it.
+#
+#   * It needs `../kit` TOO, and for a different reason, which is why it is a
+#     fourth checkout rather than one more name in the list above. `kit` is not a
+#     sibling: no image is built from it, nothing is pushed, and it is not in
+#     `SIBLING_SERVICES`. `e2e/docker-compose.yml` MOUNTS
+#     `../kit/templates/compose/postgres/initdb` over
+#     `/docker-entrypoint-initdb.d`, so the cluster's roles come from that
+#     script. The checkout cannot be reached by the registry, cannot be vendored
+#     (a copy of the cluster script is a second opinion about the isolation
+#     contract, and one that stops being true silently), and is not optional:
+#     identity's `migrations/00016_account_isolation.sql` ends in
+#     `select cafaye.protect_table('account_users')`, which asks the cluster for a
+#     LOGIN role named `identity_app` and refuses to proceed without one. This
+#     job was red on exactly that, with a 42704 naming a role nobody had created.
+#
+#     A runner without `../kit` gets an EMPTY DIRECTORY mounted over initdb — Docker
+#     does not fail on a missing bind source — so the cluster comes up with the
+#     superuser the image made, passes its health check, and fails sixty seconds
+#     later about a role. Both halves of that are silent, which is why the
+#     presence step below asserts the directory is non-empty and
+#     `bin/e2e-stack`'s `check_cluster_initdb` asserts the same thing again before
+#     anything starts.
 #   * It is slow and it is not fast-feedback. It runs on push and on pull
 #     requests — not nightly, not pre-release — because a nightly E2E is a
 #     regression nobody reads about.
@@ -85,9 +107,9 @@ jobs:
       # this repository would start a stack whose sibling images exist nowhere,
       # and `docker compose up` would fail pulling them.
       #
-      # FOUR checkout steps rather than one with a `path:` list, because `ref`
+      # FIVE checkout steps rather than one with a `path:` list, because `ref`
       # differs between them: this repository is tested at the ref being pushed,
-      # identity and gateway at master, and oauth-stub at the tag
+# identity, gateway and kit at master, and oauth-stub at the tag
       # `bin/e2e-stack` pins. A stack assembled from mismatched service versions is
       # a different artifact with the same name, and pinning the service siblings
       # to this ref would mean a green run of a fleet that does not exist.
@@ -103,7 +125,7 @@ jobs:
       # has no ref v0.1.0" and send the reader to `git fetch` on a repository the
       # workflow itself chose not to fetch.
       #
-      # `repository:` IS NOT OPTIONAL ON ANY OF THE THREE, and the reason is the
+      # `repository:` IS NOT OPTIONAL ON ANY OF THE FIVE, and the reason is the
       # defect this step arrangement carried for its whole life: an
       # `actions/checkout` with no `repository:` checks out
       # `${{ github.repository }}` — this repository — into whatever directory
@@ -128,7 +150,7 @@ jobs:
           repository: cafaye/gateway
           path: gateway
           ref: master
-      # The fake provider, at the PINNED TAG rather than at master. `ref:` alone
+# The fake provider, at the PINNED TAG rather than at master. `ref:` alone
       # is not enough here: `git rev-parse v0.1.0^{commit}` is how
       # `publish-siblings` names the source it is about to build, and a
       # single-branch clone of the tag's commit does not carry the tag itself.
@@ -142,6 +164,32 @@ jobs:
           path: oauth-stub
           ref: v0.1.0
           fetch-depth: 0
+      # `kit` IS NOT A SIBLING, and it is here for a reason none of the other four
+      # share: no `image:` is built from it, nothing is pushed from it, and it
+      # is not in `SIBLING_SERVICES`. `e2e/docker-compose.yml` MOUNTS
+      # `../kit/templates/compose/postgres/initdb` over
+      # `/docker-entrypoint-initdb.d`, so this checkout is load-bearing for the
+      # cluster to be provisioned at all.
+      #
+      # Which is why it CANNOT be folded into the sibling presence step below, and
+      # the difference is the whole of it: the step iterates `SIBLING_SERVICES`
+      # because three loops in bin/e2e-stack iterate it, and adding a name to that
+      # list to satisfy a mount would make `publish_siblings` look for a build
+      # recipe for kit and die with "no build recipe for sibling kit" on the
+      # default path. It is a fifth checkout and a fifth assertion, and it
+      # asserts the DIRECTORY rather than a Dockerfile because a Dockerfile is
+      # what a build reads and this is what a bind mount reads.
+      #
+      # It is at master for the same reason as identity and gateway: kit is the
+      # fleet's shared definition, and testing a service against a pinned older
+      # cluster script would prove a fleet that does not exist. It also means this
+      # job can go red on a kit commit — which is correct, because a
+      # cluster-script change IS a change to every service's isolation.
+      - uses: actions/checkout@v7
+        with:
+          repository: cafaye/kit
+          path: kit
+          ref: master
 
       - uses: actions/setup-node@v7
         with:
@@ -201,6 +249,39 @@ jobs:
             fi
             echo "  ../$sibling: present"
           done
+
+          # kit, asserted separately and for a reason that is not tidiness. It is
+          # not a sibling: nothing is built from it, `SIBLING_SERVICES` does not
+          # name it and must not, and the loop above cannot be extended to reach
+          # it without making publish_siblings hunt for a build recipe that does
+          # not exist. What consumes it is a BIND MOUNT —
+          # e2e/docker-compose.yml puts `../kit/templates/compose/postgres/initdb`
+          # over `/docker-entrypoint-initdb.d` — so the assertion is on the
+          # directory being non-empty, which is what a mount reads.
+          #
+          # `find -print -quit` rather than a `[ -f 10-cluster.sh ]`, and it is
+          # the same shape as bin/e2e-stack's check_cluster_initdb: the mount is
+          # of the DIRECTORY, deliberately, so that a kit that renames or splits
+          # its script is picked up rather than silently provisioning nothing. A
+          # per-file assertion here would go red on that rename while the mount
+          # kept working.
+          #
+          # Two requirements, two failures. An absent `../kit` is a checkout that
+          # did not happen. An EMPTY directory is Docker having mounted the
+          # placeholder it creates for a missing bind source — the whole stack
+          # comes up healthy and identity's migration 00016 then fails at
+          # protect_table with 'identity_app is not a LOGIN role on this cluster',
+          # which names a role rather than the checkout that failed to provide it.
+          initdb=../kit/templates/compose/postgres/initdb
+          if [ ! -d "$initdb" ]; then
+            echo "::error::$initdb is missing. e2e/docker-compose.yml mounts it over /docker-entrypoint-initdb.d, so without it this cluster is provisioned by nothing: no service roles, no bounded owner, and no REVOKE — and docker compose reports it healthy anyway." >&2
+            exit 1
+          fi
+          if [ -z "$(find "$initdb" -maxdepth 1 -type f -print -quit 2>/dev/null)" ]; then
+            echo "::error::$initdb is empty, which means it was created rather than found: cafaye/kit was not checked out beside this repository. Docker mounts a missing bind source as an empty directory instead of failing." >&2
+            exit 1
+          fi
+          echo "  $initdb: present (kit's cluster script)"
 
       # identity applies its own migrations with goose, from the host, because
       # migrations are a deploy step and not a boot step (identity/AGENTS.md).

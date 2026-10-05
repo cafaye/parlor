@@ -15,6 +15,17 @@
 #       there are exact tags. Nothing in this file restates a kit image except
 #       where the harness needs a different one and says so.
 #
+#       kit is now also a REQUIRED CHECKOUT rather than a document this file
+#       merely agrees with, and the reason is one bind mount and nothing else:
+#       the postgres block mounts `../kit/templates/compose/postgres/initdb`
+#       over `/docker-entrypoint-initdb.d`, because the roles identity's
+#       migrations protect its tables for are provisioned by that script and by
+#       nowhere else. Read "THE CLUSTER, AND THE ROLE ITS MIGRATIONS ASK FOR" at
+#       the postgres block below; the one-sentence version is that without the
+#       mount this stack has a superuser where a service's bounded owner belongs,
+#       and `00016_account_isolation.sql` then fails at `protect_table` with a
+#       42704 naming a role nobody created.
+#
 #   ../caf — `caf dev` renders a compose document from a manifest plus a
 #       service catalog (internal/dev/plan.go, internal/dev/registry.go). It
 #       plans the *shape*: the project service built from the working tree, its
@@ -67,6 +78,11 @@
 #      file has no goose image: a third-party migration image pinned into the
 #      fleet's toolchain is a decision that belongs to identity and the manager,
 #      not to a test harness. See DECISION NEEDED in the packet report.
+#   4. kit's cluster init script, MOUNTED. `caf dev` plans a local Postgres for
+#      the project service and knows nothing about how a role is scoped, so it
+#      cannot bring up a cluster whose roles are the ones a service's migrations
+#      assume. This is the same class of difference as #3: something the plan
+#      describes and cannot express, rather than a second opinion about it.
 #
 # ---------------------------------------------------------------------------
 # PORTS — the 16xxx block, and why
@@ -238,27 +254,144 @@ services:
     networks: [platform]
 
   # ---------------------------------------------------------------- postgres
-  # identity's own database. One container, one database: the platform is
-  # database-per-service and a service that reaches into another's database is a
-  # bug in review, not a config problem to solve in this file.
+  # ONE CLUSTER, provisioned by KIT'S SCRIPT, and both halves of that sentence
+  # are a fix rather than a description of how things already were.
   #
-  # postgres:17-alpine, the one image the whole fleet uses: this is the same
-  # tag identity's own docker-compose.yml carries and the same one core
-  # declares, so this harness is not the place where a service is tested
-  # against a Postgres version its own repository disagrees with.
+  # IT DID NOT RUN KIT'S SCRIPT, and the cost was a red tier that reported the
+  # cost rather than the cause. This block used to say `POSTGRES_USER: identity`,
+  # `POSTGRES_PASSWORD: identity`, `POSTGRES_DB: identity` and mount nothing over
+  # `/docker-entrypoint-initdb.d`. The official image therefore created exactly
+  # ONE role — `identity`, a superuser — and no `identity_app`. Then
+  # `../identity/migrations/00016_account_isolation.sql` reached
+  # `select cafaye.protect_table('account_users')`, which defaults its login role
+  # to `current_user || '_app'` and REFUSES to write a policy for a role that
+  # cannot log in. Reproduced on this machine against a container built exactly
+  # the way this block describes:
+  #
+  #   ERROR:  cafaye.protect_table(account_users, identity_app):
+  #           identity_app is not a LOGIN role on this cluster. (SQLSTATE 42704)
+  #
+  # Migrations 00008 through 00015 applied cleanly first, which is what made it
+  # read like a fault in `00016` rather than in this block. It is not: `00016` is
+  # correct and it is identity's first migration to call `protect_table`. It asks
+  # for the role the FLEET CONTRACT says the cluster provisions, and the reason it
+  # asks is the whole point of the substrate — a second role that owns nothing, so
+  # the application cannot `ALTER TABLE ... DISABLE ROW LEVEL SECURITY` over the
+  # account boundary it is supposed to be bound by
+  # (`../kit/templates/database/tenancy/README.md` §Adopting step 2).
+  #
+  # So the migration is right, the harness was wrong, and the ONLY honest repair
+  # is to provision the cluster the way the fleet provisions one. Making `00016`
+  # tolerant — passing an explicit role, skipping the call, catching the error —
+  # would convert a stack that is not wired correctly into a stack that boots,
+  # and every one of those three turns the row-level-security boundary OFF while
+  # the suite went green. This tier exists to fail when the isolation is absent;
+  # a fix that removed the isolation would have satisfied the suite by deleting
+  # the thing the suite tests.
+  #
+  # `postgres:17-alpine`, the one image the whole fleet uses: the same tag
+  # identity's own docker-compose.yml carries and the same one core declares, so
+  # this harness is not the place where a service is tested against a Postgres
+  # version its own repository disagrees with. Kit builds its own image on
+  # `postgres:17` (Debian) to add pgvector; nothing in this stack uses an
+  # extension the alpine image lacks, and the thing that matters here is the init
+  # SCRIPT, not the base.
   identity-postgres:
     image: postgres:17-alpine
     environment:
-      POSTGRES_USER: identity
-      POSTGRES_PASSWORD: identity
-      POSTGRES_DB: identity
+      # `postgres`, and that is the whole of the reason the superuser cannot be
+      # named after a service. The official image creates `POSTGRES_USER` as a
+      # superuser BEFORE any init script runs, and kit's script then does
+      # `CREATE ROLE <name>` for every name in `KIT_POSTGRES_DATABASES` — so the
+      # old `POSTGRES_USER: identity` would find the role already there and the
+      # whole cluster would refuse to start at initdb:
+      #
+      #   ERROR:  role "identity" already exists
+      #   initdb: /docker-entrypoint-initdb.d/10-cluster.sh: …: exit 3
+      #
+      # `postgres` is the one role name that is NOT in `KIT_POSTGRES_DATABASES`,
+      # which is exactly what makes it the one name that can be this cluster's
+      # administrator. Measured on this machine, both ways: with
+      # `POSTGRES_USER: identity` and kit's script mounted, the container exits
+      # during initdb with `role "identity" already exists` and never opens a
+      # socket.
+      #
+      # It is also a change of what `identity` IS. Before this block, `identity`
+      # was a superuser; kit's script creates it `NOSUPERUSER NOCREATEDB
+      # NOCREATEROLE NOREPLICATION`, which is the role the fleet contract says a
+      # service's migrations run as. That difference is the isolation: a
+      # superuser bypasses row-level security entirely, so the previous shape had
+      # the policies and no enforcement, which is the same defect as having no
+      # policies and is harder to notice because the catalog looks correct.
+      #
+      # `POSTGRES_DB: postgres` for the same reason. The stock maintenance
+      # database already exists, the image has nothing to create, and kit's
+      # closing sweep covers every non-template database including this one.
+      #
+      # `POSTGRES_PASSWORD` is handed to EVERY role kit's script creates, so it
+      # is `identity`'s password too, and identity's `DATABASE_URL` and
+      # `bin/e2e-stack`'s migrate DSN below both carry it. That is kit's stated
+      # position and it is the reason the boundary can be demonstrated by somebody
+      # who knows every password in the cluster: isolation here is by PRIVILEGE
+      # and never by secret.
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+      # THE DECLARATION, and the only line of it a service adds. Each name becomes
+      # a role AND a database owned by that role, plus `<name>_app`, plus the
+      # grants, plus a CONNECTION LIMIT, plus the per-database
+      # `REVOKE ALL … FROM PUBLIC` that is the isolation this whole change exists
+      # to test.
+      #
+      # NO `:-` DEFAULT, and that is the point: a shared fixture that hardcodes one
+      # tenant's name silently provisions that tenant's database for whoever
+      # adopts it. kit's script refuses an empty value with a message naming the
+      # fix, and a default here would defeat that — so this file states the name
+      # and a machine that wants a different stack says so in its own file.
+      #
+      # NO `KIT_POSTGRES_EXTENSIONS` either, and the omission is kit's shape
+      # rather than a smaller one: `create extension` is a CLUSTER decision made
+      # once by the operator, because the extension's control file must be
+      # `trusted` for a non-superuser to install it and pgvector's is not. Nothing
+      # in this stack needs one; `gen_random_uuid()` is in core since PG13.
+      KIT_POSTGRES_DATABASES: identity
     ports:
       # Host side only, and only so `bin/e2e` can prove the database is up
-      # before the service that depends on it. The service reaches postgres on
-      # the compose network.
+      # before the service that depends on it, and so it can run goose against it.
+      # The service reaches postgres on the compose network.
       - "${E2E_IDENTITY_POSTGRES_PORT:-16001}:5432"
     volumes:
       - identity-postgres-data:/var/lib/postgresql/data
+      # KIT'S SCRIPT, MOUNTED AND NOT COPIED, and that is the decision rather than
+      # the convenience. A copy in `e2e/` would be a second opinion about the
+      # isolation contract — the exact thing this change exists to remove — and it
+      # would be a second opinion that quietly stops being true the moment kit's
+      # script changes, with nothing to notice.
+      #
+      # THE DIRECTORY and not the file, which is kit's own shape and the more
+      # robust of the two here. A missing bind source is NOT an error to Docker —
+      # it becomes an EMPTY DIRECTORY, initdb runs no script at all, and the
+      # cluster comes up with its superuser and nothing else while
+      # `docker compose up` exits 0. A per-FILE mount turns a rename or a split of
+      # `10-cluster.sh` into "this cluster provisioned nothing" behind a green
+      # health check; the directory mount picks up whatever kit puts in it.
+      #
+      # `../kit/…` and NOT `./…`, and the reason is mechanical: compose resolves a
+      # relative bind source against the PROJECT DIRECTORY, which `bin/e2e-stack`
+      # pins to the repository ROOT (it has to, so that `context: .` builds this
+      # tree). A path written as if it were relative to this file mounts the wrong
+      # thing, or the empty directory compose created rather than failing.
+      #
+      # WHICH IS WHY `../kit` IS NOW A REQUIRED CHECKOUT of this tier, and the cost
+      # of that is a fact rather than a preference: the stack needs identity and
+      # gateway because of where their image TAGS come from (the registry this run
+      # starts holds nothing), and it now needs kit because of this mount, which
+      # the registry cannot supply. `.github/workflows/e2e.yml` checks kit out
+      # beside the repository and its presence step asserts this file by name, and
+      # `bin/e2e-stack`'s preflight refuses to start a stack whose init script is
+      # not on disk. Between them, "the cluster came up with no roles" becomes a
+      # sentence naming the missing file instead of a 42704 sixty seconds later.
+      - ../kit/templates/compose/postgres/initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
       # `pg_isready` with no -U/-d returns true against any database including
       # the bootstrap one, which is the classic "migrations failed against a
@@ -312,7 +445,30 @@ services:
       LOG_LEVEL: debug
       # Over the compose network, by service name. This is the address the
       # harness proves by making a real registration through it.
-      DATABASE_URL: "postgres://identity:identity@identity-postgres:5432/identity?sslmode=disable"
+      #
+      # THE PASSWORD IS THE CLUSTER'S, not identity's. kit's script hands
+      # `$POSTGRES_PASSWORD` to every role it creates — `identity`, `identity_app`
+      # and the admin alike — so with `POSTGRES_PASSWORD: postgres` above, this is
+      # `postgres`. It reads oddly for a role called `identity`, and it is the
+      # change that would be the first thing somebody "tidies" back into an
+      # invented password: a password nobody created is a connection refused, and
+      # the symptom would be identity's `/readyz` reporting its database
+      # unavailable, which reads like a network fault rather than a credential.
+      #
+      # IT CONNECTS AS THE OWNER, `identity`, and not as `identity_app`. kit's
+      # README §Adopting step 2 asks a service to point its application at the
+      # non-owner role, and this stack does not, so the process that serves the
+      # browser holds the one privilege the substrate exists to take away from it:
+      # it could `ALTER TABLE account_users DISABLE ROW LEVEL SECURITY`. What
+      # still holds is what `FORCE` buys, and it is measured rather than assumed —
+      # run as `identity` with an account identity set, a session reads its own
+      # account's row and not another's, and with no identity set it reads zero
+      # (see HANDOFF-parlor-e2e-protect-table-01.md §3). The remaining gap is the
+      # ability to remove the policies, and closing it means editing identity's
+      # `DATABASE_URL`, which is a sibling repository this one may not modify; it
+      # is DECISION NEEDED in the handoff rather than quietly fixed by pointing
+      # this stack at a role identity's own compose does not use.
+      DATABASE_URL: "postgres://identity:postgres@identity-postgres:5432/identity?sslmode=disable"
       # OIDC is deliberately OFF here, and that is a fact about this stack
       # rather than an omission: identity refuses to boot unless OIDC_ISSUER,
       # OIDC_SIGNING_KEY and OIDC_SIGNING_KEY_ID are all set or all unset

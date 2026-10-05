@@ -6,6 +6,83 @@ All notable changes to parlor are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **The end-to-end tier runs past its migrations, so the row-level-security
+  boundary it was assembled to test is now enforcing rather than merely
+  declared.** The tier was red at `../identity/migrations/00016_account_isolation.sql`
+  with `ERROR: cafaye.protect_table(account_users, identity_app): identity_app is
+  not a LOGIN role on this cluster. (SQLSTATE 42704)`, reproduced on this machine
+  against a container built exactly the way `e2e/docker-compose.yml` described it,
+  message and SQLSTATE included.
+
+  The cluster block mounted **nothing** over `/docker-entrypoint-initdb.d`, so
+  kit's `templates/compose/postgres/initdb/10-cluster.sh` — the only thing in the
+  fleet that provisions a service's owner role and its non-owner `_app` login —
+  never ran, and the cluster held exactly one role. `POSTGRES_USER`/`POSTGRES_DB`
+  are now `postgres` (the image creates `POSTGRES_USER` as a superuser *before*
+  initdb, so `identity` would collide with kit's `CREATE ROLE` and the cluster
+  would refuse to start), `KIT_POSTGRES_DATABASES=identity` declares the tenant,
+  and the script is **mounted rather than copied** — a copy would be a second
+  opinion about the isolation contract that stops being true the moment kit's
+  script changes.
+
+  **What changed underneath is the security-relevant half, and it was not in the
+  brief: `identity` is no longer a superuser.** kit creates it `NOSUPERUSER
+  NOCREATEDB NOCREATEROLE`, and **a superuser bypasses row-level security
+  entirely** — so the old arrangement had the policies and no enforcement, the
+  same defect as having no policies and harder to notice, because
+  `relrowsecurity` and `relforcerowsecurity` both read `true` in the catalog.
+  Measured on the running tier: each account's session reads its own membership
+  and not another's, an owner with no identity reads 0 rows, and `identity_app`
+  is refused `ALTER TABLE … DISABLE ROW LEVEL SECURITY`, `DROP POLICY` and
+  `CONNECT` on any database `PUBLIC` no longer holds.
+
+  **The migration was not made tolerant.** Passing an explicit role, skipping the
+  `protect_table` call, or catching the exception would each have turned a cluster
+  that is not wired correctly into a stack that boots — with the isolation this
+  whole arrangement exists to prove silently absent while the suite went green.
+  A fix that removed the boundary would have satisfied the suite by deleting the
+  thing the suite tests.
+
+  **`../kit` is now a required checkout, and it is not a sibling**: nothing is
+  built from it, nothing is pushed from it, and it is not in `SIBLING_SERVICES` —
+  an entry there would send `publish_siblings` looking for a build recipe and kill
+  the default path. It is required by a bind mount, and Docker mounting a missing
+  bind source as an **empty directory** is what makes that silent: initdb runs no
+  script, the cluster comes up healthy, and the failure is a 42704 about a *role*
+  sixty seconds later. So it is asserted twice, in the e2e job and in
+  `bin/e2e-stack`'s new `check_cluster_initdb`, the second reading the mount out
+  of the compose document so the two cannot drift.
+
+  **The tier now runs 26 tests for the first time: 22 pass, 4 fail**, and none of
+  the four is a cluster fault. Two are a **real defect in `identity`** this fix
+  unmasked — `ListMine` reads `account_users` through a bare pool rather than
+  `TxRunner`, so it carries no account identity and reads zero rows now that
+  `FORCE` is enforced; `identity`'s own CI runs `identity` as a superuser too and
+  hides it there. Two are a pre-existing defect in this repository's router:
+  `src/routes/verify-email.tsx` declares a `component` and no `<Outlet />`, so
+  `/verify-email/confirm` is served the index screen's body. Both are written up
+  in `HANDOFF-parlor-e2e-protect-table-01.md` §4 and §5 rather than patched — one
+  is a sibling repository, the other belongs to whoever owns the screens. The three
+  social tests `parlor-e2e-social-01` added all pass against the fixed cluster.
+
+  **The stated gap:** identity's `DATABASE_URL` names the **owner** rather than
+  `identity_app`, so the process serving the browser can disable RLS on its own
+  tables. `FORCE` still holds the rows; the ability to remove the policies does
+  not. DECISION NEEDED in identity.
+
+### Changed
+
+- **`cafaye.yml` no longer describes the app as Next.js.** It is TanStack Start on
+  Cloudflare Workers: no `next` dependency, `dev`/`build` are `vite dev` and
+  `vite build`. The second of the two claims was the more consequential — the file
+  said "the routes are Next.js App Router files, so the router is the source of
+  truth", and the router is now `src/routeTree.gen.ts`, which is **committed**
+  rather than produced by a build, so the sentence points at something a reader
+  can open and check a route against. Same correction `site` made to its
+  `config/deploy.yml` in `site-cloudflare-workers-01`.
+
 ### Added
 
 - **The social round trip, from a button to a page.** The transport packet made
