@@ -6,6 +6,29 @@ All notable changes to parlor are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **parlor emits real telemetry.** It had zero otel references. One server span
+  per request now opens in `src/lib/telemetry.ts` via the framework's global
+  request middleware (`src/start.ts`), named `parlor.request` per core's
+  span-name grammar, carrying the ROUTE TEMPLATE as `http.route` rather than a
+  path with ids in it, with `service.name` / `service.version` /
+  `deployment.environment` / `tenant_id` on the RESOURCE. Inbound W3C
+  `traceparent` is continued; a missing or malformed one starts a new trace and
+  never becomes a 4xx. `src/lib/telemetry.test.ts` holds 42 tests over the
+  no-op, the span, and the propagation.
+
+  **OTel SDK pinned to `@opentelemetry/api` 1.9.1, `core` / `resources` /
+  `sdk-trace-base` 2.11.0, `exporter-trace-otlp-proto` 0.222.0** — in place of
+  kit's `pins.md` node row, which cannot be installed: it names
+  `@opentelemetry/api@2.0.0` (the package has no 2.x; latest is 1.9.1), and
+  `exporter-trace-otlp-proto@0.57.0` pins `sdk-trace-base@1.30.0` against the
+  2.0.0 named beside it. pins.md's own rule ("these are placeholders; a service
+  pins to the version it deploys, and records the choice here") authorises the
+  bump. The measurements, and three further defects in kit's
+  `hono.ts.snippet` — including a `defaultTextMapGetter` that silently discards
+  every inbound `traceparent` — are in `HANDOFF-otel-01.md` §2.
+
 ### Fixed
 
 - **`ci (kit, node) / node` is green: 335 lint errors → 0.** kit's shared `node`
