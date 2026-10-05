@@ -49,6 +49,12 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# …and the opt-in, named, because `.env*` above matches `.env.example` too and a
+# `git add .env.example` on a file git considers ignored says NOTHING — no
+# error, no hint — while the clone has no example and the commit looks like it
+# worked. `.env.example` is the file a contributor copies to `.env`; the local
+# `.env` it produces stays ignored, which is the whole of what this line buys.
+!.env.example
 
 # vercel
 .vercel

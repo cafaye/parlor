@@ -8,6 +8,41 @@ All notable changes to parlor are recorded here. The format follows
 
 ### Added
 
+- **The BFF's forwarded fetch joins the trace** (`worker/parlor-otel-02`).
+  `src/lib/upstream.ts` now calls `tracedFetch`, so every hop this app makes to
+  `identity` or `billing` opens one CLIENT span parented to the request's SERVER
+  span and carries a `traceparent` naming that client span. A browser → parlor →
+  identity round trip is ONE trace in HyperDX rather than three, and the
+  upstream's own server span is the next hop of it. The forwarder's own answers
+  are untouched: the destination, the rebuilt path, the header allow-lists,
+  `redirect: "manual"` and the fixed 502 are all decided before this call, and
+  `fetchImpl` is passed through so `upstream.test.ts`'s recorder still sees
+  every hop without a socket. Eight tests in
+  `src/lib/upstream.telemetry.test.ts` prove the child relationship, the header
+  on the wire, and that telemetry off answers identically with zero spans.
+
+- **A context manager, which is what makes the above possible.**
+  `@opentelemetry/context-async-hooks@2.11.0` is installed and `install()`
+  registers an `AsyncLocalStorageContextManager`. Without one,
+  `context.active()` is `ROOT_CONTEXT` for the life of the process,
+  `context.with()` is a no-op, and every client span is a ROOT span with a fresh
+  trace id — a trace view full of unrelated single-span traces, each carrying the
+  right `service.name`, which is indistinguishable from a healthy service. The
+  blocking question in `HANDOFF-otel-01.md` §4 is answered by the ruling that
+  this service runs SSR + a fetch-forwarding BFF on Node, and measured on the
+  BUILT Node server: `GET /v1/me` with an inbound `traceparent` exported two
+  spans under that trace id and the fake upstream received
+  `traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-<client span id>-01`.
+  Registered on the ENABLED path only, so the no-op boot still allocates nothing.
+
+- **`.env.example` is actually IN the tree.** The previous telemetry commit's
+  message says `.env.example new`, and `git log -- .env.example` agrees with it,
+  but `git ls-files` did not list the file: `.gitignore`'s `.env*` matched it and
+  `git add` on an ignored file says nothing at all — no error, no hint. A named
+  `!.env.example` line fixes it. The file's content is the "service env" block
+  from `kit/templates/compose/.env.example`; the local `.env` a contributor
+  copies from it stays ignored, which is the whole of what the line buys.
+
 - **parlor emits real telemetry.** It had zero otel references. One server span
   per request now opens in `src/lib/telemetry.ts` via the framework's global
   request middleware (`src/start.ts`), named `parlor.request` per core's
