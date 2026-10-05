@@ -175,6 +175,25 @@ export const MAX_REQUEST_BODY_BYTES = 4 << 10;
  * have thought of the four the clients actually send. A header this file does
  * not name cannot be a smuggling channel, which is a property a deny list never
  * has.
+ *
+ * ---------------------------------------------------------------------------
+ * `traceparent` CROSSES AND IS NOT ON THIS LIST, and that is not an exception
+ * ---------------------------------------------------------------------------
+ * `tracedFetch` adds it below, on the way out. It is the ONE header this file
+ * puts on the wire that it did not receive, so it needs saying plainly why that
+ * is different from a caller choosing what crosses:
+ *
+ *   * It is DERIVED, not received. A caller's `traceparent` is not on this list
+ *     and does not cross — a caller cannot put its own span id on an upstream
+ *     request, forge a parent, or splice itself into a trace it does not belong
+ *     to. The value that crosses is this hop's own span id, minted here.
+ *   * It carries no address, no credential and no caller text. It is 55 hex
+ *     characters of this app's own doing, so there is nothing in it to smuggle
+ *     and nothing in it to leak.
+ *
+ * A reader who finds `traceparent` on the wire and not on this list can now tell
+ * which of the two it is by asking where the value came from, which is the
+ * question the rest of this file is built on.
  */
 export const FORWARDED_REQUEST_HEADERS = [
   "authorization",

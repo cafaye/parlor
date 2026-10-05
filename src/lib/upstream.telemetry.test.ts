@@ -266,6 +266,38 @@ describe("the forwarded fetch joins the trace", () => {
     expect(serverSpanFor(exporter)!.attributes["error.type"]).toBe("dependency_unavailable");
   });
 
+  it("does NOT forward the CALLER's traceparent, only its own", async () => {
+    installTracerForTest();
+    const { forward, hops } = forwarder();
+
+    const { traceRequest } = await import("./telemetry");
+    await traceRequest(
+      new Request("http://parlor.test/v1/me", {
+        headers: { traceparent: `00-${INBOUND_TRACE_ID}-${INBOUND_SPAN_ID}-01` },
+      }),
+      () =>
+        forward(
+          // A CALLER trying to name its own parent on the upstream hop.
+          new Request("http://parlor.test/v1/me", {
+            headers: {
+              traceparent:
+                "00-deadbeefdeadbeefdeadbeefdeadbeef-1111111111111111-01",
+            },
+          }),
+          ["me"],
+        ),
+    );
+
+    // `traceparent` crosses because this hop derives it, not because the caller
+    // sent one — so the value on the wire is this app's, under this app's trace
+    // id, naming this app's client span. A forged parent reaching identity would
+    // put an arbitrary caller's span at the head of a trace in a shared backend.
+    const traceparent = hops[0].headers["traceparent"];
+    expect(traceparent).toMatch(new RegExp(`^00-${INBOUND_TRACE_ID}-[0-9a-f]{16}-01$`));
+    expect(traceparent).not.toContain("deadbeef");
+    expect(traceparent).not.toContain("1111111111111111");
+  });
+
   it("sends no traceparent when the caller sent none", async () => {
     installTracerForTest();
     const { forward, hops } = forwarder();

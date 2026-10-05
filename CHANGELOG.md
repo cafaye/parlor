@@ -8,6 +8,13 @@ All notable changes to parlor are recorded here. The format follows
 
 ### Added
 
+- **A `traceparent` this hop derives, and nothing a caller chose.** A caller
+  cannot put its own parent on an upstream request: `traceparent` is not on
+  `FORWARDED_REQUEST_HEADERS`, and the header that crosses is minted from this
+  app's own client span. `upstream.ts`'s header says why the two cases differ and
+  `upstream.telemetry.test.ts` proves it with a forged `deadbeef…` parent that
+  does not reach the upstream.
+
 - **The BFF's forwarded fetch joins the trace** (`worker/parlor-otel-02`).
   `src/lib/upstream.ts` now calls `tracedFetch`, so every hop this app makes to
   `identity` or `billing` opens one CLIENT span parented to the request's SERVER
