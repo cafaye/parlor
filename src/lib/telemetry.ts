@@ -33,14 +33,16 @@
  *      not Next.js, so there is no `register()` to call.
  *   2. The route template is resolved by `routeTemplate()` below rather than by
  *      Hono's `c.req.routePath`, for the same reason.
- *   3. `tracedFetch` is exported but the forwarder in `src/lib/upstream.ts`
- *      does NOT use it yet — wiring it there is a change to the one file in this
- *      repository whose security properties are the deployment's, and it is a
- *      separate packet. Noted in the report rather than done quietly.
+ *   3. `tracedFetch` is called by the forwarder in `src/lib/upstream.ts`, which
+ *      had a `fetchImpl` seam for exactly this: the forwarder now opens one
+ *      CLIENT span per hop through it and takes the seam as its last argument,
+ *      so `upstream.test.ts`'s recorder is still the thing under test and no
+ *      socket is opened by the suite.
  */
 
 import {
   context,
+  isSpanContextValid,
   propagation,
   SpanKind,
   SpanStatusCode,
@@ -50,6 +52,7 @@ import {
   type TextMapGetter,
   type TextMapSetter,
 } from "@opentelemetry/api";
+import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
 import { W3CTraceContextPropagator } from "@opentelemetry/core";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
 import { resourceFromAttributes } from "@opentelemetry/resources";
@@ -193,6 +196,29 @@ export function install(): void {
   // wrote down breaks silently when something changes it.
   trace.setGlobalTracerProvider(provider);
   propagation.setGlobalPropagator(new W3CTraceContextPropagator());
+
+  // The CONTEXT MANAGER, and this is the line that makes `context.active()` mean
+  // anything. SDK 2.x removed `provider.register()`, which used to install one,
+  // so without this `context.active()` is `ROOT_CONTEXT` for the life of the
+  // process: `context.with()` is a no-op and a client span started under it is a
+  // ROOT span, whose trace id is a fresh one and whose parent is nobody. The
+  // symptom is a trace view full of single-span traces across services that were
+  // called synchronously from each other — and every hop reporting `service.name`
+  // correctly, so nothing looks broken.
+  //
+  // Installed ONLY on the enabled path. On the disabled path there is no provider,
+  // no span and no ambient context to carry, so the no-op boot stays free: this
+  // is `node:async_hooks` behind `AsyncLocalStorage`, and a no-op that opens an
+  // async-context store on boot is not the no-op the packet asks for.
+  //
+  // WHY IT IS SAFE HERE, which was the blocking question in
+  // HANDOFF-otel-01.md §4: this repository's serving runtime is Node —
+  // `vite.node.config.mts` / the Dockerfile / `config/deploy.yml` all target it —
+  // and `node:async_hooks` is core there. `compatibility_flags:
+  // ["nodejs_compat"]` in `wrangler.jsonc` is what keeps that true for the
+  // Cloudflare target `npm run build` still emits. Measured, not assumed: see the
+  // report.
+  context.setGlobalContextManager(new AsyncLocalStorageContextManager().enable());
 }
 
 /** Flush before the process exits, or the last batch is lost. */
@@ -480,57 +506,130 @@ export function traceRequest(
   });
 }
 
+/** The emitting service's outbound hop. `<service>.<operation>`. */
+export const CLIENT_SPAN_NAME = `${SERVICE_NAME}.upstream`;
+
 /**
- * An outbound fetch that carries a trace forward.
+ * An outbound fetch: one CLIENT span, a `traceparent` on the wire, and a
+ * failure the trace can see.
  *
  * ---------------------------------------------------------------------------
- * WHY THIS TAKES THE CONTEXT AS AN ARGUMENT
+ * THE PARENT, AND WHY IT IS THE RUNNING REQUEST'S SPAN
  * ---------------------------------------------------------------------------
- * The idiomatic form is `propagation.inject(context.active(), …)`, which reads
- * whatever span the ambient context manager made current. That works only if a
- * CONTEXT MANAGER is installed, and SDK 2.x removed the `provider.register()`
- * that used to install one — so on these versions `context.active()` returns
- * ROOT_CONTEXT, `context.with()` is a no-op, and the idiomatic form injects
- * NOTHING while looking exactly like it worked.
+ * A caller may name the parent explicitly; otherwise it is `context.active()`,
+ * which with the context manager installed in `install()` is the SERVER span of
+ * the request currently being served. That is what makes a browser → parlor →
+ * identity round trip read as ONE trace: the client span's parent is the server
+ * span, and the `traceparent` on the wire carries that server span's own id, so
+ * identity's server span becomes the next hop rather than a second trace.
  *
- * Measured rather than assumed:
- * `context.with(trace.setSpan(ctx, span), () =>
- *    trace.getSpanContext(context.active()))`
- * returns `undefined` with no context manager registered.
+ * The explicit parameter is kept for a caller that has a context in hand and no
+ * ambient one — a test, or a caller that started its own span. It is a
+ * parameter rather than only the ambient read because a caller with NO context
+ * is a caller who sees no header, at the call site, rather than discovering it
+ * as two unrelated traces in a trace view.
  *
- * So this takes the context explicitly. A parameter cannot be forgotten
- * silently: a caller with no context is a caller who sees no header, at the
- * call site, rather than discovering it as two unrelated traces in a trace view.
+ * ---------------------------------------------------------------------------
+ * WHY NO CLIENT SPAN WITHOUT A PARENT
+ * ---------------------------------------------------------------------------
+ * With no parent anywhere, this makes a plain `fetch` with no header and no
+ * span. The alternative — start a ROOT client span — invents a trace for a hop
+ * that belongs to somebody else's, which is the same class of silent
+ * mis-parenting as the `defaultTextMapGetter` defect in this file's header: it
+ * exports something plausible, `service.name` is right, and the trace view fills
+ * with unrelated single-span traces. A hop with no parent is a hop inside no
+ * trace, and saying so is the honest reading.
  *
- * Installing a context manager is a separate decision, not taken here.
- * `@opentelemetry/context-async-hooks` — and the `@opentelemetry/sdk-trace-node`
- * that bundles it — is built on `node:async_hooks`, and this app's DEFAULT build
- * target is a Cloudflare Worker. That is a packaging question about two
- * runtimes rather than an observability one, and it belongs with the packet that
- * wires this into `src/lib/upstream.ts`.
- *
- * Not yet used by the forwarder — see the header's item 3.
+ * On the DISABLED path this is what happens anyway: with no provider
+ * registered, `tracer.startSpan` returns a non-recording span whose context is
+ * invalid, `isSpanContextValid` is false, and nothing is created or injected.
+ * The no-op costs one function call and no allocation.
  */
 export async function tracedFetch(
   input: string | URL | Request,
   spanContext: SpanContext | undefined,
   init: RequestInit = {},
+  fetchImpl: typeof fetch = fetch,
 ): Promise<Response> {
+  const parent = spanContext ?? trace.getSpanContext(context.active());
   const headers = new Headers(init.headers);
-  // headersSetter, for the same reason as headersGetter: the default setter
-  // writes carrier[key] = value, which puts a `traceparent` PROPERTY on a
-  // Headers object that fetch then does not send.
-  if (spanContext) {
+
+  if (!parent || !isSpanContextValid(parent)) return fetchImpl(input, { ...init, headers });
+
+  const tracer = trace.getTracer(SERVICE_NAME);
+  const span = tracer.startSpan(
+    CLIENT_SPAN_NAME,
+    {
+      kind: SpanKind.CLIENT,
+      attributes: methodAttribute(init.method),
+    },
     // `trace.wrapSpanContext` — not `trace.setSpan`, which stores whatever it is
     // given and is read back with `.spanContext()`, so handing it a bare
     // SpanContext throws `spanContext is not a function`. Wrapping gives a
     // non-recording Span, which is exactly what is wanted here: this context
-    // exists to be INJECTED, not to record anything.
+    // exists to be PARENTED to, not to record anything.
+    //
+    // AND THE WRAPPING IS INSIDE `setSpan`, because `startSpan`'s third argument
+    // is a CONTEXT and not a parent: handing it the non-recording Span directly
+    // makes the SDK call `context.getValue(...)` on it, which throws
+    // `context.getValue is not a function` — the failure this was measured by.
+    trace.setSpan(context.active(), trace.wrapSpanContext(parent)),
+  );
+
+  try {
+    // The CHILD's context is what goes on the wire, not the parent's: the
+    // upstream's server span must hang off this hop, so identity's span is a
+    // grandchild of this app's server span and the whole thing is one trace.
+    //
+    // headersSetter, for the same reason as headersGetter: the default setter
+    // writes carrier[key] = value, which puts a `traceparent` PROPERTY on a
+    // Headers object that fetch then does not send.
     propagation.inject(
-      trace.setSpan(context.active(), trace.wrapSpanContext(spanContext)),
+      trace.setSpan(context.active(), span),
       headers,
       headersSetter,
     );
+    const response = await fetchImpl(input, { ...init, headers });
+    span.setAttribute("http.response.status_code", response.status);
+    if (response.status >= 500) {
+      recordFailure(span, errorTypeFor(response.status), staticDescription(response.status));
+    } else {
+      span.setStatus({ code: SpanStatusCode.OK });
+    }
+    span.end();
+    return response;
+  } catch (thrown) {
+    // A STATIC description, never the thrown error's message: a fetch failure
+    // message is `connect ECONNREFUSED 10.0.3.7:8080`, which is the fleet's
+    // internal topology, and `error.type` is the closed vocabulary's answer to
+    // the same question without the message.
+    recordFailure(span, errorTypeFor(0, thrown), "upstream hop failed");
+    span.end();
+    throw thrown;
   }
-  return fetch(input, { ...init, headers });
 }
+
+/**
+ * `http.request.method` for an outbound init, or nothing.
+ *
+ * `fetch` defaults to `GET` when no method is given, and the attribute is
+ * enumerated in core's schema — so the default is spelled rather than left
+ * absent, because a client span that says nothing about what it sent is a span
+ * that cannot answer "which verb was this".
+ */
+function methodAttribute(method: string | undefined): Record<string, string> {
+  const verb = (method ?? "GET").toUpperCase();
+  return ALLOWED_METHODS.has(verb) ? { "http.request.method": verb } : {};
+}
+
+/** core's `http.request.method` enum, so the attribute cannot carry a typo. */
+const ALLOWED_METHODS = new Set([
+  "GET",
+  "POST",
+  "PUT",
+  "PATCH",
+  "DELETE",
+  "HEAD",
+  "OPTIONS",
+  "TRACE",
+]);

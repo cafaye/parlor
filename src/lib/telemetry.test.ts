@@ -32,6 +32,7 @@ import {
 import {
   context,
   propagation,
+  ROOT_CONTEXT,
   SpanKind,
   SpanStatusCode,
   trace,
@@ -158,6 +159,28 @@ describe("1. the no-op path", () => {
     );
     expect(response.status).toBe(200);
     await expect(response.text()).resolves.toBe("ok");
+  });
+
+  it("installs a CONTEXT MANAGER, which is what makes context.active() mean anything", async () => {
+    // Asserted through `context.with`, and this is the only assertion in the
+    // suite that can catch the line being removed — which it was, by measurement:
+    // deleting the `setGlobalContextManager` call left all 49 tests green, because
+    // the client-span tests install their own manager rather than going through
+    // `install()`. That asymmetry is deliberate (the globals are irreversible, so
+    // the two setups cannot share a file) and it means this line has to be proved
+    // here or not at all.
+    //
+    // The marker is a value no OTel API reads, so what is being asserted is the
+    // MANAGER and not a particular context: `ROOT_CONTEXT` carrying a value is
+    // returned unchanged by the API's `NoopContextManager` and by nothing else.
+    //
+    // No span is started here, so nothing reaches the batch processor and the
+    // shutdown below has nothing to export — `install()` builds a real
+    // `OTLPTraceExporter`, and a test must not put one on the wire.
+    install();
+    const marker = ROOT_CONTEXT.setValue(Symbol("parlor.telemetry.test"), "inside");
+    expect(context.with(marker, () => context.active())).toBe(marker);
+    await shutdown();
   });
 
   it("is idempotent: a second install does not fight the first", async () => {
@@ -432,12 +455,27 @@ describe("3. W3C trace context", () => {
     }
     // A bare fetch breaks the trace at that hop, silently and permanently, with
     // no error anywhere to grep for.
-    expect(seen[0]).toBe(`00-${INBOUND.traceId}-${INBOUND.spanId}-01`);
-    expect(exporter.getFinishedSpans()).toHaveLength(1);
+    //
+    // THE TRACE ID, not the whole header. The parent-id on the wire is this
+    // hop's CLIENT span, not the span handed in: the upstream's span has to hang
+    // off the hop that actually called it, or the client span is a leaf with no
+    // relationship to anything downstream. This assertion was the whole string
+    // before the client span existed and had to change with it — the trace id is
+    // the part that is still the same, and it is the part that decides whether
+    // this is one trace or two.
+    expect(seen[0]).toMatch(new RegExp(`^00-${INBOUND.traceId}-[0-9a-f]{16}-01$`));
+    // Two spans now, not one: the server span and the client span it parented.
+    const spans = exporter.getFinishedSpans();
+    expect(spans).toHaveLength(2);
+    const client = spans.find((span) => span.kind === SpanKind.CLIENT)!;
+    expect(client.parentSpanContext?.spanId).toBe(INBOUND.spanId);
+    expect(seen[0]).toBe(
+      `00-${INBOUND.traceId}-${client.spanContext().spanId}-01`,
+    );
   });
 
   it("injects NOTHING when handed no context, rather than inventing a trace", async () => {
-    installTracerForTest();
+    const exporter = installTracerForTest();
     const seen: string[] = [];
     const original = globalThis.fetch;
     globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) => {
@@ -450,6 +488,10 @@ describe("3. W3C trace context", () => {
       globalThis.fetch = original;
     }
     expect(seen[0]).toBe("<none>");
+    // And no CLIENT span either. A root client span would be a trace invented
+    // for a hop that belongs to somebody else's — the same silent
+    // mis-parenting as the getter defect, with `service.name` still right.
+    expect(exporter.getFinishedSpans()).toHaveLength(0);
   });
 
   it("keeps an inbound caller's trace id across the whole request", async () => {

@@ -160,7 +160,7 @@ the life of the container.
 
 ---
 
-## 4. THE SUCCESSOR'S FIRST MOVE
+## 4. THE SUCCESSOR'S FIRST MOVE — **DONE, in `worker/parlor-otel-02`**
 
 **Wire `tracedFetch` into `src/lib/upstream.ts`.** It is the only remaining way
 this service breaks a trace, and it is the thing that makes a browser → parlor →
@@ -171,29 +171,51 @@ repository whose properties ARE the deployment's security properties (its own
 header says a forwarder that gets them wrong is an open proxy). Changing its
 `fetch` is not an observability edit.
 
-The shape:
+**WHAT THE SUCCESSOR FOUND, so nobody re-derives it.** The context manager
+question is settled: `@opentelemetry/context-async-hooks@2.11.0` is installed and
+`install()` registers an `AsyncLocalStorageContextManager`, on the ENABLED path
+only. The premise of the question below is no longer true — the user ruled that
+this service runs SSR + a fetch-forwarding BFF on **Node**, so `node:async_hooks`
+is core there. Both builds still pass (`npm run build`, `npm run build:node`),
+and `nodejs_compat` in `wrangler.jsonc` keeps the Cloudflare target honest.
 
-```ts
-const span = trace.getActiveSpan();          // …needs a context manager, see below
-const response = await tracedFetch(url, span?.spanContext(), { …existing init });
+The shape was the one written above and it is the shape that shipped, with two
+changes worth knowing:
+
+* `tracedFetch` opens the CLIENT span itself rather than taking a pre-started
+  one. `startSpan`'s third argument is a **Context**, not a parent — handing it a
+  bare `SpanContext` (or the `NonRecordingSpan` from `wrapSpanContext`) throws
+  `context.getValue is not a function`. It is `trace.setSpan(context.active(),
+  trace.wrapSpanContext(parent))`.
+* What goes on the wire is the **client span's** context, not the parent's.
+  Injecting the parent's makes the upstream's server span a SIBLING of the hop
+  that called it rather than its child.
+
+Measured on the built Node server with a fake upstream and a fake collector:
+
 ```
-
-Which needs the **context manager** question answered: install
-`@opentelemetry/context-async-hooks` (it is `node:async_hooks`), or thread the
-span context down explicitly. This app's **default build target is a Cloudflare
-Worker** (`vite.config.mts` puts `cloudflare()` first), and `node:async_hooks`
-is not available in workerd without a compat flag. **Check `npm run build` and
-`npm run build:node` both still pass** before choosing — that is the whole of
-the trade.
+GET /v1/me   traceparent: 00-4bf92f...-00f067aa0ba902b7-01        -> 200
+upstream received  traceparent: 00-4bf92f...-51373a585120eebe-01
+exported          two spans, both under 4bf92f…, named
+                  `parlor.request` (SERVER) and `parlor.upstream` (CLIENT)
+```
 
 Then, in order:
 
-1. `config/deploy.yml` — the sixth difference, once §3 is decided.
+1. `config/deploy.yml` — the sixth difference, once §3 is decided. NOT touched by
+   `parlor-otel-02`, deliberately: it is a deploy contract, not an observability
+   edit, and the packet named it as flagged-not-fixed.
 2. `e2e/docker-compose.yml` — uncomment the telemetry block **and** add a
    collector to the `platform` network, if the tier should assert it.
 3. `src/app/readyz/route.ts` — still `deps: "none"`. A real dependency check is
    its own packet (AGENTS.md), and telemetry is not obviously one: a slow
    collector must not mean "not ready".
+
+**AND ONE MORE, found by the successor:** `.env.example` was added by `2a0fa90`
+and is NOT in the tree. `.gitignore`'s `.env*` matched it, and `git add` on an
+ignored file says nothing — no error, no hint. Fixed by a named `!.env.example`
+line in `parlor-otel-02`. Worth knowing as a class: a commit message that claims
+a file is not evidence that the file is there.
 
 ---
 

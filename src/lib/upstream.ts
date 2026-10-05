@@ -125,6 +125,21 @@
  * "Sessions".
  */
 
+/**
+ * Telemetry, for the trace forward.
+ *
+ * Imported here and nowhere else in this file's module graph below, because the
+ * forwarder is the only outbound HTTP hop this app makes and it is therefore the
+ * only place a trace can be continued. `tracedFetch` is called with the forwarder's
+ * own `fetchImpl`, so nothing about this file's security properties changes: the
+ * destination, the path, the method, the header allow-lists and the redirect
+ * handling are all decided above this call and none of them is visible to it.
+ *
+ * The dependency runs the other way too — `telemetry.ts` does not import this
+ * file — so there is no cycle to reason about.
+ */
+import { tracedFetch } from "@/lib/telemetry";
+
 /** The services this app forwards to. Nothing else is reachable. */
 export type UpstreamName = "identity" | "billing";
 
@@ -160,6 +175,25 @@ export const MAX_REQUEST_BODY_BYTES = 4 << 10;
  * have thought of the four the clients actually send. A header this file does
  * not name cannot be a smuggling channel, which is a property a deny list never
  * has.
+ *
+ * ---------------------------------------------------------------------------
+ * `traceparent` CROSSES AND IS NOT ON THIS LIST, and that is not an exception
+ * ---------------------------------------------------------------------------
+ * `tracedFetch` adds it below, on the way out. It is the ONE header this file
+ * puts on the wire that it did not receive, so it needs saying plainly why that
+ * is different from a caller choosing what crosses:
+ *
+ *   * It is DERIVED, not received. A caller's `traceparent` is not on this list
+ *     and does not cross — a caller cannot put its own span id on an upstream
+ *     request, forge a parent, or splice itself into a trace it does not belong
+ *     to. The value that crosses is this hop's own span id, minted here.
+ *   * It carries no address, no credential and no caller text. It is 55 hex
+ *     characters of this app's own doing, so there is nothing in it to smuggle
+ *     and nothing in it to leak.
+ *
+ * A reader who finds `traceparent` on the wire and not on this list can now tell
+ * which of the two it is by asking where the value came from, which is the
+ * question the rest of this file is built on.
  */
 export const FORWARDED_REQUEST_HEADERS = [
   "authorization",
@@ -521,7 +555,20 @@ export function createUpstreamForwarder(options: UpstreamOptions): UpstreamForwa
 
     let upstream: Response;
     try {
-      upstream = await fetchImpl(url, {
+      // `tracedFetch` rather than `fetchImpl` directly, and the ONLY difference
+      // is what leaves this process: one CLIENT span, and a `traceparent` naming
+      // this hop's server span so the upstream's own span continues the trace
+      // instead of starting a second one. Everything below — the method, the
+      // allow-listed headers, the body, `redirect: "manual"` — is unchanged, and
+      // the seam is passed through so `upstream.test.ts`'s recorder still sees
+      // every hop without a socket.
+      //
+      // A failure here marks the CLIENT span and rethrows; the `catch` below
+      // still answers 502 with a fixed body, so a downstream that is down is an
+      // error the trace can see and a response that still leaks nothing. The
+      // SERVER span's own status is not touched by this: `traceRequest` files it
+      // from the status this function returns, and a 502 IS this app's answer.
+      upstream = await tracedFetch(url, undefined, {
         method,
         headers,
         body,
@@ -549,7 +596,7 @@ export function createUpstreamForwarder(options: UpstreamOptions): UpstreamForwa
         // first thing to look at, and the symptom to recognise is a 500 on the
         // social start with no `Location` anywhere in the logs.
         redirect: "manual",
-      });
+      }, fetchImpl);
     } catch {
       // Property 3. The catch is deliberately empty of the error: a fetch failure
       // message is `connect ECONNREFUSED 10.0.3.7:8080`, which is the internal
