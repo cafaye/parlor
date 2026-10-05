@@ -469,17 +469,44 @@ services:
       # is DECISION NEEDED in the handoff rather than quietly fixed by pointing
       # this stack at a role identity's own compose does not use.
       DATABASE_URL: "postgres://identity:postgres@identity-postgres:5432/identity?sslmode=disable"
-      # OIDC is deliberately OFF here, and that is a fact about this stack
-      # rather than an omission: identity refuses to boot unless OIDC_ISSUER,
-      # OIDC_SIGNING_KEY and OIDC_SIGNING_KEY_ID are all set or all unset
-      # (internal/config/config.go, ErrInvalidOIDC — measured, it is the first
-      # thing this stack did when it was brought up with only a key). Turning it
-      # on needs an https issuer plus a PEM signing key, and neither belongs in
-      # a test fixture. So identity serves its /v1 surface and its probes, and
-      # publishes no key set. The consequence — gateway has no JWKS to verify
-      # against, and no test mints a JWT — is stated in the packet report as the
-      # reason the suite's guard assertions are about readiness and refusal
-      # rather than about a verified token.
+      # OIDC is ON, and it is ON because the gateway made it non-optional.
+      #
+      # With this block absent, identity serves its /v1 surface and its probes
+      # and publishes no key set — and the gateway, which is configured below
+      # with `IDENTITY_ISSUER: http://identity:8080`, answers /readyz with
+      # `{"deps":{"identity":"unavailable","redis":"ok"}}` forever. Its identity
+      # probe fetches the issuer's JWKS (internal/httpapi/runtime.go,
+      # keySetProbe), gets a 404 for a path this service does define, and
+      # reports a dependency failure. `bin/e2e-stack up` then spends its whole
+      # readiness budget proving it and brings the tier down without running a
+      # single test.
+      #
+      # The old comment here said the absence was deliberate and argued that an
+      # https issuer plus a PEM key "belong in no test fixture". Both halves of
+      # that were wrong in a way worth recording. `OIDC_ALLOW_INSECURE` exists
+      # for exactly this case — an http issuer on localhost — and the key is
+      # not committed: `bin/e2e-stack` generates one with openssl at bring-up
+      # and hands it to this file through the environment, so no private key
+      # enters the repository and gitleaks has nothing to find.
+      #
+      # `OIDC_ISSUER` is `http://identity:8080` and NOT a published port. It is
+      # the compose service name because the value is identity-context: every
+      # verifier on the platform compares `iss` for equality against the token,
+      # and the gateway's `IDENTITY_ISSUER` below is the same string. A
+      # published port here would produce a discovery document the gateway
+      # rejects.
+      OIDC_ISSUER: "http://identity:8080"
+      OIDC_SIGNING_KEY: "${OIDC_SIGNING_KEY:-}"
+      OIDC_SIGNING_KEY_ID: "e2e-signing-key"
+      # See the paragraph above: this is the localhost case the variable exists
+      # for. It is required, not advisory — identity refuses to boot on an http
+      # issuer without it (internal/config, ErrInsecureOIDCIssuer).
+      OIDC_ALLOW_INSECURE: "true"
+      # Where a browser goes to authenticate. Required whenever the block above
+      # is present, and this is the browser-context origin for the same reason
+      # `OAUTH_REDIRECT_BASE_URL` below is: a page identity redirects to has to
+      # be a page the browser can actually load.
+      OIDC_LOGIN_UI_URL: "http://127.0.0.1:${E2E_EDGE_PORT:-16000}/login"
     # -------------------------------------------------------------------
       # SOCIAL LOGIN — the fake provider, and the seven overrides that make the
       # round trip testable at all
@@ -644,11 +671,14 @@ services:
       # /.well-known/jwks.json itself (identity/internal/oidc/provider.go,
       # PathJWKS; gateway/src/middleware/jwt.ts, JWKS_PATH). This is the shape of
       # the three-process chain: a token minted by identity, checked by gateway,
-      # against a key set fetched from identity. identity publishes no key set
-      # in this stack — see the OIDC note above — so the chain is configured and
-      # its first two hops are asserted (gateway reached identity and redis; gateway
-      # refuses a caller with no credential) and its third hop is not. A test
-      # that cannot be true is worse than a test that is smaller.
+      # against a key set fetched from identity. identity DOES publish a key set in
+      # this stack — see the OIDC note above, which used to say the opposite and
+      # was wrong — so the first two hops are live and asserted (gateway reached
+      # identity and redis; gateway refuses a caller with no credential) while
+      # the third is still unasserted: no test registers an OIDC client and runs
+      # the authorization-code flow, so nothing yet mints a token for gateway to
+      # verify against that key set. A key set that is fetchable is not a key
+      # set that is exercised, and this comment should not imply either.
       IDENTITY_ISSUER: "http://identity:8080"
       # The shared counter store, so gateway's /readyz has a second dependency to
       # report and the shared-allowance path is the one under test.

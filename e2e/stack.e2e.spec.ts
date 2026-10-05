@@ -27,11 +27,16 @@
  *     identity's opaque session token. There is no exchange for it: minting a
  *     JWT means registering an OIDC client as an account owner and running the
  *     authorization-code flow, which is a different packet with its own fixtures.
- *   * **identity publishes no key set in this stack.** Its config refuses to boot
- *     unless `OIDC_ISSUER`, `OIDC_SIGNING_KEY` and `OIDC_SIGNING_KEY_ID` are all
- *     set or all unset, and the issuer has to be https. Turning OIDC on for a
- *     test fixture would mean an https origin and a PEM key checked into a test
- *     harness, which is worse than not having one.
+ *   * **identity publishes a key set, and nothing consumes it.** This used to be
+ *     written the other way round — the block was unset here, on the argument
+ *     that an https issuer plus a PEM key do not belong in a test harness — and
+ *     the gateway made that position untenable: its identity probe fetches the
+ *     issuer's JWKS, so an identity with no key set reports `unavailable` and
+ *     the stack never reaches the tier at all. `bin/e2e-stack` now generates the
+ *     key at bring-up and the OIDC block is set. A key set with no registered
+ *     client and no test that runs the authorization-code flow is still
+ *     unexercised, so the sentence above about minting a JWT is unchanged: the
+ *     JWKS is fetchable, nothing verifies against it yet.
  *
  * So this file asserts the two hops that are real, and the packet report says
  * which hop is missing and why. A test that cannot be true is worse than a test

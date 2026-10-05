@@ -657,6 +657,54 @@ preflight() {
     done
     log "sibling build mode: identity, gateway and oauth-stub will be built from their checkouts"
   fi
+
+  ensure_oidc_signing_key
+}
+
+# ---------------------------------------------------------------------------
+# The OIDC signing key, and why it is generated rather than committed
+# ---------------------------------------------------------------------------
+# identity refuses to boot unless OIDC_ISSUER, OIDC_SIGNING_KEY and
+# OIDC_SIGNING_KEY_ID are all set or all unset, and its well-known routes are
+# mounted only when they are. The gateway's identity readiness probe fetches
+# the issuer's JWKS, so with the block absent the gateway's /readyz reports
+# `{"deps":{"identity":"unavailable"}}` indefinitely and this harness spends its
+# entire readiness budget proving it.
+#
+# So a key is needed, and it is generated here rather than committed for two
+# reasons that are about the repository and not about convenience:
+#
+#   * A committed RSA private key is a private key in a repository. Even a
+#     throwaway one trains every reader — human and scanner — that a PEM in
+#     this tree is unremarkable, and `kit`'s gitleaks gate is right to treat
+#     one as a finding.
+#   * Nothing caches the key set across runs. gateway's JWKS cache is in the
+#     container that fetched it, and a fresh `up` builds fresh containers, so a
+#     key that changes per run costs nothing and a key that never changes would
+#     be a key sitting in git for no benefit.
+#
+# Exporting rather than writing a file is what `e2e/docker-compose.yml` reads:
+# the document interpolates `${OIDC_SIGNING_KEY:-}`, and compose renders a
+# multi-line value as a literal block scalar, so the PEM reaches the container
+# with its newlines intact. An operator who wants a fixed key exports one and
+# this function leaves it alone.
+ensure_oidc_signing_key() {
+  if [ -n "${OIDC_SIGNING_KEY:-}" ]; then
+    return 0
+  fi
+  need openssl "openssl generates identity's OIDC signing key at bring-up."
+  # 2048 is identity's floor (internal/oidc/keys.go, MinKeyBits) and it is the
+  # size every verifier on the platform expects. `-traditional` asks for the
+  # PKCS#1 header, which is the first of the two encodings identity parses; the
+  # default on OpenSSL 3 is PKCS#8 and identity accepts that too, so this is
+  # about the file being readable at a glance rather than about correctness.
+  local generated
+  generated=$(openssl genrsa -traditional 2048 2>/dev/null) \
+    || die "openssl could not generate an OIDC signing key."
+  if [ -z "$generated" ]; then
+    die "openssl produced an empty OIDC signing key."
+  fi
+  export OIDC_SIGNING_KEY="$generated"
 }
 
 # --- the host port a service publishes --------------------------------------
