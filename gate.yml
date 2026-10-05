@@ -445,9 +445,12 @@ gate:
     # decrease-detector and had drifted three above the real count. It is
     # recorded here rather than quietly absorbed, because a floor nobody can
     # reconcile with the summary line is a floor nobody is reading.
+    # 823 IS 781, plus the 42 in `src/lib/telemetry.test.ts`. The floor is a
+    # decrease-detector, so a suite that grew and a floor that did not is a
+    # floor that has stopped detecting anything.
     - id: suite
       match: '^[ ]*Tests[ ]+([0-9]+)[ ]+passed(?![ ]*\|)'
-      minimum: 781
+      minimum: 823
     # The tally `tests/validate-ci.sh` prints, which is the second half of this
     # gate: the checks that the tree still has the shape CI assumes — one
     # runtime pin, `npm ci` and not `npm install`, the gate command, the

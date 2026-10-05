@@ -754,6 +754,26 @@ services:
       # into the browser bundle, which is precisely what this packet removed.
       IDENTITY_URL: "http://identity:8080"
       BILLING_URL: "http://billing:3000"
+      # Telemetry, by the kit convention in
+      # `templates/compose/.env.example`'s "service env" block. `PARLOR_OTEL_ENDPOINT`
+      # is the ONE variable `core/schemas/telemetry/otel-endpoint.schema.json`
+      # names as the contract (`<SERVICE>_OTEL_ENDPOINT`), and this is where the
+      # tier would point it at a collector.
+      #
+      # IT IS COMMENTED OUT rather than pointed at `otel-collector:4318`, and
+      # the reason is that this overlay has no collector in it: the stack's
+      # infrastructure lives in `../kit/templates/compose/docker-compose.yml`
+      # and this file only overlays what `caf dev` cannot express. An endpoint
+      # naming a service that is not on this network would leave the exporter
+      # retrying a name that does not resolve for the life of the container —
+      # invisible in every dashboard, because nothing is being recorded. Turn
+      # it on by uncommenting these AND adding the collector to the `platform`
+      # network; `src/lib/telemetry.ts` needs no change to do it.
+      # OTEL_SERVICE_NAME: "parlor"
+      # PARLOR_OTEL_ENDPOINT: "http://otel-collector:4318"
+      # OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4318"
+      # OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf"
+      # DEPLOYMENT_ENVIRONMENT: "local"
     ports:
       - "${E2E_PARLOR_PORT:-16003}:3000"
     depends_on:
