@@ -53,11 +53,41 @@ import { clearRecordedSessionTokens, recordedSessionTokens } from "./session-tok
 /** Directories a run can write into, relative to the repository root. */
 const SCANNED = ["e2e/.artifacts", "e2e-results.json"];
 
-export default async function globalTeardown(): Promise<void> {
+/**
+ * This script's own output, on stdout.
+ *
+ * NOT `console.log`, and the reason is a policy rather than a workaround: kit's
+ * ESLint config allows `console.warn` and `console.error` and nothing else,
+ * because a `console.log` left in application code is how a debug statement
+ * outlives the debugging. `console.warn` is not available to this script either
+ * — it would be a lie. Every line below reports that a check RAN and passed
+ * ("scanned 6 produced file(s)… none found"), and a run that passed is not a
+ * warning; a log full of warnings is a log nobody reads.
+ *
+ * `process.stdout.write` is what `bin/e2e` and `bin/e2e-stack` already use for
+ * these same `[e2e]` lines — they are `printf` in shell. This is the TypeScript
+ * spelling of the same choice, and it is where a report belongs.
+ */
+function report(line: string): void {
+  process.stdout.write(`[e2e] ${line}\n`);
+}
+
+/**
+ * SYNCHRONOUS, and that is a fact about the work rather than about the type.
+ *
+ * All three checks below read files and shell out with `execFileSync`, so
+ * nothing here has ever been able to suspend — and the `async`/`await` they
+ * carried said otherwise to every reader, which is what
+ * `@typescript-eslint/require-await` is objecting to. Playwright accepts a
+ * teardown that returns `void` or a promise (`globalTeardown?: (config) =>
+ * void | Promise<void>`), so the shorter truthful signature is also the one the
+ * framework documents.
+ */
+export default function globalTeardown(): void {
   try {
     const tokens = recordedSessionTokens();
-    await assertNoTokenInArtifacts(tokens);
-    await assertTheTierRan();
+    assertNoTokenInArtifacts(tokens);
+    assertTheTierRan();
   } finally {
     clearRecordedSessionTokens();
   }
@@ -73,12 +103,12 @@ export default async function globalTeardown(): Promise<void> {
  * scanned, none found" on a run that had just written six traces, every one of
  * them containing the bearer header in full inside `*-trace.network`.
  */
-async function assertNoTokenInArtifacts(tokens: string[]): Promise<void> {
+function assertNoTokenInArtifacts(tokens: string[]): void {
   if (tokens.length === 0) {
     // Nothing was minted, so there is nothing to look for. Saying so is
     // better than passing silently: it is the shape of a run where the auth
     // specs did not execute, and check 2 is what notices that.
-    console.log("[e2e] no session token was minted this run; nothing to scan for");
+    report("[e2e] no session token was minted this run; nothing to scan for");
     return;
   }
 
@@ -121,8 +151,8 @@ async function assertNoTokenInArtifacts(tokens: string[]): Promise<void> {
     );
   }
 
-  console.log(
-    `[e2e] scanned ${filesScanned} produced file(s), archive members included, ` +
+  report(
+    `scanned ${filesScanned} produced file(s), archive members included, ` +
       `for ${needles.length} session token(s): none found`,
   );
 }
@@ -186,7 +216,7 @@ function* walk(path: string): Generator<string> {
  * better than a tier with a counted one, and this config has none: nothing in
  * `bin/e2e` or the specs has a `test.skip` or a conditional `test.fixme`.
  */
-async function assertTheTierRan(): Promise<void> {
+function assertTheTierRan(): void {
   let raw: string;
   try {
     raw = readFileSync("e2e-results.json", "utf8");
@@ -203,13 +233,20 @@ async function assertTheTierRan(): Promise<void> {
     // tell us and that `assert-e2e-ran.mjs` shares: the floor and the skip
     // count, checked here as well so a developer running
     // `npx playwright test` directly still gets them.
-    console.log("[e2e] no report yet; tests/assert-e2e-ran.mjs is the authority on it");
+    report("[e2e] no report yet; tests/assert-e2e-ran.mjs is the authority on it");
     return;
   }
 
-  let report: { stats?: { expected?: number; skipped?: number } };
+  let parsed: { stats?: { expected?: number; skipped?: number } };
   try {
-    report = JSON.parse(raw);
+    // `JSON.parse` is typed `any`, and handing an `any` straight to a typed
+    // variable is what `@typescript-eslint/no-unsafe-assignment` is about: the
+    // shape above is a claim about the report, and an assertion at the parse is
+    // where the claim is made rather than at each use. Nothing here trusts a
+    // field it did not ask for — `stats.expected` and `stats.skipped` are read
+    // through `??` defaults, so a report missing either one fails the floor
+    // rather than rendering `undefined` into a message.
+    parsed = JSON.parse(raw) as { stats?: { expected?: number; skipped?: number } };
   } catch {
     throw new Error(
       "[e2e] FAIL: e2e-results.json is not valid JSON. A report that cannot be " +
@@ -218,7 +255,7 @@ async function assertTheTierRan(): Promise<void> {
     );
   }
 
-  const stats = report.stats ?? {};
+  const stats = parsed.stats ?? {};
   const expected = stats.expected ?? 0;
   const skipped = stats.skipped ?? 0;
 

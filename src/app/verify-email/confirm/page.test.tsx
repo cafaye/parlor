@@ -54,15 +54,21 @@ function signedIn() {
  */
 const NO_TOKEN = Symbol("no token in the query string");
 
-async function renderConfirmPage(
+/**
+ * Synchronous, for the reason `renderRequestPage` in
+ * `src/app/verify-email/page.test.tsx` is: the page takes its search params as
+ * an object and returns JSX. The `await` at every call site was legal and inert
+ * while the page was a component and the route resolved the location; it is
+ * gone because a reader cannot tell an inert `await` from a load-bearing one.
+ */
+function renderConfirmPage(
   token: string | typeof NO_TOKEN = TOKEN,
   identity = stubIdentity({ redeemEmailVerification: verifyOk() }),
 ) {
-  const searchParams = token === NO_TOKEN ? {} : { token: token as unknown as string };
-  const result = renderWithProviders(
-    VerifyEmailConfirmPage({ searchParams: searchParams }),
-    { identity },
-  );
+  const searchParams = token === NO_TOKEN ? {} : { token };
+  const result = renderWithProviders(VerifyEmailConfirmPage({ searchParams: searchParams }), {
+    identity,
+  });
   return { identity, ...result };
 }
 
@@ -72,7 +78,7 @@ function verify() {
 
 /** The unusable-link state, reached with a real 404 from a stubbed service. */
 async function renderUnusable() {
-  await renderConfirmPage(
+  renderConfirmPage(
     TOKEN,
     stubIdentity({
       redeemEmailVerification: vi.fn().mockRejectedValue(anIdentityError(404, "not_found")),
@@ -97,19 +103,19 @@ afterEach(cleanup);
  * and every success leaves the reader exactly where they were, still signed in.
  */
 describe("the confirmation screen", () => {
-  it("names itself", async () => {
-    await renderConfirmPage();
+  it("names itself", () => {
+    renderConfirmPage();
 
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(/verify your email/i);
   });
 
-  it("does not verify on load, because a link preview would spend the token", async () => {
+  it("does not verify on load, because a link preview would spend the token", () => {
     // Mail clients, chat apps and link scanners fetch a URL to preview it. A
     // verify-on-load screen would confirm an address nobody clicked anything for,
     // and leave the link dead for the person who then did click it.
     const identity = stubIdentity({ redeemEmailVerification: verifyOk() });
 
-    await renderConfirmPage(TOKEN, identity);
+    renderConfirmPage(TOKEN, identity);
 
     expect(identity.redeemEmailVerification).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "Verify my email" })).toBeTruthy();
@@ -118,7 +124,7 @@ describe("the confirmation screen", () => {
   it("posts the token from the URL and nothing else", async () => {
     const identity = stubIdentity({ redeemEmailVerification: verifyOk() });
 
-    await renderConfirmPage(TOKEN, identity);
+    renderConfirmPage(TOKEN, identity);
     verify();
 
     await waitFor(() => {
@@ -131,7 +137,7 @@ describe("the confirmation screen", () => {
     const redeemEmailVerification = vi.fn(
       () => new Promise<void>((settle) => (resolve = settle)),
     );
-    await renderConfirmPage(TOKEN, stubIdentity({ redeemEmailVerification }));
+    renderConfirmPage(TOKEN, stubIdentity({ redeemEmailVerification }));
 
     verify();
 
@@ -152,7 +158,7 @@ describe("the confirmation screen", () => {
     const redeemEmailVerification = vi.fn(
       () => new Promise<void>((settle) => (resolve = settle)),
     );
-    await renderConfirmPage(TOKEN, stubIdentity({ redeemEmailVerification }));
+    renderConfirmPage(TOKEN, stubIdentity({ redeemEmailVerification }));
 
     verify();
     verify();
@@ -174,7 +180,7 @@ describe("the confirmation screen", () => {
  */
 describe("a verified address", () => {
   it("says the address is verified", async () => {
-    await renderConfirmPage();
+    renderConfirmPage();
 
     verify();
 
@@ -182,7 +188,7 @@ describe("a verified address", () => {
   });
 
   it("sends a signed-out reader to sign in, which is the only route forward", async () => {
-    await renderConfirmPage();
+    renderConfirmPage();
 
     verify();
     fireEvent.click(await screen.findByRole("button", { name: "Sign in" }));
@@ -197,7 +203,7 @@ describe("a verified address", () => {
     // them to do a thing they do not need, on a screen whose whole claim is that
     // confirming an address changes nothing.
     signIn();
-    await renderConfirmPage(TOKEN, signedIn());
+    renderConfirmPage(TOKEN, signedIn());
 
     verify();
     fireEvent.click(await screen.findByRole("button", { name: "Continue to your accounts" }));
@@ -207,7 +213,7 @@ describe("a verified address", () => {
 
   it("never asks a signed-in reader to sign in", async () => {
     signIn();
-    await renderConfirmPage(TOKEN, signedIn());
+    renderConfirmPage(TOKEN, signedIn());
 
     verify();
 
@@ -218,7 +224,7 @@ describe("a verified address", () => {
   it("does not claim a mail was sent, because none was", async () => {
     // This route sends nothing. A sentence borrowed from the request screen would
     // send somebody to an inbox for a mail this click did not cause.
-    await renderConfirmPage();
+    renderConfirmPage();
 
     verify();
     await screen.findByRole("status");
@@ -278,7 +284,7 @@ describe("a link that cannot be used", () => {
   });
 
   it("does not render the service's detail, which is where an internal code lives", async () => {
-    await renderConfirmPage(
+    renderConfirmPage(
       TOKEN,
       stubIdentity({
         redeemEmailVerification: vi.fn().mockRejectedValue(
@@ -293,21 +299,21 @@ describe("a link that cannot be used", () => {
     expect(await screen.findByRole("alert")).not.toHaveTextContent(/shard/);
   });
 
-  it("explains a link with no token in it, and offers a new one", async () => {
+  it("explains a link with no token in it, and offers a new one", () => {
     // `RECOVERY_LINK_TEMPLATE` is deployment configuration: a deployment can put
     // the credential in a path segment, and then this screen has nothing to read.
     // That is a state with a way forward, not an exception.
-    await renderConfirmPage(NO_TOKEN);
+    renderConfirmPage(NO_TOKEN);
 
     expect(screen.getByRole("alert")).toHaveTextContent(/missing its verification code/i);
     expect(screen.queryByRole("button", { name: "Verify my email" })).toBeNull();
     expect(screen.getByRole("button", { name: "Request a new link" })).toBeTruthy();
   });
 
-  it("does not post anything when there is no token to post", async () => {
+  it("does not post anything when there is no token to post", () => {
     const identity = stubIdentity({ redeemEmailVerification: verifyOk() });
 
-    await renderConfirmPage(NO_TOKEN, identity);
+    renderConfirmPage(NO_TOKEN, identity);
 
     expect(identity.redeemEmailVerification).not.toHaveBeenCalled();
   });
@@ -320,7 +326,7 @@ describe("the other failures after the button", () => {
     // goes straight to `tokens.Live(digest)` and `tokenRequest` validates nothing —
     // so a link a mail client cut in half is one of the dead ones and gets one
     // sentence. This test pins that it is not a special case with its own wording.
-    await renderConfirmPage(
+    renderConfirmPage(
       "too-short",
       stubIdentity({
         redeemEmailVerification: vi.fn().mockRejectedValue(anIdentityError(404, "not_found")),
@@ -337,7 +343,7 @@ describe("the other failures after the button", () => {
 
   it("renders a network failure as one plain sentence", async () => {
     const thrown = new TypeError("Failed to fetch. ECONNREFUSED 10.0.0.4:8080");
-    await renderConfirmPage(
+    renderConfirmPage(
       TOKEN,
       stubIdentity({ redeemEmailVerification: vi.fn().mockRejectedValue(thrown) }),
     );

@@ -71,10 +71,10 @@ describe("when there are no customers", () => {
   it("says so, without calling it a failure", async () => {
     renderCustomers(
       stubBilling({
-        listCustomers: vi.fn(() => Promise.resolve(({
+        listCustomers: vi.fn(() => Promise.resolve({
           data: [],
           page: { next_cursor: null, has_more: false },
-        }))),
+        })),
       }),
     );
 
@@ -85,10 +85,10 @@ describe("when there are no customers", () => {
   it("still offers the create form", async () => {
     renderCustomers(
       stubBilling({
-        listCustomers: vi.fn(() => Promise.resolve(({
+        listCustomers: vi.fn(() => Promise.resolve({
           data: [],
           page: { next_cursor: null, has_more: false },
-        }))),
+        })),
       }),
     );
 
@@ -99,13 +99,13 @@ describe("when there are no customers", () => {
 describe("when the customers are there", () => {
   function withCustomers() {
     return stubBilling({
-      listCustomers: vi.fn(() => Promise.resolve(({
+      listCustomers: vi.fn(() => Promise.resolve({
         data: [
           aCustomer({ id: "cus_1", email: "kaka@example.com", owner: { type: "User", id: "usr_1" } }),
           aCustomer({ id: "cus_2", email: null, owner: { type: "Account", id: "acc_0a1b2c3d" } }),
         ],
         page: { next_cursor: null, has_more: false },
-      }))),
+      })),
     });
   }
 

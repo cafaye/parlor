@@ -62,7 +62,7 @@ describe("register page", () => {
   describe("with a valid address", () => {
     it("sends the credentials to the service", async () => {
       const identity = stubIdentity({
-        register: vi.fn(() => Promise.resolve(({ id: "usr_1", email: CREDENTIALS.email }))),
+        register: vi.fn(() => Promise.resolve({ id: "usr_1", email: CREDENTIALS.email })),
       });
       renderWithProviders(<RegisterPage />, { identity });
 
@@ -74,7 +74,7 @@ describe("register page", () => {
 
     it("confirms the account was created", async () => {
       const identity = stubIdentity({
-        register: vi.fn(() => Promise.resolve(({ id: "usr_1", email: CREDENTIALS.email }))),
+        register: vi.fn(() => Promise.resolve({ id: "usr_1", email: CREDENTIALS.email })),
       });
       renderWithProviders(<RegisterPage />, { identity });
 
@@ -89,7 +89,7 @@ describe("register page", () => {
       // nothing to persist. Pretending otherwise would show a signed-in header
       // over a session the service has never heard of.
       const identity = stubIdentity({
-        register: vi.fn(() => Promise.resolve(({ id: "usr_1", email: CREDENTIALS.email }))),
+        register: vi.fn(() => Promise.resolve({ id: "usr_1", email: CREDENTIALS.email })),
       });
       renderWithProviders(<RegisterPage />, { identity });
 
@@ -105,7 +105,7 @@ describe("register page", () => {
       // hidden input would be one shoulder-surf away from a shoulder's next
       // session.
       const identity = stubIdentity({
-        register: vi.fn(() => Promise.resolve(({ id: "usr_1", email: CREDENTIALS.email }))),
+        register: vi.fn(() => Promise.resolve({ id: "usr_1", email: CREDENTIALS.email })),
       });
       renderWithProviders(<RegisterPage />, { identity });
 
@@ -137,8 +137,8 @@ describe("register page", () => {
   describe("after the account exists", () => {
     const registered = (extra = {}) =>
       stubIdentity({
-        register: vi.fn(() => Promise.resolve(({ id: "usr_1", email: CREDENTIALS.email }))),
-        requestEmailVerification: vi.fn(() => Promise.resolve(({ status: "accepted" }))),
+        register: vi.fn(() => Promise.resolve({ id: "usr_1", email: CREDENTIALS.email })),
+        requestEmailVerification: vi.fn(() => Promise.resolve({ status: "accepted" })),
         ...extra,
       });
 
@@ -159,7 +159,7 @@ describe("register page", () => {
       // stored address back. Following the echo rather than the input is what keeps
       // a lookup keyed on the account's own row.
       const identity = registered({
-        register: vi.fn(() => Promise.resolve(({ id: "usr_1", email: "kaka@example.com" }))),
+        register: vi.fn(() => Promise.resolve({ id: "usr_1", email: "kaka@example.com" })),
       });
 
       renderWithProviders(<RegisterPage />, { identity });
@@ -264,7 +264,7 @@ describe("register page", () => {
   describe("when the verification link cannot be asked for", () => {
     const accountCreatedThen = (thrown: unknown) =>
       stubIdentity({
-        register: vi.fn(() => Promise.resolve(({ id: "usr_1", email: CREDENTIALS.email }))),
+        register: vi.fn(() => Promise.resolve({ id: "usr_1", email: CREDENTIALS.email })),
         requestEmailVerification: vi.fn(() => Promise.reject(thrown)),
       });
 

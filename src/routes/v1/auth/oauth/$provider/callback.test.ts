@@ -72,7 +72,10 @@ function identityReturning(hops: Hop[]) {
   return createUpstreamForwarder({
     identityUrl: "https://identity.test",
     billingUrl: "https://billing.test",
-    fetchImpl: async (input, init) => {
+    // NOT `async`, and the seam is typed as returning a promise, so each exit
+    // produces one explicitly. See `recordingFetch` in `src/lib/upstream.test.ts`
+    // for the same stub in its own file, and the comment on it.
+    fetchImpl: (input, init) => {
       const request = new Request(input, init);
       hops.push({
         url: request.url,
@@ -84,21 +87,25 @@ function identityReturning(hops: Hop[]) {
       // 200 with the session. They are different bodies and this stub has to tell
       // them apart, which is the same thing identity's own handler does.
       if (request.url.includes("/callback")) {
-        return new Response(JSON.stringify({ token: "tok_social", expires_at: "2026-10-01T00:00:00Z" }), {
-          status: 200,
-          headers: {
-            "content-type": "application/json",
-            "set-cookie": "__Host-session=tok_social; Path=/; Secure; HttpOnly",
-          },
-        });
+        return Promise.resolve(
+          new Response(JSON.stringify({ token: "tok_social", expires_at: "2026-10-01T00:00:00Z" }), {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+              "set-cookie": "__Host-session=tok_social; Path=/; Secure; HttpOnly",
+            },
+          }),
+        );
       }
-      return new Response(null, {
-        status: 302,
-        headers: {
-          location: "https://github.com/login/oauth/authorize?client_id=x",
-          "set-cookie": "__Host-oauth-state=st_1; Path=/; Secure; HttpOnly",
-        },
-      });
+      return Promise.resolve(
+        new Response(null, {
+          status: 302,
+          headers: {
+            location: "https://github.com/login/oauth/authorize?client_id=x",
+            "set-cookie": "__Host-oauth-state=st_1; Path=/; Secure; HttpOnly",
+          },
+        }),
+      );
     },
   });
 }

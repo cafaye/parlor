@@ -127,22 +127,34 @@ const GLOBEX = anAccountDetail({
  */
 function service() {
   return stubIdentity({
-    me: vi.fn((token: string) => Promise.resolve((token === TOKEN_A ? ALICE : BOB))),
-    listAccounts: vi.fn((token: string) => Promise.resolve(token === TOKEN_A
-        ? [anAccountListItem({ id: ACCOUNT_A, name: "Acme Corp", slug: "acme-corp" }),
-           anAccountListItem({ id: ACCOUNT_B, name: "Globex", slug: "globex", role: "member" })]
-        : [],)),
-    getAccount: vi.fn(async (token: string, accountId: string) => {
-      if (token !== TOKEN_A) throw anIdentityError(404, "not_found");
-      if (accountId === ACCOUNT_A) return ACME;
-      if (accountId === ACCOUNT_B) return GLOBEX;
-      throw anIdentityError(404, "not_found");
+    me: vi.fn((token: string) => Promise.resolve(token === TOKEN_A ? ALICE : BOB)),
+    listAccounts: vi.fn((token: string) =>
+      Promise.resolve(
+        token === TOKEN_A
+          ? [
+              anAccountListItem({ id: ACCOUNT_A, name: "Acme Corp", slug: "acme-corp" }),
+              anAccountListItem({ id: ACCOUNT_B, name: "Globex", slug: "globex", role: "member" }),
+            ]
+          : [],
+      ),
+    ),
+    // NOT `async`: these read their arguments to decide the answer, so the
+    // promise has to be produced by an explicit `Promise.resolve` /
+    // `Promise.reject` at each exit rather than by the keyword — which is what
+    // `@typescript-eslint/require-await` asks for when there is no `await`.
+    // `Promise.reject` and not a bare `throw` because a caller awaiting this
+    // mock has to see a rejection, which is what the keyword used to give it.
+    getAccount: vi.fn((token: string, accountId: string) => {
+      if (token !== TOKEN_A) return Promise.reject(anIdentityError(404, "not_found"));
+      if (accountId === ACCOUNT_A) return Promise.resolve(ACME);
+      if (accountId === ACCOUNT_B) return Promise.resolve(GLOBEX);
+      return Promise.reject(anIdentityError(404, "not_found"));
     }),
-    listMembers: vi.fn(async (token: string, accountId: string): Promise<MemberList> => {
-      if (token !== TOKEN_A) throw anIdentityError(404, "not_found");
-      if (accountId === ACCOUNT_A) return ACME_MEMBERS;
-      if (accountId === ACCOUNT_B) return GLOBEX_MEMBERS;
-      throw anIdentityError(404, "not_found");
+    listMembers: vi.fn((token: string, accountId: string): Promise<MemberList> => {
+      if (token !== TOKEN_A) return Promise.reject(anIdentityError(404, "not_found"));
+      if (accountId === ACCOUNT_A) return Promise.resolve(ACME_MEMBERS);
+      if (accountId === ACCOUNT_B) return Promise.resolve(GLOBEX_MEMBERS);
+      return Promise.reject(anIdentityError(404, "not_found"));
     }),
   });
 }

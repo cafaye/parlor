@@ -35,7 +35,7 @@ const SCREENS: ReadonlyArray<{ name: string; render: () => React.ReactElement }>
 ];
 
 describe.each(SCREENS)("$name", ({ render }) => {
-  it("offers a way in for every provider this app is configured for", async () => {
+  it("offers a way in for every provider this app is configured for", () => {
     renderWithProviders(render(), { identity: stubIdentity() });
 
     for (const provider of SOCIAL_PROVIDERS) {
@@ -44,7 +44,7 @@ describe.each(SCREENS)("$name", ({ render }) => {
     }
   });
 
-  it("points each button at this origin's forwarder", async () => {
+  it("points each button at this origin's forwarder", () => {
     renderWithProviders(render(), { identity: stubIdentity() });
 
     for (const provider of SOCIAL_PROVIDERS) {
@@ -53,7 +53,7 @@ describe.each(SCREENS)("$name", ({ render }) => {
     }
   });
 
-  it("uses a link, because the start leg is a browser navigation", async () => {
+  it("uses a link, because the start leg is a browser navigation", () => {
     // A `<button>` cannot navigate the document, and this is the assertion that
     // would catch somebody "fixing" it into a click handler.
     renderWithProviders(render(), { identity: stubIdentity() });
@@ -65,7 +65,7 @@ describe.each(SCREENS)("$name", ({ render }) => {
     }
   });
 
-  it("keeps the password form reachable as the other way in", async () => {
+  it("keeps the password form reachable as the other way in", () => {
     // The provider buttons are alternatives to this app's own sign-in, not a
     // replacement for it. A screen that had lost its form would still satisfy
     // every assertion above.
@@ -77,20 +77,20 @@ describe.each(SCREENS)("$name", ({ render }) => {
 });
 
 describe("the provider list", () => {
-  it("holds at least one provider, or both screens render an empty group", async () => {
+  it("holds at least one provider, or both screens render an empty group", () => {
     // A guard against a refactor that empties the list: the buttons would still
     // render — as nothing — and every test above would pass vacuously.
     expect(SOCIAL_PROVIDERS.length).toBeGreaterThan(0);
   });
 
-  it("gives every provider an id and a label", async () => {
+  it("gives every provider an id and a label", () => {
     for (const provider of SOCIAL_PROVIDERS) {
       expect(provider.id, "a provider with no id has no path").toMatch(/^[a-z0-9-]+$/);
       expect(provider.label, "a provider with no label has no button text").not.toBe("");
     }
   });
 
-  it("names each provider exactly once", async () => {
+  it("names each provider exactly once", () => {
     const ids = SOCIAL_PROVIDERS.map((provider) => provider.id);
 
     expect(new Set(ids).size).toBe(ids.length);

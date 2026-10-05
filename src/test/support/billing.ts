@@ -18,10 +18,13 @@ export type StubBilling = BillingClient & {
   createCustomer: MockedFunction<BillingClient["createCustomer"]>;
 };
 
+/**
+ * The body of a method a test did not script — a rejection, for the reason
+ * `unscripted` in `./identity.ts` is one. Read that file's comment; this is
+ * the same rule applied to the other client.
+ */
 const unscripted = (method: string) =>
-  vi.fn(async () => {
-    throw new Error(`stub billing: ${method}() was not scripted`);
-  }) as never;
+  vi.fn(() => Promise.reject(new Error(`stub billing: ${method}() was not scripted`))) as never;
 
 export function stubBilling(overrides: Partial<BillingClient> = {}): StubBilling {
   return {

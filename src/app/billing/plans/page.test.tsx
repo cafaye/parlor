@@ -73,7 +73,7 @@ describe("while the plans are loading", () => {
 describe("when there are no plans", () => {
   it("says so, and does not call it a failure", async () => {
     renderPlans(
-      stubBilling({ listPlans: vi.fn(() => Promise.resolve(({ data: [], page: { next_cursor: null, has_more: false } }))) }),
+      stubBilling({ listPlans: vi.fn(() => Promise.resolve({ data: [], page: { next_cursor: null, has_more: false } })) }),
     );
 
     expect(await screen.findByText(/no plans/i)).toBeInTheDocument();
@@ -97,7 +97,7 @@ describe("when the plans are there", () => {
 
   function withPlans() {
     return stubBilling({
-      listPlans: vi.fn(() => Promise.resolve(({ data: plans, page: { next_cursor: null, has_more: false } }))),
+      listPlans: vi.fn(() => Promise.resolve({ data: plans, page: { next_cursor: null, has_more: false } })),
     });
   }
 
@@ -157,10 +157,10 @@ describe("when the plans are there", () => {
   it("marks an inactive plan, rather than selling it", async () => {
     renderPlans(
       stubBilling({
-        listPlans: vi.fn(() => Promise.resolve(({
+        listPlans: vi.fn(() => Promise.resolve({
           data: [aPlan({ name: "Retired", slug: "retired", active: false })],
           page: { next_cursor: null, has_more: false },
-        }))),
+        })),
       }),
     );
 
@@ -184,7 +184,7 @@ describe("paging", () => {
   it("asks for the first page with a bound", async () => {
     const billing = renderPlans(
       stubBilling({
-        listPlans: vi.fn(() => Promise.resolve(({ data: [], page: { next_cursor: null, has_more: false } }))),
+        listPlans: vi.fn(() => Promise.resolve({ data: [], page: { next_cursor: null, has_more: false } })),
       }),
     );
 
@@ -238,10 +238,10 @@ describe("paging", () => {
   it("offers no more button on the last page", async () => {
     renderPlans(
       stubBilling({
-        listPlans: vi.fn(() => Promise.resolve(({
+        listPlans: vi.fn(() => Promise.resolve({
           data: [aPlan()],
           page: { next_cursor: null, has_more: false },
-        }))),
+        })),
       }),
     );
 
@@ -325,10 +325,10 @@ describe("a plan the service sent that does not match the contract", () => {
     // units as a plausible wrong number.
     renderPlans(
       stubBilling({
-        listPlans: vi.fn(() => Promise.resolve(({
+        listPlans: vi.fn(() => Promise.resolve({
           data: [{ ...aPlan(), price: { amount_minor: 19.5, currency: "USD" } } as never],
           page: { next_cursor: null, has_more: false },
-        }))),
+        })),
       }),
     );
 

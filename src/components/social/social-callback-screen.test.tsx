@@ -43,11 +43,11 @@ describe("a completed round trip", () => {
     // The exchange happens in an effect, so this is the first thing that can
     // possibly be true — there is no synchronous path to a token.
     const identity = stubIdentity({
-      completeSocialLogin: vi.fn(() => Promise.resolve(({
+      completeSocialLogin: vi.fn(() => Promise.resolve({
         kind: "session" as const,
         session: { token: "tok_social", expires_at: "2026-10-01T00:00:00Z" },
-      }))),
-      me: vi.fn(() => Promise.resolve(({ id: "usr_1", email: "kaka@example.com" }))),
+      })),
+      me: vi.fn(() => Promise.resolve({ id: "usr_1", email: "kaka@example.com" })),
     });
     renderWithProviders(callback(), { identity });
 
@@ -56,10 +56,10 @@ describe("a completed round trip", () => {
 
   it("sends the provider and the three parameters to the service", async () => {
     const identity = stubIdentity({
-      completeSocialLogin: vi.fn(() => Promise.resolve(({
+      completeSocialLogin: vi.fn(() => Promise.resolve({
         kind: "session" as const,
         session: { token: "tok_social", expires_at: "2026-10-01T00:00:00Z" },
-      }))),
+      })),
     });
     renderWithProviders(callback(), { identity });
 
@@ -70,10 +70,10 @@ describe("a completed round trip", () => {
 
   it("goes home afterwards, the way the password path does", async () => {
     const identity = stubIdentity({
-      completeSocialLogin: vi.fn(() => Promise.resolve(({
+      completeSocialLogin: vi.fn(() => Promise.resolve({
         kind: "session" as const,
         session: { token: "tok_social", expires_at: "2026-10-01T00:00:00Z" },
-      }))),
+      })),
     });
     renderWithProviders(callback(), { identity });
 
@@ -85,10 +85,10 @@ describe("a completed round trip", () => {
     // then an alert would be telling somebody a sign-in failed while it was
     // succeeding, and the alert is the assertive one.
     const identity = stubIdentity({
-      completeSocialLogin: vi.fn(() => Promise.resolve(({
+      completeSocialLogin: vi.fn(() => Promise.resolve({
         kind: "session" as const,
         session: { token: "tok_social", expires_at: "2026-10-01T00:00:00Z" },
-      }))),
+      })),
     });
     renderWithProviders(callback(), { identity });
 
@@ -251,10 +251,10 @@ describe("a link instead of a sign-in", () => {
     // that does not exist, and treating this arm as a sign-in is the defect this
     // state exists to prevent.
     const identity = stubIdentity({
-      completeSocialLogin: vi.fn(() => Promise.resolve(({
+      completeSocialLogin: vi.fn(() => Promise.resolve({
         kind: "linked" as const,
         linked: { linked_provider: "github" },
-      }))),
+      })),
     });
     renderWithProviders(callback(), { identity });
 
@@ -265,10 +265,10 @@ describe("a link instead of a sign-in", () => {
 
   it("says what actually happened", async () => {
     const identity = stubIdentity({
-      completeSocialLogin: vi.fn(() => Promise.resolve(({
+      completeSocialLogin: vi.fn(() => Promise.resolve({
         kind: "linked" as const,
         linked: { linked_provider: "github" },
-      }))),
+      })),
     });
     renderWithProviders(callback(), { identity });
 
@@ -281,10 +281,10 @@ describe("a link instead of a sign-in", () => {
 
   it("offers a way back rather than leaving the person on a dead page", async () => {
     const identity = stubIdentity({
-      completeSocialLogin: vi.fn(() => Promise.resolve(({
+      completeSocialLogin: vi.fn(() => Promise.resolve({
         kind: "linked" as const,
         linked: { linked_provider: "github" },
-      }))),
+      })),
     });
     renderWithProviders(callback(), { identity });
 

@@ -16,10 +16,16 @@ vi.mock("@/lib/navigation", () => ({ useNavigation: () => ({ push, refresh: vi.f
  * unregistered one, and one inside the one-minute window. This is the body a
  * stub returns, and the tests below assert what the SCREEN does with it.
  */
-const accepted = () => vi.fn(() => Promise.resolve(({ status: "accepted" })));
+const accepted = () => vi.fn(() => Promise.resolve({ status: "accepted" }));
 
-async function renderRequestPage(identity = stubIdentity({ requestEmailVerification: accepted() })) {
-  const result = renderWithProviders(await VerifyEmailPage(), { identity });
+/**
+ * Synchronous, for the reason `loginPage` in `src/app/login/page.test.tsx` is:
+ * the page takes its search params as an object and returns JSX, so there is
+ * nothing here to await. `await VerifyEmailPage()` was legal and inert; it is
+ * gone because a reader cannot tell an inert `await` from a load-bearing one.
+ */
+function renderRequestPage(identity = stubIdentity({ requestEmailVerification: accepted() })) {
+  const result = renderWithProviders(VerifyEmailPage(), { identity });
   return { identity, ...result };
 }
 
@@ -44,8 +50,8 @@ afterEach(cleanup);
  * attack the service's constant 202 exists to refuse.
  */
 describe("the verification request screen", () => {
-  it("names itself", async () => {
-    await renderRequestPage();
+  it("names itself", () => {
+    renderRequestPage();
 
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(/verify your email/i);
   });
@@ -53,7 +59,7 @@ describe("the verification request screen", () => {
   it("posts the address and nothing else", async () => {
     const identity = stubIdentity({ requestEmailVerification: accepted() });
 
-    await renderRequestPage(identity);
+    renderRequestPage(identity);
     askFor("kaka@example.com");
 
     await waitFor(() => {
@@ -64,7 +70,7 @@ describe("the verification request screen", () => {
   it("trims the address before sending it, because a paste carries a space", async () => {
     const identity = stubIdentity({ requestEmailVerification: accepted() });
 
-    await renderRequestPage(identity);
+    renderRequestPage(identity);
     askFor("  kaka@example.com  ");
 
     await waitFor(() => {
@@ -72,10 +78,10 @@ describe("the verification request screen", () => {
     });
   });
 
-  it("refuses a malformed address without asking the service", async () => {
+  it("refuses a malformed address without asking the service", () => {
     const identity = stubIdentity({ requestEmailVerification: accepted() });
 
-    await renderRequestPage(identity);
+    renderRequestPage(identity);
     askFor("kaka@@example");
 
     expect(screen.getByRole("alert")).toHaveTextContent(/valid email address/i);
@@ -89,7 +95,7 @@ describe("the verification request screen", () => {
     const requestEmailVerification = vi.fn(
       () => new Promise<{ status: string }>((settle) => (resolve = () => settle({ status: "accepted" }))),
     );
-    await renderRequestPage(stubIdentity({ requestEmailVerification }));
+    renderRequestPage(stubIdentity({ requestEmailVerification }));
 
     askFor("kaka@example.com");
     askFor("kaka@example.com");
@@ -113,7 +119,7 @@ describe("the verification request screen", () => {
  */
 describe("a request never says whether the address has an account", () => {
   async function askAndRead(address: string, identity = stubIdentity({ requestEmailVerification: accepted() })) {
-    await renderRequestPage(identity);
+    renderRequestPage(identity);
     askFor(address);
     return (await screen.findByRole("status")).textContent;
   }
@@ -174,7 +180,7 @@ describe("a request never says whether the address has an account", () => {
   });
 
   it("never renders the service's own words on that 409", async () => {
-    await renderRequestPage(
+    renderRequestPage(
       stubIdentity({
         requestEmailVerification: vi
           .fn()
@@ -199,7 +205,7 @@ describe("a request never says whether the address has an account", () => {
 
 describe("the failures a person hits after asking", () => {
   it("does not send somebody to their inbox when the deployment cannot send", async () => {
-    await renderRequestPage(
+    renderRequestPage(
       stubIdentity({
         requestEmailVerification: vi.fn().mockRejectedValue(anIdentityError(503, "service_unavailable")),
       }),
@@ -216,7 +222,7 @@ describe("the failures a person hits after asking", () => {
   });
 
   it("leaves the form usable after a 503, because retrying is the next step", async () => {
-    await renderRequestPage(
+    renderRequestPage(
       stubIdentity({
         requestEmailVerification: vi.fn().mockRejectedValue(anIdentityError(503, "service_unavailable")),
       }),
@@ -231,7 +237,7 @@ describe("the failures a person hits after asking", () => {
   it("puts the service's own 422 on the email field, which is about shape not existence", async () => {
     // `RequestVerification` validates before it looks anything up, so this is a
     // statement about the characters that were typed and not about the account.
-    await renderRequestPage(
+    renderRequestPage(
       stubIdentity({
         requestEmailVerification: vi.fn().mockRejectedValue(
           anIdentityError(422, "validation_failed", {
@@ -249,7 +255,7 @@ describe("the failures a person hits after asking", () => {
 
   it("renders a network failure as one plain sentence", async () => {
     const thrown = new TypeError("Failed to fetch. ECONNREFUSED 10.0.0.4:8080");
-    await renderRequestPage(
+    renderRequestPage(
       stubIdentity({ requestEmailVerification: vi.fn().mockRejectedValue(thrown) }),
     );
 
@@ -264,7 +270,7 @@ describe("the failures a person hits after asking", () => {
 
 describe("after a request is accepted", () => {
   it("replaces the form rather than annotating it", async () => {
-    await renderRequestPage();
+    renderRequestPage();
 
     askFor("kaka@example.com");
 
@@ -276,7 +282,7 @@ describe("after a request is accepted", () => {
   });
 
   it("sends back to sign in rather than offering a second send", async () => {
-    await renderRequestPage();
+    renderRequestPage();
 
     askFor("kaka@example.com");
     fireEvent.click(await screen.findByRole("button", { name: "Back to sign in" }));
@@ -290,7 +296,7 @@ describe("after a request is accepted", () => {
   });
 
   it("keeps the address out of the page after a request", async () => {
-    await renderRequestPage();
+    renderRequestPage();
 
     askFor("kaka@example.com");
     await screen.findByRole("status");

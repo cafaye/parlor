@@ -54,19 +54,19 @@ beforeEach(() => {
 });
 
 describe("login page", () => {
-  it("names itself as the sign in screen", async () => {
+  it("names itself as the sign in screen", () => {
     renderWithProviders(loginPage(), { identity: stubIdentity() });
 
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(/sign in/i);
   });
 
-  it("marks the email field for autofill", async () => {
+  it("marks the email field for autofill", () => {
     renderWithProviders(loginPage(), { identity: stubIdentity() });
 
     expect(screen.getByLabelText("Email")).toHaveAttribute("autocomplete", "email");
   });
 
-  it("marks the password field as the current one, not a new one", async () => {
+  it("marks the password field as the current one, not a new one", () => {
     // autocomplete="new-password" here makes password managers offer to
     // generate a replacement instead of filling in the one they already have.
     renderWithProviders(loginPage(), { identity: stubIdentity() });
@@ -74,7 +74,7 @@ describe("login page", () => {
     expect(screen.getByLabelText("Password")).toHaveAttribute("autocomplete", "current-password");
   });
 
-  it("points people without an account at registration", async () => {
+  it("points people without an account at registration", () => {
     renderWithProviders(loginPage(), { identity: stubIdentity() });
 
     expect(screen.getByRole("link", { name: "Create account" })).toHaveAttribute(
@@ -83,7 +83,7 @@ describe("login page", () => {
     );
   });
 
-  it("offers the way out to somebody who cannot sign in", async () => {
+  it("offers the way out to somebody who cannot sign in", () => {
     // The affordance the whole password-reset flow hangs off. It is rendered
     // unconditionally rather than after a failed attempt: a link that appeared
     // only once the form had refused you would be leaking something about the
@@ -96,13 +96,13 @@ describe("login page", () => {
     );
   });
 
-  it("says nothing about a changed password on a plain arrival", async () => {
+  it("says nothing about a changed password on a plain arrival", () => {
     renderWithProviders(loginPage(), { identity: stubIdentity() });
 
     expect(screen.queryByText(/password has been changed/i)).toBeNull();
   });
 
-  it("offers the way to ask for a verification link", async () => {
+  it("offers the way to ask for a verification link", () => {
     // The entry point for somebody who signed up, closed the tab, and never
     // verified — the audience `POST /v1/email-verifications` cannot serve with a
     // banner, because `GET /v1/email-verification` answers for the caller's own
@@ -115,7 +115,7 @@ describe("login page", () => {
     );
   });
 
-  it("offers it without saying anything about the address, before any attempt", async () => {
+  it("offers it without saying anything about the address, before any attempt", () => {
     // Same rule as the "forgot your password" link above it: a control that
     // appeared only after a refused attempt would be reporting something about the
     // address, and this is the screen that must never do that.
@@ -130,41 +130,49 @@ describe("login page", () => {
   });
 
   describe("arriving back from a completed reset", () => {
-    async function renderArrival(query: Record<string, string>) {
-      return renderWithProviders(await loginPage(query), { identity: stubIdentity() });
+    /**
+     * Synchronous, and NOT `async`, for the reason `loginPage` above is not:
+     * the page takes an object and returns JSX, so there is nothing to await.
+     * The call sites kept their `await` when the page stopped being async and
+     * nothing noticed, because awaiting a non-promise is legal — which is
+     * exactly why it is worth removing rather than leaving.
+     * `@typescript-eslint/await-thenable` reports every one of them.
+     */
+    function renderArrival(query: Record<string, string>) {
+      return renderWithProviders(loginPage(query), { identity: stubIdentity() });
     }
 
-    it("says the password changed and asks for a sign in", async () => {
+    it("says the password changed and asks for a sign in", () => {
       // `/reset-password` redirects here after a 204, which mints no session.
       // Without this sentence a person is told nothing about why the sign-in
       // they are about to attempt is with a password that used to fail.
-      await renderArrival({ "password-changed": "1" });
+      renderArrival({ "password-changed": "1" });
 
       expect(screen.getByRole("status")).toHaveTextContent(
         /password has been changed.*sign in with the new one/i,
       );
     });
 
-    it("reads only the parameter's presence, so its value cannot change a word", async () => {
+    it("reads only the parameter's presence, so its value cannot change a word", () => {
       // A value somebody can type must not reach the rendered page. The one
       // signal is that the key is there at all.
-      await renderArrival({ "password-changed": "anything at all" });
+      renderArrival({ "password-changed": "anything at all" });
 
       expect(screen.getByRole("status")).toHaveTextContent(/password has been changed/i);
     });
 
-    it("keeps the reset token out of the page if one is pasted into the URL", async () => {
+    it("keeps the reset token out of the page if one is pasted into the URL", () => {
       const token = "0Kq3Zs1oQw7bXn0K9dLpR2vT4yE6hJ8cF1gM5nA2qU0";
 
-      await renderArrival({ "password-changed": "1", token });
+      renderArrival({ "password-changed": "1", token });
 
       expect(document.body.textContent).not.toContain(token);
     });
 
-    it("announces politely rather than interrupting", async () => {
+    it("announces politely rather than interrupting", () => {
       // `role="alert"` would cut across whatever was being read on arrival, for
       // a message that is good news and not urgent.
-      await renderArrival({ "password-changed": "1" });
+      renderArrival({ "password-changed": "1" });
 
       expect(screen.getByRole("status")).not.toHaveAttribute("aria-live", "assertive");
     });
@@ -173,14 +181,14 @@ describe("login page", () => {
   describe("with correct credentials", () => {
     function acceptsLogin() {
       return stubIdentity({
-        login: vi.fn(() => Promise.resolve(({ token: "tok_abc", expires_at: "2026-10-01T00:00:00Z" }))),
+        login: vi.fn(() => Promise.resolve({ token: "tok_abc", expires_at: "2026-10-01T00:00:00Z" })),
         me: vi.fn(() => Promise.resolve(aUser())),
       });
     }
 
     it("sends them to the service", async () => {
       const identity = acceptsLogin();
-      renderWithProviders(await loginPage(), { identity });
+      renderWithProviders(loginPage(), { identity });
 
       fillIn(CREDENTIALS);
       submit();
@@ -192,7 +200,7 @@ describe("login page", () => {
       // Until the BFF packet moves the token into an HttpOnly cookie, this
       // localStorage entry is the whole session. Lose it and the header signs
       // the person out on the next render.
-      renderWithProviders(await loginPage(), { identity: acceptsLogin() });
+      renderWithProviders(loginPage(), { identity: acceptsLogin() });
 
       fillIn(CREDENTIALS);
       submit();
@@ -201,7 +209,7 @@ describe("login page", () => {
     });
 
     it("goes home afterwards", async () => {
-      renderWithProviders(await loginPage(), { identity: acceptsLogin() });
+      renderWithProviders(loginPage(), { identity: acceptsLogin() });
 
       fillIn(CREDENTIALS);
       submit();
@@ -213,7 +221,7 @@ describe("login page", () => {
       renderWithProviders(
         <>
           <ShellHeader />
-          {await loginPage()}
+          {loginPage()}
         </>,
         { identity: acceptsLogin() },
       );
@@ -226,7 +234,7 @@ describe("login page", () => {
     });
 
     it("does not say anything went wrong", async () => {
-      renderWithProviders(await loginPage(), { identity: acceptsLogin() });
+      renderWithProviders(loginPage(), { identity: acceptsLogin() });
 
       fillIn(CREDENTIALS);
       submit();
@@ -244,7 +252,7 @@ describe("login page", () => {
     }
 
     it("says the credentials were not accepted", async () => {
-      renderWithProviders(await loginPage(), { identity: refusesLogin() });
+      renderWithProviders(loginPage(), { identity: refusesLogin() });
 
       fillIn(CREDENTIALS);
       submit();
@@ -257,14 +265,14 @@ describe("login page", () => {
       // screen is an account-existence oracle and the service's single 401 is
       // the only thing standing between a stranger and a list of who has an
       // account here.
-      renderWithProviders(await loginPage(), { identity: refusesLogin() });
+      renderWithProviders(loginPage(), { identity: refusesLogin() });
       fillIn({ email: "nobody@example.com", password: CREDENTIALS.password });
       submit();
       const unknownAddress = await alertText();
 
       cleanup();
 
-      renderWithProviders(await loginPage(), { identity: refusesLogin() });
+      renderWithProviders(loginPage(), { identity: refusesLogin() });
       fillIn({ email: CREDENTIALS.email, password: "the wrong password" });
       submit();
       const wrongPassword = await alertText();
@@ -273,7 +281,7 @@ describe("login page", () => {
     });
 
     it("does not repeat the address that was typed", async () => {
-      renderWithProviders(await loginPage(), { identity: refusesLogin() });
+      renderWithProviders(loginPage(), { identity: refusesLogin() });
 
       fillIn(CREDENTIALS);
       submit();
@@ -282,7 +290,7 @@ describe("login page", () => {
     });
 
     it("keeps no token", async () => {
-      renderWithProviders(await loginPage(), { identity: refusesLogin() });
+      renderWithProviders(loginPage(), { identity: refusesLogin() });
 
       fillIn(CREDENTIALS);
       submit();
@@ -292,7 +300,7 @@ describe("login page", () => {
     });
 
     it("stays on the page", async () => {
-      renderWithProviders(await loginPage(), { identity: refusesLogin() });
+      renderWithProviders(loginPage(), { identity: refusesLogin() });
 
       fillIn(CREDENTIALS);
       submit();
@@ -303,7 +311,7 @@ describe("login page", () => {
 
     it("does not blame the password field for a refused sign in", async () => {
       // The service said nothing about which half was wrong, so neither do we.
-      renderWithProviders(await loginPage(), { identity: refusesLogin() });
+      renderWithProviders(loginPage(), { identity: refusesLogin() });
 
       fillIn(CREDENTIALS);
       submit();
@@ -317,7 +325,7 @@ describe("login page", () => {
       renderWithProviders(
         <>
           <ShellHeader />
-          {await loginPage()}
+          {loginPage()}
         </>,
         { identity: refusesLogin() },
       );
@@ -330,7 +338,7 @@ describe("login page", () => {
     });
 
     it("keeps the address so it does not have to be typed again", async () => {
-      renderWithProviders(await loginPage(), { identity: refusesLogin() });
+      renderWithProviders(loginPage(), { identity: refusesLogin() });
 
       fillIn(CREDENTIALS);
       submit();
@@ -343,7 +351,7 @@ describe("login page", () => {
   describe("before anything is sent", () => {
     it("refuses an empty form without asking the service", async () => {
       const identity = stubIdentity();
-      renderWithProviders(await loginPage(), { identity });
+      renderWithProviders(loginPage(), { identity });
 
       submit();
 
@@ -353,7 +361,7 @@ describe("login page", () => {
 
     it("refuses an address that is not one", async () => {
       const identity = stubIdentity();
-      renderWithProviders(await loginPage(), { identity });
+      renderWithProviders(loginPage(), { identity });
 
       fillIn({ email: "kaka@", password: CREDENTIALS.password });
       submit();
@@ -368,7 +376,7 @@ describe("login page", () => {
       const identity = stubIdentity({
         login: vi.fn(() => new Promise<never>(() => undefined)),
       });
-      renderWithProviders(await loginPage(), { identity });
+      renderWithProviders(loginPage(), { identity });
 
       fillIn(CREDENTIALS);
       submit();
@@ -386,7 +394,7 @@ describe("login page", () => {
       const identity = stubIdentity({
         login: vi.fn(() => new Promise<never>(() => undefined)),
       });
-      renderWithProviders(await loginPage(), { identity });
+      renderWithProviders(loginPage(), { identity });
 
       fillIn(CREDENTIALS);
       submit();
@@ -403,7 +411,7 @@ describe("login page", () => {
       const identity = stubIdentity({
         login: vi.fn(() => Promise.reject(anIdentityError(503, "unavailable"))),
       });
-      renderWithProviders(await loginPage(), { identity });
+      renderWithProviders(loginPage(), { identity });
 
       fillIn(CREDENTIALS);
       submit();

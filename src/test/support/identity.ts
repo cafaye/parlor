@@ -38,10 +38,18 @@ export type StubIdentity = IdentityClient & {
   completeSocialLogin: MockedFunction<IdentityClient["completeSocialLogin"]>;
 };
 
+/**
+ * The body of a method a test did not script.
+ *
+ * `Promise.reject` rather than a `throw` inside an `async` arrow, and rather
+ * than a plain non-async arrow that throws: an `async` function's throw reaches
+ * the caller as a rejection, and every caller here is `try { await … } catch`,
+ * so this has to be the rejection to be the same function it replaced.
+ * `@typescript-eslint/require-await` is what forced the spelling to be written
+ * down — an `async` arrow that only throws has no `await` in it.
+ */
 const unscripted = (method: string) =>
-  vi.fn(async () => {
-    throw new Error(`stub identity: ${method}() was not scripted`);
-  }) as never;
+  vi.fn(() => Promise.reject(new Error(`stub identity: ${method}() was not scripted`))) as never;
 
 export function stubIdentity(overrides: Partial<IdentityClient> = {}): StubIdentity {
   return {

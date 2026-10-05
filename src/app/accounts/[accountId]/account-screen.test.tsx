@@ -425,9 +425,13 @@ describe("renaming", () => {
       { role: "admin" },
       {
         getAccount: vi.fn(() => Promise.resolve(current)),
-        renameAccount: vi.fn(async (_token, _id, input: { name: string }) => {
+        renameAccount: vi.fn((_token, _id, input: { name: string }) => {
+          // NOT `async`: this reads its arguments and mutates the stub's own
+          // state, so the promise is produced at each exit explicitly. See the
+          // comment on `service()` in `src/lib/accounts.test.tsx`, which is the
+          // same rule on a stub that has more than one answer.
           current = anAccountDetail({ name: input.name });
-          return current;
+          return Promise.resolve(current);
         }),
       },
     );
