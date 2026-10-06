@@ -28,6 +28,96 @@ import { socialCallbackPath } from "@/lib/social";
 
 import { Route } from "./callback";
 
+/**
+ * THE ADDRESS THIS FILE ASSUMES NOTHING IS LISTENING ON, PINNED BEFORE ANY IMPORT.
+ *
+ * ---------------------------------------------------------------------------
+ * WHY THIS IS HERE AT ALL: THE TEST WAS RED FOR A REASON THAT WAS NOT A DEFECT
+ * ---------------------------------------------------------------------------
+ * The subtest "a programmatic request to the callback / is delegated to the
+ * forwarder rather than rendered" asserts a 502 and its own comment says why:
+ * "with no reachable identity the forwarder answers its own 502, which is the
+ * property that matters — it is a failure and not a page, and it is the
+ * forwarder's failure rather than this route's." The 502 is the PROOF. A 200
+ * with a rendered document would mean this route answered, and the property
+ * under test would be gone; the forwarder failing closed is what tells the two
+ * apart without a spy (and the file header explains at length why a spy cannot
+ * work here — `createUpstreamForwarder` resolves its transport once, at
+ * construction).
+ *
+ * So the assertion needs identity to be UNREACHABLE, and it needs that to be
+ * true on the machine running it rather than by luck. It was not, and the
+ * consequence was a red suite whose message pointed somewhere else entirely:
+ *
+ *   * `src/app/v1/[...path]/route.ts` reads `IDENTITY_URL` at MODULE SCOPE and
+ *     falls back to `DEFAULT_IDENTITY_URL` — `http://localhost:8080`, the
+ *     compose stack's address. So with nothing set, this suite's forwarder aims
+ *     at whatever a developer happens to have running on 8080.
+ *   * A developer running `bin/e2e-stack up` has exactly that: an identity on
+ *     8080 with NO OAuth provider configured, because `registerSocialRoutes`
+ *     returns before registering either route when no provider is configured.
+ *   * That identity therefore answers `GET /v1/auth/oauth/github/callback` with
+ *     ITS OWN 404, and the test read it as the router's.
+ *
+ * Measured here, before this line existed, on a machine with the stack up:
+ *
+ *   AssertionError: expected 404 to be 502
+ *
+ * and the 404 body is not parlor's. `notFound()` in the route handler answers
+ * `{"title": "No such route.", "code": "not_found"}` with no `detail`, no
+ * `instance` and no `trace_id`; the observed body was
+ *
+ *   {"type": "https://errors.cafaye.com/not_found", "title": "Not found",
+ *    "detail": "no route matches this request",
+ *    "instance": "/v1/auth/oauth/github/callback", "trace_id": "..."}
+ *
+ * which is IDENTITY's envelope, `trace_id` and all. Asking that identity the
+ * same question with `curl` answered the identical body, and pointing
+ * `IDENTITY_URL` at a closed port made all ten tests in this file pass
+ * unchanged — which is what located the cause in the environment rather than in
+ * the delegation.
+ *
+ * THE MISDIAGNOSIS THIS PREVENTS, because it is the one the packet was written
+ * from. A 404 from this route reads as "the path is not in the forwarder's
+ * allow-list", and the obvious fix is to add the callback to `ROUTES`. IT IS
+ * ALREADY THERE — `src/lib/upstream.ts`, `["auth", "oauth", ":provider",
+ * "callback"]`, added by `b3dc1f5` ("the social routes are reachable through
+ * the forwarder") — and the subtests below that inject their own forwarder, the
+ * "agrees, for the provider this app offers" one in particular, walk the whole
+ * round trip and pass. Adding a second copy of the entry would have produced a
+ * green suite by making a change to the security table of a deployment over a
+ * test that was measuring the wrong thing.
+ *
+ * ---------------------------------------------------------------------------
+ * WHY `vi.hoisted` AND NOT A LINE IN THE BODY
+ * ---------------------------------------------------------------------------
+ * Because ES imports are HOISTED and evaluated before any statement in this
+ * file runs. `import { Route } from "./callback"` above pulls in the route
+ * handler, which builds its forwarder at module scope, which reads
+ * `IDENTITY_URL` — so `process.env.IDENTITY_URL = …` written after the imports
+ * would be a line that provably does nothing, and the bug would come back the
+ * next time somebody tidied the imports. `vi.hoisted` is the documented way to
+ * run code BEFORE the imports of the file that contains it, and it is hoisted
+ * above them for exactly this reason.
+ *
+ * `127.0.0.1:1` rather than `localhost:<some port>` for two reasons. It is not
+ * the compose stack's address, so no stack configuration can make this suite
+ * talk to a real service; and port 1 is privileged and unbound on every machine
+ * this runs on, so the refusal is `ECONNREFUSED` immediately rather than a
+ * timeout that would turn a broken assertion into a slow one. The port is not
+ * checked in `tests/validate-ci.sh` because nothing PUBLISHES it — it is only
+ * connected to, once, by a test that asserts the connection fails.
+ *
+ * The other tests in this file are unaffected: each builds its own forwarder
+ * with an injected `fetchImpl` and an explicit `identityUrl`, so none of them
+ * reads this value, and the two document-navigation subtests never reach the
+ * forwarder at all. Vitest isolates per file, so nothing here reaches a
+ * neighbouring suite's environment either.
+ */
+vi.hoisted(() => {
+  process.env.IDENTITY_URL = "http://127.0.0.1:1";
+});
+
 const ROUTE_SOURCE = readFileSync(
   "src/routes/v1/auth/oauth/$provider/callback.tsx",
   "utf8",
@@ -220,7 +310,30 @@ describe("a programmatic request to the callback", () => {
     // own 502, which is the property that matters — it is a failure and not a
     // page, and it is the forwarder's failure rather than this route's.
     expect(result).toBeInstanceOf(Response);
-    expect((result as Response).status).toBe(502);
+
+    // The address is pinned closed at the top of this file, so a 502 here means
+    // the forwarder reached its transport and it refused. Anything else means
+    // the delegation did not happen as designed — and the extra assertions below
+    // say WHICH, because a bare status is what made this subtest point at the
+    // allow-list when the real cause was a live identity answering its own 404.
+    const response = result as Response;
+
+    // A body this app wrote, as opposed to one relayed from an upstream. A
+    // relayed answer carries identity's `trace_id`; the forwarder's own failures
+    // — `problem()` in `src/lib/upstream.ts` and `notFound()` in the route
+    // handler — do not. This is the discriminator that separates "the delegation
+    // worked and identity answered" from "the delegation worked and the
+    // forwarder refused", and it is asserted rather than left to a reader: it is
+    // the assertion whose absence is why a live identity's 404 read here as a
+    // missing allow-list entry.
+    const body = await response.text();
+    expect(body, "no upstream's trace_id in a forwarder-authored answer").not.toContain("trace_id");
+    expect(
+      response.headers.get("cache-control"),
+      "both of the forwarder's own failures are no-store",
+    ).toBe("no-store");
+
+    expect(response.status).toBe(502);
   });
 });
 
