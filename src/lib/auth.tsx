@@ -120,6 +120,17 @@ export type AuthValue = {
    * "who is asking" for a component to disagree with.
    */
   token: string | null;
+  /**
+   * When the session expires, as `POST /v1/session` reported it, or null when
+   * nothing recorded one.
+   *
+   * Read from the same store as `token` rather than held here, because it is a
+   * property of THAT session: a value kept in this component would outlive the
+   * token it belongs to and be shown beside a different person's session. It is
+   * null after a sign-out, and null for a session stored before the store kept
+   * the field — which is a fact, not a value to reconstruct.
+   */
+  expiresAt: string | null;
 };
 
 const AuthContext = createContext<AuthValue | null>(null);
@@ -178,7 +189,7 @@ export function AuthProvider({
       // `gcTime: 0` the moment it goes inactive. A person signing in as someone
       // else sees the header go quiet and then the right name — never the
       // previous one.
-      store.set(result.token);
+      store.set(result.token, result.expires_at);
     },
   });
 
@@ -212,13 +223,14 @@ export function AuthProvider({
     // mutation would put a second one in `pending` for the span between the
     // exchange and the navigation, which is the span in which the header reads
     // `anonymous` and flickers.
-    adoptSession: (session) => store.set(session.token),
+    adoptSession: (session) => store.set(session.token, session.expires_at),
     pending: loginMutation.isPending || registerMutation.isPending || logoutMutation.isPending,
     // `UNKNOWN_TOKEN` is the server render and the hydration commit, where
     // there is genuinely no token to report. Collapsing it to null is the same
     // answer the session state gives for "nobody is signed in yet", so a
     // component reading both never sees a token without a session.
     token: read === UNKNOWN_TOKEN ? null : read,
+    expiresAt: read === UNKNOWN_TOKEN ? null : store.getExpiry(),
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

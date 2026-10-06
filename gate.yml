@@ -451,9 +451,16 @@ gate:
     # 832 IS 823, plus the 8 in `src/lib/upstream.telemetry.test.ts` (the BFF's
     # forwarded fetch joining the trace) and the one `telemetry.test.ts` gained
     # when the context manager arrived. Same rule, same commit as the tests.
+    # 868 IS 837, plus the 31 the profile screen brings: 23 in
+    # `src/app/settings/page.test.tsx` (both badge states, the resend's five
+    # failure shapes and its double-submit guard, the expiry line, sign-out on
+    # both the accepted and the refused path, and the two that assert what the
+    # screen does NOT have), 6 in `src/lib/token-store.test.ts` for the expiry
+    # the store now keeps beside the token, and 2 in `src/components/shell/
+    # header.test.tsx` for the nav link. Same rule, same commit as the tests.
     - id: suite
       match: '^[ ]*Tests[ ]+([0-9]+)[ ]+passed(?![ ]*\|)'
-      minimum: 837
+      minimum: 868
     # The tally `tests/validate-ci.sh` prints, which is the second half of this
     # gate: the checks that the tree still has the shape CI assumes — one
     # runtime pin, `npm ci` and not `npm install`, the gate command, the
