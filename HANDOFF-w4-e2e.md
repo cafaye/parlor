@@ -246,3 +246,226 @@ $ timeout 900 npm test
  FAIL  src/routes/v1/auth/oauth/$provider/callback.test.ts > a programmatic request to the callback > is delegated to the forwarder rather than rendered
 AssertionError: expected 404 to be 502 // Object.is equality
 ```
+---
+
+# HANDOFF — W4b: the blocker is gone, one defect was real, one was never real
+
+**Worker:** W4b · **Branch:** `worker/w4-e2e` · **Repo:** `parlor-w4-e2e`
+**Commits:** `bdce1cf`, `ada16ab`, `bf676a2` (on top of `b844144`).
+**Outcome: the whole tier now runs. 25 of 26 pass. The one remaining failure
+is in `identity`, measured at the SQL, and this repository may not fix it.**
+
+| | before | after |
+|---|---|---|
+| tier bring-up | impossible (§1 of the report above) | `./bin/e2e`, 59s |
+| whole tier | never measurable | **26 tests: 25 passed, 1 failed, 0 skipped, 0 retried** |
+| the two target specs (9 tests) | 4 passed, 5 failed | **8 passed, 1 failed** |
+| `e2e/session.e2e.spec.ts` | 0 passed, 3 failed | **3 passed, 0 failed** |
+| `e2e/design-system.e2e.spec.ts` | 4 passed, 2 failed | 4 passed, 1 failed |
+| vitest | 836 passed / 1 failed of 837 | **836 passed / 1 failed of 837 (unchanged)** |
+| `gate.yml` vitest floor | 837 | 837 — still matches reality, no edit needed |
+
+## 1. The blocker was one character wide
+
+The manager's symlinks were correct. What was left was a harness bug that had
+nothing to do with worktrees being absent:
+
+```
+$ ./bin/e2e-stack up
+[e2e] FAIL: no git checkout of identity at /Users/kaka/Code/any/wt/parlor-w4-e2e/../identity
+       — ../identity is not a repository
+```
+
+`../identity` IS a repository. It is a **linked worktree**, and in a linked
+worktree `.git` is a *file* — one line naming the real gitdir — not a directory.
+`bin/e2e-stack` asked `[ -d "$dir/.git" ]` in three places (`sibling_revision`,
+`verify_sibling_image`, `verify_sibling_images`), and all three answers were
+wrong about a perfectly good checkout.
+
+Fixed in `bdce1cf` with one helper and `-e`. It was not cosmetic:
+
+* `sibling_revision` **dies**, so `publish-siblings` cannot name a source at
+  all — the whole tier is unreachable from a `wt/` directory, which is what every
+  worker session on this fleet is;
+* `verify_sibling_image` takes its "no checkout beside this repo" branch and
+  reports a sibling as attributable **on its stamp alone** — the silent
+  weakening this script's own header warns about, arrived at by accident.
+
+Measured: `up` goes from that `FAIL` to the whole stack ready, and
+`sibling origins: 3/3 attributable, 3 verified against a checkout in ../`
+(three, where before it would have been two).
+
+`.github/workflows/e2e.yml:246` already spelled the same check `-e`. The two
+disagreeing is how this survived.
+
+## 2. The defect that was real: nothing hydrated, anywhere
+
+With the stack up, the two target specs failed **5 of 9** — and not where the
+report above predicted. They failed at `/register`, on
+`expect(getByRole('status'))`, having never submitted a form.
+
+One Playwright session, listening to the page, said why:
+
+```
+[pageerror] n.AsyncLocalStorage is not a constructor
+```
+
+`src/start.ts` declares `createStart()`, so the framework compiles it into the
+**client** entry as well as the server one. It imported `@/lib/telemetry` at
+module scope and called `install()` there. So the whole OpenTelemetry SDK was
+compiled into `dist/client/assets/index-*.js`, and the browser ran the provider
+setup on load. `AsyncLocalStorageContextManager` is `node:async_hooks` behind
+`new n.AsyncLocalStorage`, and no browser has one. The throw happens while the
+entry chunk is still evaluating, so **nothing hydrates**: the SSR'd HTML is
+there, every link works, and no form submits, no dialog opens, no button ever
+becomes busy. Confirmed in the built artifact before the fix — the client entry
+carried `AsyncLocalStorage`, `OTEL_SDK_DISABLED` and the literal `telemetry off`.
+
+This is why the two target specs shared a surface, and it is why
+`ConfirmDialog` looked guilty: it was never reached. The three session specs and
+the busy-button spec were all the same bug wearing four hats.
+
+**The fix uses the framework's own enforcement, not a comment** (`ada16ab`):
+
+* `telemetry.ts` → `telemetry.server.ts`. That filename is one of the two
+  `serverOnly` markers `@tanstack/react-start`'s import-protection plugin reads.
+  Measured: with the static import still in `start.ts`, **the build fails** and
+  names `src/start.ts:31` — the rule is doing work, and the fix had to satisfy
+  it rather than explain it.
+* `start.ts` reaches it through `await import()` inside the `.server()`
+  middleware body — which the plugin already strips from the client build — and
+  calls `install()` immediately before opening the span rather than at module
+  scope. `install()` is idempotent, so per-request is free.
+
+After: no client chunk contains any of those three strings, and telemetry is its
+own server chunk (`dist/server/assets/telemetry.server-*.mjs`). The client build
+drops 2.5M → 2.4M for zero functionality, which is the honest size of what was
+being shipped to every browser.
+
+**Why nothing caught it.** jsdom has no `node:async_hooks`, and
+`src/lib/telemetry.server.ts` is not in the jsdom module graph, so
+`npm test` was 836/837 green throughout, and `ConfirmDialog`'s five unit tests
+passed at every commit in this report. The unit tier cannot see a module that
+only exists in a browser bundle.
+
+## 3. The defect that was NEVER real: the session survives a page load
+
+The report above (§3.1) was right that `session.e2e.spec.ts` was not doing what
+it claimed, and its §6 step 4 is what `bf676a2` does. The header link is
+TanStack's `<Link>` (`header.tsx:63-69`), so the click was a client-side
+navigation: same document, same React Query cache, and `staleTime: Infinity`
+means `/v1/me` is not called again. The file's only `page.reload()` was in the
+signed-**out** direction.
+
+Corrected, and **added rather than substituted** — the client-side transition is
+still worth asserting and this file is the only place that does:
+
+```
+$ npx playwright test e2e/session.e2e.spec.ts
+  3 passed (2.8s)
+```
+
+So the answer to the packet's question is: **the underlying defect was not real
+— the bug was entirely in the test, and in the app not hydrating at all.** A
+real signed-in document load leaves the header naming the address and leaves
+"Sign in" absent, and that assertion is sharper than it looks: `ShellHeader`
+renders **neither** session control while a stored token is being exchanged, so
+a header that had not finished re-deriving the session against a live
+`GET /v1/me` could not pass either.
+
+**The red proof, and what it does not establish.** With
+`token-store.ts`'s `storage.getItem` stubbed to `null`, the spec goes red at the
+signed-in header assertion — at `signIn` (line 106), *not* after the reload. So
+it proves the stored token is load-bearing, not specifically that the new reload
+line asserts something a navigation would not. A sharper proof (break only the
+*second* `/v1/me`, the one the reload forces) was not run; the hour was over.
+The non-vacuity of the reload rests on run 1 above — with the app dead, nothing
+on the tier could pass — and on the fact that a fresh document empties the React
+Query cache by construction.
+
+## 4. What is still red, and it is not in this repository
+
+`e2e/design-system.e2e.spec.ts:399` — "the account's destructive actions are
+confirmed, and the dialog is keyboard-only operable". It now gets all the way to
+the account screen and finds:
+
+```
+- heading "Account not found" [level=1]
+- paragraph: We could not find that account.
+```
+
+Not the dialog, and not a keyboard problem. The account screen 404s. Measured,
+with `curl` and no browser in the way:
+
+```
+$ curl -s localhost:16000/v1/accounts -H "authorization: Bearer $TOK"
+[{"id":"d6c3445d-…","name":"probe-…","personal":true,"role":"owner", …}]
+
+$ curl -s localhost:16000/v1/accounts/d6c3445d-… -H "authorization: Bearer $TOK"
+404 {"detail":"no such account is visible to you"}
+```
+
+and the same 404 **against identity directly** (`localhost:16080`), with the
+exact id identity itself returned. It is identity's bug, not the forwarder's.
+
+**Root cause, to the line.** `internal/accounts/service.go` (identity `master`,
+which is what `publish_siblings` builds):
+
+* `Service.ListMine` — `GET /v1/accounts`, which works — opens a transaction and
+  calls `tenancy.BeginUser(ctx, q, userID)` first. Its own comment explains
+  exactly this: without it the RLS policy on `account_users` matches no rows and
+  the answer is `[]` for a user who owns an account.
+* `Service.Get` — `GET /v1/accounts/{id}` — reads `store.Member` on
+  `s.read.Queryer()`: **no transaction, no `BeginUser`**. The policy
+  `account_users_cafaye_members` is `user_id = (select cafaye.current_user_id())`,
+  so with the GUC unset the membership row is invisible, `Member` maps `no rows`
+  to `ErrNotAMember`, and `writeTenancyError` renders the deliberate 404.
+
+The row is there — `select account_id, user_id, role from account_users` shows
+`(d6c3445d-…, d0181927-…, owner)` — and the policies are as quoted. Every
+`requireAccountRole` route reads the account this way, so account detail, the
+member list and both destructive actions are all behind it. **This is
+`identity`'s to fix, in `internal/accounts/service.go`, by giving `Get` the same
+`BeginUser` seam `ListMine` has.** Nothing in this repository can move it, and
+`GET /v1/accounts` cannot substitute: the destructive actions live behind the
+account screen.
+
+## 5. What I deliberately did NOT do, and why
+
+- **Did not weaken, skip, re-time or delete the one red assertion.** The only
+  way to make that spec green is to assert less about the dialog, which is
+  precisely the regression the brief names. It stays red and says why.
+- **Did not work around identity's 404 in parlor.** Fetching the account out of
+  `GET /v1/accounts` and rendering the screen from a list response would make the
+  spec green and would be a lie about the contract, in the repository that is
+  *not* where the defect is.
+- **Did not edit `e2e/docker-compose.yml`.** And did not edit `bin/e2e-stack`
+  beyond the `.git` spelling that was blocking the tier — no port, timeout,
+  retry or readiness change.
+- **Did not add a sleep, a `waitForTimeout`, a `test.skip`, a `retries` value or
+  a longer expect timeout anywhere.**
+- **Did not touch the pre-existing `src/routes/v1/auth/oauth/$provider/callback.test.ts`
+  failure** (`expected 404 to be 502`, 836/837 before and after). It is a
+  different packet; the stack may well have an answer to it now that the tier
+  runs, and that is worth more than a speculative edit from here.
+- **Did not chase `verify-email.index.tsx`** in the built assets, which the
+  report above also declined to chase. Still unexplained, still not this packet.
+- **Did not run the two target specs as the last word.** The numbers above are
+  the whole tier (`./bin/e2e`), because a filtered run trips the tier's own
+  `MINIMUM_TESTS` floor in the global teardown — which is the guard working, not
+  a failure of the specs.
+
+## 6. Successor's first move
+
+1. **Fix `identity`'s `Service.Get`.** Give it the `tenancy.BeginUser` call
+   inside a transaction that `ListMine` already makes, then re-run
+   `./bin/e2e` from this worktree: the account-detail spec should go green with
+   no change here at all. Nothing in `e2e/` or `src/` needs editing for it.
+2. **Decide whether `bin/e2e-stack` should tolerate a re-`up` on a live volume.**
+   `E2E_ALLOW_STALE_CLUSTER=1` exists and works, but `bin/e2e` does not pass it
+   through, so a second full run in a session needs a `down -v` first. Fails
+   loudly, so it is safe — just slow to work out.
+3. **Consider a vitest floor on the client bundle.** The defect in §2 is exactly
+   what a unit test cannot see, and `src/app/v1/[...path]/route.test.ts` already
+   reads `dist/client/assets` for a service address. One more assertion there —
+   no server-only module in a client chunk — would have caught it in CI.
