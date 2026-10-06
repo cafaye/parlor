@@ -287,6 +287,86 @@ describe("the allow-list", () => {
     expect(hops[0].method).toBe("GET");
   });
 
+  it("forwards the display-name patch on the same path", async () => {
+    // `PATCH /v1/me` shares its shape with `GET /v1/me` under a second method,
+    // and the two-lookup rule in `forward` is what tells them apart: finding
+    // "the route for this shape" and then checking its method would answer 405
+    // to a rename.
+    const { forward, hops } = forwarder();
+
+    const response = await forward(
+      new Request("https://parlor.test/v1/me", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ display_name: "Kaka" }),
+      }),
+      ["me"],
+    );
+
+    expect(response.status).toBe(200);
+    expect(hops[0].url).toBe(`${IDENTITY_URL}/v1/me`);
+    expect(hops[0].method).toBe("PATCH");
+  });
+
+  it("forwards the session list", async () => {
+    const { forward, hops } = forwarder();
+
+    const response = await forward(new Request("https://parlor.test/v1/sessions"), ["sessions"]);
+
+    expect(response.status).toBe(200);
+    expect(hops[0].url).toBe(`${IDENTITY_URL}/v1/sessions`);
+    expect(hops[0].method).toBe("GET");
+  });
+
+  it("forwards a session revoke, with the session id value-matched", async () => {
+    // The `:sessionId` segment is a uuid like every other id in this table, so
+    // a revoke of a session id this service did not issue is refused HERE rather
+    // than upstream — the same traversal-impossibility property the account
+    // routes have.
+    const { forward, hops } = forwarder();
+    const sessionId = "8f2c1a44-0000-4000-8000-000000000001";
+
+    const response = await forward(
+      new Request(`https://parlor.test/v1/sessions/${sessionId}`, { method: "DELETE" }),
+      ["sessions", sessionId],
+    );
+
+    expect(response.status).toBe(200);
+    expect(hops[0].url).toBe(`${IDENTITY_URL}/v1/sessions/${sessionId}`);
+    expect(hops[0].method).toBe("DELETE");
+  });
+
+  it("refuses a revoke under a session id that is not a uuid", async () => {
+    // The value match, not the shape length: two segments reach the wildcard
+    // check, and a segment that is not a uuid is not a session this app has
+    // ever held. The same property every `:accountId` route has.
+    const { forward, hops } = forwarder();
+
+    const response = await forward(new Request("https://parlor.test/v1/sessions/not-a-uuid"), [
+      "sessions",
+      "not-a-uuid",
+    ]);
+
+    expect(response.status).toBe(404);
+    expect(hops).toHaveLength(0);
+  });
+
+  it("forwards the account deletion on the same path under a third method", async () => {
+    // `DELETE /v1/me` shares the `me` shape with `GET` and `PATCH`, and the
+    // two-lookup rule in `forward` is what tells the three apart — finding "the
+    // route for this shape" and then checking its method would answer 405 to a
+    // deletion.
+    const { forward, hops } = forwarder();
+
+    const response = await forward(new Request("https://parlor.test/v1/me", { method: "DELETE" }), [
+      "me",
+    ]);
+
+    expect(response.status).toBe(200);
+    expect(hops[0].url).toBe(`${IDENTITY_URL}/v1/me`);
+    expect(hops[0].method).toBe("DELETE");
+  });
+
   it("refuses a route identity serves but this app never calls", async () => {
     // identity serves /v1/introspections, /v1/session/mfa, /v1/mfa/*,
     // /v1/accounts/{id}/api-keys, /v1/accounts/{id}/oidc-clients,
@@ -733,6 +813,10 @@ describe("the table and the clients agree", () => {
     await client.login({ email: "kaka@example.com", password: "correct horse" });
     await client.logout("t");
     await client.me("t");
+    await client.updateMyDisplayName("t", { display_name: "Kaka" });
+    await client.listSessions("t");
+    await client.revokeSession("t", id);
+    await client.deleteMyAccount("t");
     await client.listAccounts("t");
     await client.createAccount("t", { name: "Acme" });
     await client.getAccount("t", id);

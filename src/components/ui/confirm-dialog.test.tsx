@@ -116,3 +116,68 @@ describe("ConfirmDialog, from the keyboard", () => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 });
+
+describe("ConfirmDialog, type-to-confirm", () => {
+  it("disables the confirm until the input matches the expected value", () => {
+    render(
+      <ConfirmDialog
+        confirmLabel="Delete my account"
+        description="There is no undo."
+        onCancel={vi.fn()}
+        onConfirm={vi.fn()}
+        open
+        requireTyping="Kaka"
+        title="Delete your account?"
+      />,
+    );
+
+    const input = screen.getByRole("textbox");
+    const confirm = screen.getByRole("button", { name: "Delete my account" });
+
+    // The confirm is disabled until the input matches exactly — the reference
+    // product's shape for an irreversible action.
+    expect(confirm).toBeDisabled();
+
+    fireEvent.change(input, { target: { value: "wrong" } });
+    expect(confirm).toBeDisabled();
+
+    fireEvent.change(input, { target: { value: "Kaka" } });
+    expect(confirm).toBeEnabled();
+  });
+
+  it("resets the typed value when the dialog reopens", () => {
+    function ReopenHarness() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>
+            Open
+          </button>
+          <ConfirmDialog
+            confirmLabel="Delete my account"
+            description="There is no undo."
+            onCancel={() => setOpen(false)}
+            onConfirm={vi.fn()}
+            open={open}
+            requireTyping="Kaka"
+            title="Delete your account?"
+          />
+        </>
+      );
+    }
+
+    render(<ReopenHarness />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
+    const input = screen.getByRole("textbox");
+    fireEvent.change(input, { target: { value: "Kaka" } });
+    expect(screen.getByRole("button", { name: "Delete my account" })).toBeEnabled();
+
+    // Close and reopen — the typed value must not survive.
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
+
+    expect(screen.getByRole("textbox")).toHaveValue("");
+    expect(screen.getByRole("button", { name: "Delete my account" })).toBeDisabled();
+  });
+});

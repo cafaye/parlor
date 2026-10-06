@@ -44,11 +44,12 @@
  * is empty.
  */
 
-import { useCallback, useEffect, useId, useRef, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 
 import { cx } from "@/lib/cx";
 
 import { Button } from "./button";
+import { Input } from "./input";
 
 /** The controls a focus trap will walk. Order is document order, which is
  *  the order somebody reading the dialog expects to move through. */
@@ -82,6 +83,16 @@ export type ConfirmDialogProps = {
   onCancel: () => void;
   /** The confirm is in flight. Disables it; never renames it. */
   busy?: boolean;
+  /**
+   * The exact string the person must type before the confirm enables.
+   *
+   * For the actions where a second click is not enough — deleting the account
+   * you are signed in with, where the reference product makes the person type
+   * the account name. The expected value is shown so the person knows what to
+   * type, and the confirm stays disabled until the input matches it exactly.
+   * Omit for a plain two-step confirm.
+   */
+  requireTyping?: string;
 };
 
 /**
@@ -130,6 +141,7 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
   busy = false,
+  requireTyping,
 }: ConfirmDialogProps) {
   const titleId = useId();
   const descriptionId = useId();
@@ -138,11 +150,17 @@ export function ConfirmDialog({
   // A ref, not state: a re-render must not be able to steal the cancel button
   // back from somebody who has already tabbed to the confirm button.
   const cancel = useRef<HTMLButtonElement>(null);
+  // The typed value for a `requireTyping` confirm. Reset on open so a dialog
+  // reopened after a cancel starts empty rather than pre-filled with the
+  // previous attempt.
+  const [typed, setTyped] = useState("");
+  const typedId = useId();
 
   useEffect(() => {
     if (!open) return;
     restoreTo.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     cancel.current?.focus();
+    setTyped("");
   }, [open]);
 
   useEffect(() => {
@@ -219,13 +237,33 @@ export function ConfirmDialog({
         <p className="mt-2 text-sm text-muted" id={descriptionId}>
           {description}
         </p>
+        {/*
+          The type-to-confirm input, rendered only when `requireTyping` is set.
+          The expected value is shown so the person knows what to type, and the
+          confirm stays disabled until the input matches it exactly. The input
+          is part of the focus trap automatically — `FOCUSABLE` selects
+          `input:not([disabled])`.
+        */}
+        {requireTyping !== undefined ? (
+          <div className="mt-4 flex flex-col gap-2">
+            <label className="text-sm font-medium" htmlFor={typedId}>
+              Type <span className="font-semibold">{requireTyping}</span> to confirm
+            </label>
+            <Input
+              autoComplete="off"
+              id={typedId}
+              onChange={(event) => setTyped(event.target.value)}
+              value={typed}
+            />
+          </div>
+        ) : null}
         <div className="mt-5 flex flex-wrap justify-end gap-2">
           <Button disabled={busy} onClick={onCancel} ref={cancel} variant="secondary">
             {cancelLabel}
           </Button>
           <Button
             aria-busy={busy}
-            disabled={busy}
+            disabled={busy || (requireTyping !== undefined && typed !== requireTyping)}
             onClick={onConfirm}
             variant="destructive"
           >

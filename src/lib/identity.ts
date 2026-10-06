@@ -6,7 +6,11 @@
  *   POST   /v1/users     201 {id,email} | 422 | 409
  *   POST   /v1/session  200 {token,expires_at} | 401
  *   DELETE /v1/session  204
- *   GET    /v1/me        200 {id,email} | 401
+ *   GET    /v1/me        200 {id,email,display_name?} | 401
+ *   PATCH  /v1/me        200 {id,email,display_name?} | 422 | 401
+ *   DELETE /v1/me        204 | 401 | 409
+ *   GET    /v1/sessions  200 {sessions:[SessionSummary]} | 401 | 403
+ *   DELETE /v1/sessions/{session_id}  204 | 401 | 403 | 404
  *
  * plus the two password-reset routes below, the tenancy surface the same
  * service exposes under /v1/accounts and /v1/invitations, and the two social
@@ -73,8 +77,70 @@ export const IDENTITY_BASE_URL = "";
 export const MIN_PASSWORD_LENGTH = 8;
 
 export type Credentials = { email: string; password: string };
-export type User = { id: string; email: string };
+
+/**
+ * The authenticated user, as `GET /v1/me` and `PATCH /v1/me` answer it.
+ *
+ * `display_name` is OPTIONAL and its absence is the whole fact: identity omits
+ * the field rather than sending `null` when no name is set, so "no name" and
+ * "a name this service has never heard of" are the same answer and a client
+ * cannot tell a user with no name from a user whose name was never asked for.
+ * A client that defaulted it to `""` would be inventing a value the service
+ * never sent.
+ */
+export type User = { id: string; email: string; display_name?: string };
 export type Session = { token: string; expires_at: string };
+
+/**
+ * Client-side mirror of the `display_name` bound in `PATCH /v1/me`'s request
+ * schema (`maxLength: 64` in `identity/openapi/v1.yaml`).
+ *
+ * The same trade as `MIN_PASSWORD_LENGTH`: the bound is here so a person is
+ * told the rule before a round trip, not instead of one. The service is the
+ * authority — the 422 path below still handles a refusal, and if the two ever
+ * disagree the service is right and this constant is the bug.
+ */
+export const MAX_DISPLAY_NAME_LENGTH = 64;
+
+/**
+ * One entry of `GET /v1/sessions` — a session the caller can recognise.
+ *
+ * Transcribed from `SessionSummary` in `identity/openapi/v1.yaml`. The four
+ * facts a person needs are when it started, when it dies, what it presented
+ * and from where, plus the row's id. **Nothing here is a credential**: there is
+ * no `token` and no digest of one, because a digest is one SHA-256 away from a
+ * live session and would make anybody holding a log of this response a holder
+ * of one.
+ *
+ * `user_agent` and `ip` are evidence, not identity — both are caller-supplied
+ * or best-effort, and behind a proxy `ip` is frequently the proxy's address.
+ * They are rendered raw and unparsed: a device label this app invents is a
+ * label that can be wrong, and React escapes the text, which is the whole of
+ * the untrusted-header defence at this layer.
+ *
+ * `current` marks the session the listing request arrived on. It is the one
+ * field a client cannot compute for itself — the browser holds a cookie and
+ * this is a list of row ids — and it is what lets a screen say "this device"
+ * without asking the user to guess which row is theirs.
+ */
+export type SessionSummary = {
+  id: string;
+  created_at: string;
+  expires_at: string;
+  user_agent: string;
+  ip: string;
+  current: boolean;
+};
+
+/**
+ * The 200 from `GET /v1/sessions`.
+ *
+ * An object with a named field rather than a bare array, so a `total` or a
+ * cursor can be added later without a second breaking change. Empty is
+ * `{"sessions": []}` and never `null`, and expired rows are omitted — every
+ * entry is a credential that still works and a button that does something.
+ */
+export type SessionList = { sessions: SessionSummary[] };
 
 // ---------------------------------------------------------------------------
 // The tenancy surface
@@ -209,6 +275,61 @@ export type IdentityClient = {
   login: (credentials: Credentials) => Promise<Session>;
   logout: (token: string) => Promise<void>;
   me: (token: string) => Promise<User>;
+
+  // ---------------------------------------------------------------------------
+  // The display-name surface — one route, and its omitted field is a verb.
+  //
+  // `PATCH /v1/me` sets OR clears the name, and the two are the same request:
+  // an empty string and an omitted `display_name` decode the same way, so there
+  // is no "leave it unchanged" to express. A caller here is always saying
+  // "this is my name now", and the two things they can mean are "this" and
+  // "nothing". The input type therefore carries a REQUIRED `display_name`:
+  // a method that took `{ display_name?: string }` would be offering a
+  // third answer the route does not have, and a screen would find itself
+  // unable to say which of the two it meant.
+  //
+  // The 200 carries the user with the name just written, so a screen that
+  // renders from the response cannot be shown a stale value on the request
+  // that changed it.
+  // ---------------------------------------------------------------------------
+  updateMyDisplayName: (token: string, input: { display_name: string }) => Promise<User>;
+
+  // ---------------------------------------------------------------------------
+  // The sessions surface — a list and a per-row revoke.
+  //
+  // `listSessions` answers the caller's LIVE sessions, newest first, with
+  // never a token. `revokeSession` ends one and is refused with a single 404
+  // for all four ways of not owning it — never existed, somebody else's,
+  // already revoked, an id this service did not issue — because a 403 against
+  // a 404 would let a signed-in caller probe whether a session id belongs to
+  // a live session anywhere in the deployment.
+  //
+  // REVOKING THE SESSION YOU ARE USING IS ALLOWED, and the consequence is that
+  // you are signed out: the 204 sets no `Set-Cookie`, so the browser keeps
+  // whatever cookie it has and the next request with that credential is a 401.
+  // A screen that revokes its own current session must therefore clear the
+  // local half itself — the service deliberately does not do it for them.
+  // ---------------------------------------------------------------------------
+  listSessions: (token: string) => Promise<SessionList>;
+  revokeSession: (token: string, sessionId: string) => Promise<void>;
+
+  // ---------------------------------------------------------------------------
+  // Account self-deletion — `DELETE /v1/me`, the one route that ends the caller.
+  //
+  // The 204 has no body and no `Content-Type`: the resource is gone, and there is
+  // nothing to describe. Every credential is ended in the same transaction, so a
+  // screen that succeeds must clear the local half itself — the token in
+  // `localStorage` is dead the moment the 204 lands, and the next request with it
+  // is a 401.
+  //
+  // The 409 is the one answer that is not constant: a caller who is the SOLE
+  // owner of a team account is refused, and the problem document's `detail` names
+  // each account by name and slug precisely so the caller can act. A team account
+  // the caller merely belongs to never blocks them. The detail is the service's
+  // own user-facing sentence — not an internal code, host or port — so a screen
+  // renders it rather than flattening it.
+  // ---------------------------------------------------------------------------
+  deleteMyAccount: (token: string) => Promise<void>;
 
   // The tenancy surface. Every one of these takes the session token, because
   // every account route resolves a session before it does anything else, and
@@ -509,6 +630,39 @@ export function createIdentityClient(
     login: (credentials) => send(transport, `${base}/v1/session`, "POST", { body: credentials }),
     logout: (token) => send(transport, `${base}/v1/session`, "DELETE", { token }),
     me: (token) => send(transport, `${base}/v1/me`, "GET", { token }),
+
+    // -----------------------------------------------------------------------
+    // The display-name surface.
+    //
+    // The body ALWAYS carries `display_name`, and that is the contract rather
+    // than an omission: an omitted field and an empty string are the same
+    // request upstream, so a caller that made the field optional would be
+    // inventing a distinction the route does not have. Clearing is `""`.
+    // -----------------------------------------------------------------------
+    updateMyDisplayName: (token, input) =>
+      send(transport, `${base}/v1/me`, "PATCH", { token, body: input }),
+
+    // -----------------------------------------------------------------------
+    // The sessions surface.
+    //
+    // Both take the token like every other session-scoped call here: the two
+    // routes resolve the caller from the presented credential before they look
+    // at anything else, and a scoped api key is refused with 403 on the same
+    // terms as `DELETE /v1/session`.
+    // -----------------------------------------------------------------------
+    listSessions: (token) => send(transport, `${base}/v1/sessions`, "GET", { token }),
+    revokeSession: (token, sessionId) =>
+      send(transport, `${base}/v1/sessions/${sessionId}`, "DELETE", { token }),
+
+    // -----------------------------------------------------------------------
+    // Account self-deletion.
+    //
+    // The same path as `me` under a third method, and the forwarder's
+    // two-lookup rule is what tells them apart. The 204 resolves `undefined`;
+    // the 409 arrives as an `IdentityError` whose message is the service's own
+    // detail naming the accounts to transfer or delete first.
+    // -----------------------------------------------------------------------
+    deleteMyAccount: (token) => send(transport, `${base}/v1/me`, "DELETE", { token }),
 
     listAccounts: (token) => send(transport, `${base}/v1/accounts`, "GET", { token }),
     createAccount: (token, input) =>
