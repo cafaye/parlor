@@ -221,6 +221,23 @@ describe("navigation", () => {
     expect(screen.queryByRole("link", { name: "Accounts" })).toBeNull();
   });
 
+  it("offers the profile screen once there is a session", async () => {
+    storeToken("tok_abc");
+    renderWithProviders(<ShellHeader />, {
+      identity: stubIdentity({ me: vi.fn(() => Promise.resolve(aUser())) }),
+    });
+
+    expect(await screen.findByRole("link", { name: "Settings" })).toHaveAttribute("href", "/settings");
+  });
+
+  it("hides the profile screen from a signed-out visitor", () => {
+    // The same rule as Accounts: everything on it belongs to one person, so
+    // offering it signed out is a link to a page that can only say "Sign in".
+    renderWithProviders(<ShellHeader />, { identity: stubIdentity() });
+
+    expect(screen.queryByRole("link", { name: "Settings" })).toBeNull();
+  });
+
   it("puts the navigation in a labelled landmark, so it is findable", () => {
     renderWithProviders(<ShellHeader />, { identity: stubIdentity() });
 

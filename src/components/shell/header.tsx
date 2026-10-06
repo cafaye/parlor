@@ -56,6 +56,12 @@ function HeaderNav({ authed }: { authed: boolean }) {
     <>
       <NavLink href="/billing/plans">Plans</NavLink>
       {authed ? <NavLink href="/accounts">Accounts</NavLink> : null}
+      {/* Same rule as Accounts and for the same reason: every control on it
+          belongs to one person, so a signed-out visitor is offered the sign-in
+          screen rather than an empty page. `/verify-email` is deliberately NOT
+          linked here — it is the anonymous surface, and a signed-in person who
+          wanted it has the resend on this page instead. */}
+      {authed ? <NavLink href="/settings">Settings</NavLink> : null}
     </>
   );
 }

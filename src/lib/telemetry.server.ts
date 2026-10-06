@@ -349,6 +349,7 @@ const ROUTE_TEMPLATES: readonly string[] = [
   "/readyz",
   "/register",
   "/reset-password",
+  "/settings",
   "/v1/{path}",
   "/v1/auth/oauth/{provider}/callback",
   "/verify-email",

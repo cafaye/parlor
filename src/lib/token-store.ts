@@ -39,7 +39,22 @@ export const SESSION_TOKEN_KEY = "parlor.session.token";
  */
 export type TokenStore = {
   get: () => string | null;
-  set: (token: string | null) => void;
+  /**
+   * Write the token, and the expiry `POST /v1/session` reported beside it.
+   *
+   * The second argument is optional rather than required because the two callers
+   * that CLEAR the store have no expiry to write, and a required parameter would
+   * make them pass `null` for a field they are not talking about.
+   */
+  set: (token: string | null, expiresAt?: string | null) => void;
+  /**
+   * The expiry login reported, or null when there is none.
+   *
+   * Null is a real answer rather than a fallback: a session stored before this
+   * field existed is a valid session with no expiry to report, and saying so is
+   * different from inventing an instant.
+   */
+  getExpiry: () => string | null;
   /** Returns the unsubscribe. */
   subscribe: (listener: () => void) => () => void;
 };
@@ -53,27 +68,45 @@ export function createTokenStore(options: Options = {}): TokenStore {
   const listeners = new Set<() => void>();
   const storage = options.storage === undefined ? defaultStorage() : options.storage;
 
+  /**
+   * The stored envelope, or null when there is not a usable one.
+   *
+   * One reader for both getters, and that is the point: `get` and `getExpiry`
+   * cannot disagree about whether an entry is readable, so a screen that reads
+   * the token and a screen that reads the expiry are always talking about the
+   * same session. A hand-edited or truncated entry reads as no session at all
+   * rather than as half of one.
+   */
+  function read(): { token?: unknown; expires_at?: unknown } | null {
+    const raw = storage?.getItem(key);
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as { token?: unknown; expires_at?: unknown };
+    } catch {
+      // Not worth a crash: read as signed out and let the next write replace it.
+      return null;
+    }
+  }
+
   return {
     get() {
-      const raw = storage?.getItem(key);
-      if (!raw) return null;
-      try {
-        // A JSON envelope, so a later packet can add `expires_at` next to the
-        // token without a second key and a second migration.
-        const parsed = JSON.parse(raw) as { token?: unknown };
-        return typeof parsed.token === "string" ? parsed.token : null;
-      } catch {
-        // Hand-edited or truncated. Not worth a crash: read as signed out and
-        // let the next write replace it.
-        return null;
-      }
+      const entry = read();
+      return typeof entry?.token === "string" ? entry.token : null;
     },
 
-    set(token) {
+    getExpiry() {
+      const entry = read();
+      return typeof entry?.expires_at === "string" ? entry.expires_at : null;
+    },
+
+    set(token, expiresAt) {
       if (token === null) {
         storage?.removeItem(key);
       } else {
-        storage?.setItem(key, JSON.stringify({ token }));
+        // `expires_at: undefined` is DROPPED by `JSON.stringify`, so a session
+        // with no expiry to report writes exactly the envelope this file wrote
+        // before the field existed — one shape for readers and migrators, not two.
+        storage?.setItem(key, JSON.stringify({ token, expires_at: expiresAt ?? undefined }));
       }
       for (const listener of listeners) listener();
     },
