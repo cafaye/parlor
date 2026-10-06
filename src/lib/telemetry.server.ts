@@ -40,6 +40,35 @@
  *      socket is opened by the suite.
  */
 
+// SERVER-ONLY, and this line is the whole reason the app works in a browser.
+//
+// `@tanstack/react-start/server-only` is this framework's own marker, and the
+// plugin reads it to keep this module out of the client graph —
+// `start-plugin-core/.../import-protection/defaults.js` lists it under
+// `serverOnly` markers next to the `**/*.server.*` filename convention.
+//
+// It is here because of a measured, silent, total failure. `src/start.ts` —
+// which declares `createStart()` and so is part of the CLIENT entry — imports
+// `install` and `traceRequest` from this file at module scope, and its header
+// explains why: the provider has to exist before the first span. So the whole
+// OpenTelemetry SDK was compiled into `dist/client/assets/index-*.js`, and the
+// browser ran `install()` on load:
+//
+//   [pageerror] n.AsyncLocalStorage is not a constructor
+//
+// `AsyncLocalStorageContextManager` is `node:async_hooks` behind a class
+// called `new n.AsyncLocalStorage`, and a browser has no such constructor. The
+// throw happens while the entry module is still evaluating, so NOTHING
+// hydrates: the server-rendered HTML is there, every link works, and no form
+// on the site submits, no dialog opens and no button ever becomes busy. Unit
+// tests could not see it (jsdom has no `node:async_hooks` either, and the
+// module is not in the jsdom graph), and `npm test` was green.
+//
+// The marker is not a comment on the invariant, it is enforcement: if a future
+// edit makes a browser-reachable module import this one, the BUILD fails and
+// says so, instead of shipping a bundle that throws on the first paint.
+import "@tanstack/react-start/server-only";
+
 import {
   context,
   isSpanContextValid,
