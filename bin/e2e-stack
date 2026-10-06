@@ -258,10 +258,31 @@ sibling_ref() {
 # The error names `git fetch` rather than saying "ref not found", because "ref
 # not found" on a machine that has simply not fetched is a sentence that sends
 # the reader to the wrong place.
+# Is this path a git checkout? `-e`, not `-d`, and the difference is a whole
+# class of directory.
+#
+# In a linked worktree (or a submodule) `.git` is a FILE — one line, the path of
+# the real gitdir — and in an ordinary clone it is a directory. A `-d` therefore
+# says "not a repository" about a perfectly good checkout, and the two places it
+# did were both places where the answer decides whether the tier is trustworthy:
+#
+#   * `sibling_revision` DIES, so `publish-siblings` cannot name a source at all;
+#   * `verify_sibling_image` takes its "no checkout beside this repo" branch and
+#     prints a sibling as "attributable on its stamp alone" — the silent
+#     weakening the header of this file warns about, arrived at by accident.
+#
+# A worktree is not a rare shape on this fleet: it is what `wt/` is made of, and
+# `../kit`, `../identity` and friends are the kind of thing a worker session
+# symlinks in. `.github/workflows/e2e.yml` already spelled this check `-e`; the
+# two spellings disagreeing is how this went unnoticed.
+sibling_is_checkout() {
+  [ -e "$1/.git" ]
+}
+
 sibling_revision() {
   local service=$1 ref=$2 dir sha
   dir="$ROOT/../$service"
-  [ -d "$dir/.git" ] || die "no git checkout of $service at $dir — ../$service is not a repository, so this harness cannot name the source of an image it is about to build or verify"
+  sibling_is_checkout "$dir" || die "no git checkout of $service at $dir — ../$service is not a repository, so this harness cannot name the source of an image it is about to build or verify"
   if sha=$(git -C "$dir" rev-parse --verify --quiet "${ref}^{commit}" 2>/dev/null); then
     printf '%s' "$sha"
     return 0
@@ -1018,7 +1039,7 @@ verify_sibling_image() {
     return 1
   fi
 
-  if [ ! -d "$dir/.git" ]; then
+  if ! sibling_is_checkout "$dir"; then
     printf '[e2e]   %s stamped %s (%s); not verified against a checkout — there is no ../%s beside this repo\n' \
       "$service" "$(short_sha "$stamped_sha")" "$stamped_ref" "$service" >&2
     return 0
@@ -1070,7 +1091,7 @@ verify_sibling_images() {
   local service image ok=0 failed=0 checked=0
   for service in "${SIBLING_SERVICES[@]}"; do
     image="$REGISTRY/$(sibling_tag "$service")"
-    if [ -d "$ROOT/../$service/.git" ]; then
+    if sibling_is_checkout "$ROOT/../$service"; then
       checked=$((checked + 1))
     fi
     if verify_sibling_image "$service" "$image"; then

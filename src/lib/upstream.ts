@@ -138,7 +138,7 @@
  * The dependency runs the other way too — `telemetry.ts` does not import this
  * file — so there is no cycle to reason about.
  */
-import { tracedFetch } from "@/lib/telemetry";
+import { tracedFetch } from "@/lib/telemetry.server";
 
 /** The services this app forwards to. Nothing else is reachable. */
 export type UpstreamName = "identity" | "billing";

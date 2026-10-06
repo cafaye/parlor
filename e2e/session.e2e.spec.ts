@@ -167,11 +167,46 @@ test("the session survives a page load, so a signed-in person can reach their ac
   // does not survive a reload, which is the bug this tier is most likely to be
   // the first to see.
   //
+  // (Corrected 2026-10-06: this comment was wrong about its own code, and it is
+  // left in place because the correction below depends on having been wrong. The
+  // link is TanStack's `<Link>` — a client-side navigation — so the fresh cache
+  // and the fresh `GET /v1/me` never happened here. A `page.reload()` after the
+  // navigation is what makes them happen.)
+  //
   // Scoped to the header, because the landing page also links to /accounts and
   // a page-wide locator matched two elements — a strict-mode error, which is the
   // right outcome and one this file hit.
   await header(page).getByRole("link", { name: "Accounts" }).click();
   await expect(page).toHaveURL(/\/accounts$/);
+
+  // ---------------------------------------------------------------------------
+  // AND NOW THE PAGE LOAD THE COMMENT ABOVE CLAIMED
+  // ---------------------------------------------------------------------------
+  // That click is TanStack's `<Link>`, so it is a CLIENT-side navigation: same
+  // document, same React Query cache, and with `staleTime: Infinity` no fresh
+  // `GET /v1/me` at all. It is kept, because a client-side transition is worth
+  // asserting and this file is the only place that does.
+  //
+  // What it is NOT is a page load, and this test used to claim it was one. The
+  // reload is therefore ADDED rather than substituted: `page.reload()` fetches
+  // the document over HTTP again, the browser runs the entry chunk again, the
+  // React Query cache is empty again and `deriveSession` has to re-exchange the
+  // stored token against a live `GET /v1/me` before the header can say who this
+  // is. Everything below this line therefore proves the session survived a fresh
+  // document, not a route change — which is the property this file's name claims
+  // and the one HANDOFF-parlor-tanstack-start.md says the migration never
+  // exercised.
+  await page.reload();
+
+  // The signed-in state, read off the header again after the reload. The email
+  // rather than the "Sign out" button, for the reason `signIn` gives: a header
+  // that renders the control optimistically looks identical.
+  await expect(header(page).getByText(email, { exact: true })).toBeVisible();
+  // And the signed-out alternative is absent, so this is not a header showing
+  // both. `ShellHeader` renders NEITHER control while a stored token is being
+  // exchanged (`status === "loading"` returns null), so a header that had not
+  // finished re-deriving the session could not pass this either.
+  await expect(header(page).getByRole("link", { name: "Sign in" })).toHaveCount(0);
 
   // identity gives every new person a personal account, and it is the owner of
   // it. Asserting the row rather than an empty state is the stronger claim: it

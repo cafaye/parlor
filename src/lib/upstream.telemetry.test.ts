@@ -63,7 +63,7 @@ import {
   trace,
 } from "@opentelemetry/api";
 
-import { buildResource, install, installed, shutdown } from "./telemetry";
+import { buildResource, install, installed, shutdown } from "./telemetry.server";
 import { createUpstreamForwarder } from "./upstream";
 
 /** An inbound trace, so "continued" and "new" are distinguishable by value. */
@@ -162,7 +162,7 @@ describe("the forwarded fetch joins the trace", () => {
     const exporter = installTracerForTest();
     const { forward } = forwarder();
 
-    const { traceRequest } = await import("./telemetry");
+    const { traceRequest } = await import("./telemetry.server");
     await traceRequest(
       new Request("http://parlor.test/v1/me", {
         headers: { traceparent: `00-${INBOUND_TRACE_ID}-${INBOUND_SPAN_ID}-01` },
@@ -187,7 +187,7 @@ describe("the forwarded fetch joins the trace", () => {
     installTracerForTest();
     const { forward, hops } = forwarder();
 
-    const { traceRequest } = await import("./telemetry");
+    const { traceRequest } = await import("./telemetry.server");
     await traceRequest(
       new Request("http://parlor.test/v1/me", {
         headers: { traceparent: `00-${INBOUND_TRACE_ID}-${INBOUND_SPAN_ID}-01` },
@@ -218,7 +218,7 @@ describe("the forwarded fetch joins the trace", () => {
       throw new TypeError("fetch failed");
     });
 
-    const { traceRequest } = await import("./telemetry");
+    const { traceRequest } = await import("./telemetry.server");
     await traceRequest(
       new Request("http://parlor.test/v1/me", {
         headers: { traceparent: `00-${INBOUND_TRACE_ID}-${INBOUND_SPAN_ID}-01` },
@@ -247,7 +247,7 @@ describe("the forwarded fetch joins the trace", () => {
       throw new Error("connect ECONNREFUSED 10.0.3.7:8080");
     });
 
-    const { traceRequest } = await import("./telemetry");
+    const { traceRequest } = await import("./telemetry.server");
     const response = await traceRequest(
       new Request("http://parlor.test/v1/me", {
         headers: { traceparent: `00-${INBOUND_TRACE_ID}-${INBOUND_SPAN_ID}-01` },
@@ -270,7 +270,7 @@ describe("the forwarded fetch joins the trace", () => {
     installTracerForTest();
     const { forward, hops } = forwarder();
 
-    const { traceRequest } = await import("./telemetry");
+    const { traceRequest } = await import("./telemetry.server");
     await traceRequest(
       new Request("http://parlor.test/v1/me", {
         headers: { traceparent: `00-${INBOUND_TRACE_ID}-${INBOUND_SPAN_ID}-01` },
@@ -302,7 +302,7 @@ describe("the forwarded fetch joins the trace", () => {
     installTracerForTest();
     const { forward, hops } = forwarder();
 
-    const { traceRequest } = await import("./telemetry");
+    const { traceRequest } = await import("./telemetry.server");
     await traceRequest(
       new Request("http://parlor.test/v1/me"),
       () => forward(new Request("http://parlor.test/v1/me", { method: "GET" }), ["me"]),

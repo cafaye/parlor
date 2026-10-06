@@ -55,7 +55,7 @@ import {
   SPAN_NAME,
   traceRequest,
   tracedFetch,
-} from "./telemetry";
+} from "./telemetry.server";
 
 /**
  * The SDK's global registration is process-wide and irreversible, so every test
