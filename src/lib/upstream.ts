@@ -57,11 +57,10 @@
  *      can perform and nothing else, so the identity routes in it are
  *      a transcription with a test that reads it back ("the table and the clients
  *      agree" in `upstream.test.ts`). Everything identity serves that is not
- *      there — token introspection, the LOGIN challenge (`POST
- *      /v1/session/mfa`), the MFA disable (`DELETE /v1/mfa`), API keys, OIDC
- *      clients, email changes, `/v1/probe/{id}` — is refused before an address
- *      is contacted. A route being reachable from the internet is a decision
- *      somebody makes, not a side effect of a client existing.
+ *      there — token introspection, the MFA disable (`DELETE /v1/mfa`), API
+ *      keys, OIDC clients, email changes, `/v1/probe/{id}` — is refused before
+ *      an address is contacted. A route being reachable from the internet is a
+ *      decision somebody makes, not a side effect of a client existing.
  *
  *      This paragraph used to carry counts ("thirty routes, twenty-two
  *      reachable, eight not") and they were wrong twice over: they did not match
@@ -214,6 +213,15 @@ export const FORWARDED_REQUEST_HEADERS = [
  * destroys both. `headers.getSetCookie()` is the only correct spelling, and
  * identity's 202 MFA branch is the case that proves it matters.
  *
+ * `retry-after` crosses for one route and one status: `POST /v1/session/mfa`
+ * answers 423 when the second factor is locked after too many failures, and
+ * the header carries the remaining window in whole seconds. Without it the
+ * client sees a bare 423 and the login screen can only say "try again" — which
+ * sends a person to retry forever against a lock that ignores them for fifteen
+ * minutes. It is on the list rather than read upstream because the wait is a
+ * fact about the ANSWER, not about the request, and the forwarder's rule is
+ * that a header this file does not name cannot cross.
+ *
  * `location` is NOT on this list, and its absence is a decision rather than an
  * oversight. `redirect: "manual"` further down already refuses to FOLLOW a
  * redirect, and this list refuses to hand one over: between them, a 302 from any
@@ -253,7 +261,7 @@ export const FORWARDED_REQUEST_HEADERS = [
  * internal service and its version, and there is no client in this repository
  * that reads either.
  */
-export const FORWARDED_RESPONSE_HEADERS = ["content-type", "x-trace-id"] as const;
+export const FORWARDED_RESPONSE_HEADERS = ["content-type", "x-trace-id", "retry-after"] as const;
 
 /**
  * One shape of path segment, and how to recognise it.
@@ -312,12 +320,10 @@ type Route = {
  * table is a red suite rather than a 404 nobody sees.
  *
  * The identity surfaces deliberately absent: `/v1/introspections`,
- * `/v1/session/mfa` — the LOGIN challenge, which the login flow owns and this
- * table still refuses — `DELETE /v1/mfa`, the disable, which is a destructive
- * security action with no screen behind it yet,
- * `/v1/accounts/{id}/api-keys` and its delete, `/v1/accounts/{id}/oidc-clients`,
- * `/v1/email-changes` and its two children, and `/v1/probe/{accountID}`. None is
- * in `src/lib/identity.ts`.
+ * `DELETE /v1/mfa`, the disable, which is a destructive security action with
+ * no screen behind it yet, `/v1/accounts/{id}/api-keys` and its delete,
+ * `/v1/accounts/{id}/oidc-clients`, `/v1/email-changes` and its two children,
+ * and `/v1/probe/{accountID}`. None is in `src/lib/identity.ts`.
  *
  * The social-login pair was on this list until the packet that added it: the
  * service had served it the whole time, and this app simply could not reach it,
@@ -327,12 +333,12 @@ type Route = {
  *
  * The MFA MANAGEMENT routes crossed that same bar in the packet that added
  * them: the client can perform all four, and the settings section drives them.
- * What did NOT cross is the login challenge — `POST /v1/session/mfa` redeems
- * the `mfa_required` answer `POST /v1/session` can give, and finishing a
- * sign-in is the login flow's business, not a forwarder table's. The
- * consequence is a dead end rather than a wrong answer: a provider account
- * with a confirmed second factor cannot finish signing in until that packet
- * lands. See `REPORT-parlor-mfa-enroll-01.md`.
+ * The LOGIN challenge crossed it in the packet that finished the flow W31
+ * opened: `POST /v1/session/mfa` redeems the `mfa_required` answer `POST
+ * /v1/session` can give, the client can perform it, and the login screen
+ * drives it. What did NOT cross, and still has not, is the disable —
+ * `DELETE /v1/mfa` — which remains a destructive security action with no
+ * screen behind it. See `REPORT-parlor-mfa-challenge-01.md`.
  */
 const ROUTES: readonly Route[] = [
   // --- identity: the session and user routes ------------------------------
@@ -461,6 +467,20 @@ const ROUTES: readonly Route[] = [
     upstream: "identity",
   },
   { method: "POST", path: ["mfa", "recovery-codes"], upstream: "identity" },
+  // THE SECOND-FACTOR LOGIN CHALLENGE, which is not a management route and is
+  // declared here for the same reason the four above are: the client can
+  // perform it (`completeSecondFactor` in `src/lib/identity.ts`) and the login
+  // screen drives it. It redeems the `mfa_required` answer `POST /v1/session`
+  // gives — the only route in the service that turns a second factor into a
+  // session — and until it was declared here, a user who turned on a second
+  // factor was signing themselves out of their own account: the credentials
+  // were accepted, the challenge was minted, and the leg that spends it was
+  // refused before an address was contacted.
+  //
+  // It takes no token — the challenge in the body IS the credential — so it
+  // answers the same bar the four management routes do (a caller this app has)
+  // rather than the bar the anonymous recovery routes answer.
+  { method: "POST", path: ["session", "mfa"], upstream: "identity" },
 
   // --- billing ------------------------------------------------------------
   { method: "GET", path: ["plans"], upstream: "billing", query: ["cursor", "limit", "order"] },

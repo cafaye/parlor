@@ -92,11 +92,12 @@ const DID_NOT_FINISH = "That sign-in did not finish here. Nothing was signed in.
  * What a person is told when a second factor is owed.
  *
  * It names the state and the way out, and it does NOT claim the sign-in worked
- * or claim that the password path asks for anything. This app cannot FINISH an
- * MFA login from any surface — `POST /v1/session/mfa` is deliberately absent
- * from the forwarder's table — so the honest sentence is the one that says "you
- * are not signed in" and points at the screen that exists. See
- * `HANDOFF-parlor-02-social-ui.md` for the finding.
+ * or claim that the password path asks for anything. This screen still cannot
+ * FINISH an MFA login — the route exists in the forwarder's table now and the
+ * password path's prompt drives it, but a social sign-in that lands on the
+ * challenge has no form here to answer it with — so the honest sentence is the
+ * one that says "you are not signed in" and points at the screen that exists.
+ * See `HANDOFF-parlor-02-social-ui.md` for the finding.
  */
 const SECOND_FACTOR =
   "This account has a second factor, so this sign-in is not finished and nobody is signed in. Sign in with your email and password instead.";
