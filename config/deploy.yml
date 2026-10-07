@@ -151,8 +151,20 @@ app_domain  = require.call("KIT_APP_DOMAIN")
 # parlor's two. They are still here rather than nowhere because of what they ARE,
 # and they now land in `env.clear` at RUN time instead of in `builder.args` at
 # build time. See the section header above and `env:` below.
+#
+# THE TWO ARE NOT THE SAME KIND OF FACT, AND THAT IS THE LAUNCH STACK'S SHAPE
+# RATHER THAN A COMPROMISE. identity is required: a config that cannot say where
+# identity is cannot serve a sign-in, so `require` stays. billing is optional:
+# the launch deploys identity + gateway + courier + parlor with no billing, and
+# `cafaye.yml` already declares it `required: false` because both billing
+# screens render an error state rather than failing. So an empty value does not
+# fail the render — it omits `BILLING_URL` from `env.clear` entirely (below),
+# and the app answers its billing routes with a distinct "not configured" state
+# rather than dialing a default. The manifest and the render now agree about
+# whether billing is required, and the render is no longer the thing that stops
+# a launch deploy on a service that is not in the launch.
 identity_url = require.call("KIT_IDENTITY_URL")
-billing_url  = require.call("KIT_BILLING_URL")
+billing_url  = ENV["KIT_BILLING_URL"].to_s.strip
 %>
 # `config/deploy.yml` — the Kamal configuration for <%= service %>.
 #
@@ -316,7 +328,9 @@ deploy_timeout: 180
 env:
   clear:
     IDENTITY_URL: <%= identity_url %>
+<% unless billing_url.empty? %>
     BILLING_URL: <%= billing_url %>
+<% end %>
   secret: []
 
 # NO ACCESSORIES BLOCK. NOT OMITTED BY ACCIDENT — READ THIS.
