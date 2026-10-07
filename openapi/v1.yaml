@@ -112,7 +112,7 @@
 # .` reports each of these by name, and they are recorded here so the next
 # reader does not rediscover them:
 #
-# 1. `openapi.idempotency-key` on the fourteen identity POSTs. parlor
+# 1. `openapi.idempotency-key` on the thirteen identity POSTs. parlor
 #    forwards `Idempotency-Key` on every route (it is on the forwarder's
 #    request-header allow-list), but identity does not implement the header
 #    on any of its POSTs — its own document records that as a known gap,
