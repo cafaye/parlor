@@ -45,8 +45,20 @@ describe("landing page", () => {
     const hrefs = Array.from(nav.querySelectorAll("a")).map((a) => a.getAttribute("href"));
 
     expect(hrefs).toEqual(
-      expect.arrayContaining(["/accounts", "/billing/plans", "/billing/customers", "/healthz"]),
+      expect.arrayContaining(["/accounts", "/billing/plans", "/healthz"]),
     );
+  });
+
+  it("links nowhere near the customer list, which is not shippable unscoped", () => {
+    // billing scopes `GET /v1/customers` by nothing, so the screen showed every
+    // customer's email to anybody signed in. The screen is removed, not the
+    // link to it: a directory that links to a screen this build refuses to
+    // render is the same lie as the screen was.
+    renderWithRouter(<Home />);
+
+    const hrefs = Array.from(document.querySelectorAll("a")).map((a) => a.getAttribute("href") ?? "");
+
+    expect(hrefs.filter((href) => /customers/i.test(href))).toEqual([]);
   });
 
   it("links nowhere that does not exist, and in particular nowhere near subscriptions", () => {

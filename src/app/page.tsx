@@ -32,11 +32,6 @@ export default function Home() {
           body="The plan catalogue: what can be bought, at what price, on what cadence."
         />
         <Card
-          href="/billing/customers"
-          name="Customers"
-          body="Billing's customer records, and the identity user or account each is for."
-        />
-        <Card
           href="/healthz"
           name="Health"
           body="The liveness and readiness probes the platform reads."
