@@ -1165,6 +1165,7 @@ describe("the second factor section", () => {
     });
   });
 });
+
 describe("the delete account panel", () => {
   it("requires typing the personal account name before the confirm enables", async () => {
     renderSettings();
@@ -1341,3 +1342,4 @@ describe("the delete account panel", () => {
     await waitFor(() => expect(createTokenStore().get()).toBeNull());
   });
 });
+
