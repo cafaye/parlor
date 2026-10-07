@@ -1630,6 +1630,12 @@ recorded so it is not rediscovered from a UI symptom.
   path is right and the meaning is not there yet, so a deploy of parlor today
   proves that a container boots and not that it can reach anything.
 
+  **RESOLVED by the launch-honesty packet** (`worker/parlor-w66-launchhonest`,
+  B2). The BFF changed the premise — identity and billing are reached
+  server-side through the forwarder now, so there IS something to sweep — and
+  the sweep is wired: identity's own `/readyz` with a short timeout, billing
+  only when configured, `deps` an array of results, and any failure a 503.
+
 - **`identity/openapi/v1.yaml` does not describe the tenancy surface.** The
   document was last changed before the packet that added the implementation was
   merged, so `POST /v1/accounts` and its nine siblings exist in the service, in
