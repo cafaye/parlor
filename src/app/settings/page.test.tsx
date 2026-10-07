@@ -1061,7 +1061,15 @@ describe("the delete account panel", () => {
     fireEvent.click(confirm);
     fireEvent.click(confirm);
 
-    expect(deleteMyAccount).toHaveBeenCalledTimes(1);
+    // `waitFor`, not a synchronous assert. The first click's mutation is
+    // dispatched a microtask after the click — React Query's `mutateAsync`
+    // does not call the mutationFn synchronously — so a synchronous expect
+    // reads the call count before the first dispatch lands and reports the
+    // guard as broken when it is the assertion that is early. The guard
+    // itself is the `inFlight` ref in `destroyAccount`: clicks two and three
+    // arrive while the first is still unsettled and return before the
+    // client is reached, which is why the count is one and not three.
+    await waitFor(() => expect(deleteMyAccount).toHaveBeenCalledTimes(1));
     settle();
     await waitFor(() => expect(createTokenStore().get()).toBeNull());
   });
