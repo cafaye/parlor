@@ -149,6 +149,20 @@ export type BillingClient = {
   createCustomer: (input: CustomerCreate, idempotencyKey?: string) => Promise<Customer>;
 };
 
+/**
+ * The `code` on a `BillingError` that means "this deployment has no billing
+ * configured", as distinct from "billing is unreachable" or "billing refused".
+ *
+ * The forwarder (`src/lib/upstream.ts`) answers a billing route with a 503
+ * carrying this code when `BILLING_URL` is unset, so the two ways a billing
+ * call can fail — "not configured" and "configured but broken" — are told
+ * apart by the screens rather than collapsed into one transport error. It lives
+ * here rather than in the forwarder because the forwarder is server-only and
+ * the screens that branch on it are client code, and a constant both reach for
+ * has to be somewhere both can import.
+ */
+export const BILLING_NOT_CONFIGURED_CODE = "billing_not_configured";
+
 export class BillingError extends Error {
   readonly status: number;
   /** The reserved code from core's list, or `internal`. */

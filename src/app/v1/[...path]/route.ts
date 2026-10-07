@@ -82,17 +82,25 @@
  * image now runs in staging and in production, and the address that decides
  * where a request goes is a deployment fact rather than a build input.
  *
- * The defaults are the compose stack's addresses, so `npm run dev` works with no
- * environment at all.
+ * The identity default is the compose stack's address, so `npm run dev` works
+ * with no environment; billing has no default at all, because the launch stack
+ * deploys no billing and a default would be parlor dialing itself. See
+ * `identityUrl` and `billingUrl` below for the two halves of that.
  */
 
 import { createUpstreamForwarder } from "@/lib/upstream";
 
-/** Where identity runs when nothing says otherwise: the compose stack. */
+/**
+ * Where identity runs when nothing says otherwise: the compose stack.
+ *
+ * A DEVELOPMENT DEFAULT, NOT A PRODUCTION ONE. The only reader that reaches it
+ * is `npm run dev` with no environment. In production a missing `IDENTITY_URL`
+ * throws (see `identityUrl` below), because a container that cannot say where
+ * identity is cannot serve a sign-in — and silently dialing localhost inside
+ * that container would dial parlor itself, which is the failure this packet
+ * exists to remove.
+ */
 const DEFAULT_IDENTITY_URL = "http://localhost:8080";
-
-/** Where billing runs when nothing says otherwise: the compose stack. */
-const DEFAULT_BILLING_URL = "http://localhost:3000";
 
 /**
  * The forwarder, built once per process.
@@ -230,12 +238,39 @@ function notFound(): Response {
   );
 }
 
-/** The identity address. Read on the server, once, when this module loads. */
+/**
+ * The identity address. Read on the server, once, when this module loads.
+ *
+ * REQUIRED IN PRODUCTION, AND A MISSING VALUE FAILS LOUDLY AND BY NAME. The
+ * gate is `NODE_ENV` — the environment this app already knows about, set to
+ * `production` by the Dockerfile and the compose stack and by a production
+ * build — so no new variable is invented and the dev default above stays
+ * reachable only for a developer running `npm run dev`. The error names the
+ * variable rather than dialing a default, because the failure it prevents is a
+ * container that boots, answers every health check, and cannot sign a single
+ * person in: three layers from the cause, and invisible in a health surface.
+ */
 function identityUrl(): string {
-  return (process.env.IDENTITY_URL?.trim() || DEFAULT_IDENTITY_URL).replace(/\/+$/, "");
+  const configured = process.env.IDENTITY_URL?.trim() ?? "";
+  if (configured !== "") return configured.replace(/\/+$/, "");
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "IDENTITY_URL is not set. parlor cannot serve a sign-in without it: set it to identity's address (config/deploy.yml requires KIT_IDENTITY_URL, and the launch stack deploys identity).",
+    );
+  }
+  return DEFAULT_IDENTITY_URL;
 }
 
-/** The billing address. Read on the server, once, when this module loads. */
+/**
+ * The billing address. Read on the server, once, when this module loads.
+ *
+ * THERE IS NO DEFAULT, AND THAT IS THE LAUNCH STACK'S SHAPE RATHER THAN AN
+ * OVERSIGHT. The launch deploys no billing, so an empty `BILLING_URL` is a real
+ * deployment state; the forwarder answers a billing route with a distinct 503
+ * (`BILLING_NOT_CONFIGURED_CODE`) rather than dialing `localhost:3000` — which
+ * inside a container is parlor's own port, and a request to it is a request to
+ * parlor. The screens branch on that code and say "not configured".
+ */
 function billingUrl(): string {
-  return (process.env.BILLING_URL?.trim() || DEFAULT_BILLING_URL).replace(/\/+$/, "");
+  return (process.env.BILLING_URL?.trim() ?? "").replace(/\/+$/, "");
 }
