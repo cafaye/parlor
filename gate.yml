@@ -636,9 +636,46 @@ gate:
     # directory is not a test, and this one does not); the ingress host
     # drifted to example.com; and the clusterIssuer emptied. Each was restored
     # with `git checkout -- chart/` and the suite re-measured green.
+    #
+    # IT IS 975 BY THE NEXT ACCOUNT. 970 -> 975, a +5 in `src/lib/chart.test.ts`,
+    # the publish packet's tests — the check that the publish loop's caller is
+    # present and correct, and the four red controls that prove it can fail.
+    # Every one of them is here because the failure it guards is invisible in
+    # a rendered string: the caller workflow is a file nothing renders, and a
+    # publish loop with no caller is a green repository whose deploy
+    # artifacts are written by nothing — the substrate's `parlor` Application
+    # points at a registry nothing writes to.
+    #
+    #   * 1 green test asserting the four facts that make the loop work, all
+    #     of them read out of the verbatim caller template: the caller calls
+    #     kit's composed publish workflow (`uses: cafaye/kit/.github/workflows/
+    #     publish.reusable.yml@master` — a caller that inlines the steps has
+    #     forked the composition, and a fix in kit stops landing here); it
+    #     grants `packages: write` (a reusable workflow can request a
+    #     permission but cannot grant itself one — omitting it is a 401 at the
+    #     push that reads like a wrong password); it passes `push: true` (the
+    #     reusable workflows default to `push: false`, so a caller that omits
+    #     the input publishes nothing and says nothing); and the chart dir it
+    #     names — `chart/`, resolved from the `chart-dir` input with kit's
+    #     default rather than assumed, because the verbatim template names no
+    #     chart-dir — holds a `Chart.yaml` whose `version` is `0.1.0`, the OCI
+    #     tag the substrate's Application pulls. The chart's version IS the
+    #     tag (chart.reusable.yml reads name and version from Chart.yaml and
+    #     never takes them as inputs), so the equality is asserted with both
+    #     sides named in the failure message: a service that bumps one and not
+    #     the other is a service that never deploys.
+    #   * 4 red controls, one per fact: the call to the composed workflow
+    #     deleted (with the caller FILE removed the green test's readFileSync
+    #     throws ENOENT — the same red at the file-read half); `push: true`
+    #     changed to `false`; the `packages: write` grant deleted; and the
+    #     Chart.yaml version drifted to 0.1.1. Each was shown red before
+    #     green, at the tree level — the file renamed away, the workflow
+    #     edited, the chart edited — and restored, matching how the chart
+    #     packet proved its own check.
+    #
     - id: suite
       match: '^[ ]*Tests[ ]+([0-9]+)[ ]+passed(?![ ]*\|)'
-      minimum: 970
+      minimum: 975
     # The tally `tests/validate-ci.sh` prints, which is the second half of this
     # gate: the checks that the tree still has the shape CI assumes — one
     # runtime pin, `npm ci` and not `npm install`, the gate command, the
