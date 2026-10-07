@@ -458,9 +458,46 @@ gate:
     # screen does NOT have), 6 in `src/lib/token-store.test.ts` for the expiry
     # the store now keeps beside the token, and 2 in `src/components/shell/
     # header.test.tsx` for the nav link. Same rule, same commit as the tests.
-    # 895 IS 868, plus the 27 the MFA enrollment surface brings, and every one
-    # of them is here because the failure it guards is invisible in a rendered
-    # string:
+    # 940 IS THE RE-MEASURED COUNT ON THE MERGED TREE, and it is worth saying
+    # what it is the sum of, because both numbers this branch's floor was
+    # derived from were wrong.
+    #
+    # THE BRANCH'S 895 WAS A PAPER SUM. It was computed as 868 + 27 on the
+    # branch's old base (8c10b20, W23), before this branch was rebased onto
+    # master. 868 was master's DECLARED floor — and master's declared floor
+    # was itself stale, which is the finding this rebase surfaced.
+    #
+    # MASTER'S 868 WAS STALE BY 45. It was set at profile-v1 (503f3a1) and
+    # never moved when the profile screen, version 2 landed (35639db, merged
+    # as 041acd4). W26 rewrote the settings screen and its tests and added
+    # 45 tests without touching gate.yml:
+    #
+    #   * 26 in `src/app/settings/page.test.tsx` — the display-name panel,
+    #     the sessions panel, and the delete-account panel, each asserted
+    #     through the screen rather than through the client;
+    #   * 12 in `src/lib/identity.test.ts`, on the four client methods W26
+    #     added (`updateMyDisplayName`, `listSessions`, `revokeSession`,
+    #     `deleteMyAccount`) — the request shapes, the 200/422/401/404/409
+    #     answers, and the rule that a revoked CURRENT session leaves the
+    #     local half to the screen;
+    #   * 5 in `src/lib/upstream.test.ts`, on the four routes the profile-v2
+    #     screen drives (`PATCH /v1/me`, `GET /v1/sessions`,
+    #     `DELETE /v1/sessions/{id}`, `DELETE /v1/me`) — forwarded through
+    #     the table, wildcard segments value-matched, refusals before an
+    #     address is contacted;
+    #   * 2 in `src/components/ui/confirm-dialog.test.tsx`, on the dialog's
+    #     keyboard contract.
+    #
+    # Measured on master's tree at 041acd4: `Tests  913 passed (913)`. The
+    # floor said 868. A floor that does not move when 45 tests land is a
+    # floor that has stopped detecting anything — the exact defect this
+    # format exists to catch, and the reason this packet re-measures rather
+    # than inherits.
+    #
+    # THE MERGED TREE IS 940 = 913 + 27, re-measured on the rebased tree
+    # (`npm test` -> `Tests  940 passed (940)`, 37 files). The 27 are the MFA
+    # enrollment surface this branch adds, every one of them here because
+    # the failure it guards is invisible in a rendered string:
     #
     #   * 15 in `src/lib/identity.test.ts`, on the four client methods. The
     #     cases are the ones a lazy reader gets wrong: `GET /v1/mfa` answers 200
@@ -489,7 +526,7 @@ gate:
     #     the secret again" one among them.
     - id: suite
       match: '^[ ]*Tests[ ]+([0-9]+)[ ]+passed(?![ ]*\|)'
-      minimum: 895
+      minimum: 940
     # The tally `tests/validate-ci.sh` prints, which is the second half of this
     # gate: the checks that the tree still has the shape CI assumes — one
     # runtime pin, `npm ci` and not `npm install`, the gate command, the
