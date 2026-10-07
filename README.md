@@ -356,6 +356,17 @@ the stack up, installs the pinned Chromium, runs
 the suite, uploads the report and then fails the job if the report says fewer
 than two tests passed or anything was skipped.
 
+A third workflow, `.github/workflows/publish.yml`, is the publish half of the
+deploy loop: kit's caller template copied verbatim, one `uses:` of kit's
+composed `publish.reusable.yml`. A push to master publishes both artifacts —
+the image `config/deploy.yml` deploys, at `ghcr.io/cafaye/parlor:sha-<full 40
+chars>` (plus `<branch>`, plus `latest` on the default branch), and the chart
+the Argo CD `Application` pulls, at `oci://ghcr.io/cafaye/charts/parlor:0.1.0`.
+The chart's `version` IS the OCI tag, so it is the tag the substrate's
+`Application` must match (`targetRevision: 0.1.0`) — a service that bumps one
+and not the other is a service that never deploys. `src/lib/chart.test.ts`
+asserts the four facts that make the loop work, one red control per fact.
+
 > **What the stack actually consumes, and one stale step in that workflow.**
 > `e2e/docker-compose.yml` carries `image:` and **no** `build:` for `identity`
 > and `gateway` — they are pulled by tag from `${E2E_REGISTRY:-localhost:16010}`,
@@ -473,7 +484,7 @@ The five differences, in one place so this section can be read without the file:
 | 2 | No `accessories:` block at all — no postgres, no backup | parlor keeps no state of its own. |
 | 3 | `env.clear` carries both service addresses, at run time | The BFF reads them on the server, so one image serves every environment. They are addresses, not credentials, so they are not names in `secret`. |
 | 4 | `builder.args` is gone entirely | A `NEXT_PUBLIC_*` service address is inlined into the client bundle, and the browser no longer needs one. Keeping the block would put a service address back where the browser can change it. |
-| 5 | `builder.cache` kept, but nothing in CI publishes an image | See "Known gaps" below. |
+| 5 | `builder.cache` kept | The publish workflow builds the image on every push to master, so a fresh host can pull it rather than run `kamal build` there — which is the OOM the `builder` block exists to prevent. The cache keeps that build fast. |
 
 ### `/readyz` and `/healthz` are not interchangeable
 
@@ -548,10 +559,13 @@ Dockerfile carries the `engines.node` pin, and that this script is executable.
 - **The session token is still in `localStorage`.** The cookie is live, but the
   client keeps sending the bearer header too and identity prefers it, so the
   `HttpOnly` half does not yet protect anyone. See "Sessions" above.
-- **No CI job builds or pushes the image.** `.github/workflows/ci.yml` has three
-  jobs and none of them runs `docker build`, `docker push` or `kamal build`, so
-  `kamal deploy` on a fresh host will run `kamal build` there — which is the OOM
-  the `builder` block exists to prevent. **DECISION NEEDED**.
+- **The image is published, but whether a fresh host pulls it or builds it is
+  the substrate's decision.** `.github/workflows/publish.yml` now builds and
+  pushes the image on every push to master (see "CI" above), so `kamal
+  deploy` on a fresh host can pull it rather than run `kamal build` there —
+  which is the OOM the `builder` block exists to prevent. That the
+  substrate's rollout pulls the published tag is not this repository's to
+  decide. **DECISION NEEDED** (substrate).
 - **TLS is `proxy.ssl: true` and nothing more.** No certificate pinning, no HSTS,
   no `ssl: {certificate_pem: …}` — kamal-proxy terminates with Let's Encrypt on
   the host, and the app behind it needs no knowledge of TLS because it makes no

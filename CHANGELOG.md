@@ -8,6 +8,29 @@ All notable changes to parlor are recorded here. The format follows
 
 ### Added
 
+- **A push to master now publishes both deploy artifacts** (`worker/parlor-w97-publish`).
+  `.github/workflows/publish.yml` is kit's caller template
+  (`kit/templates/publish/publish.yml`) copied verbatim — one `uses:` of
+  kit's composed `publish.reusable.yml`, which builds and pushes the image
+  `config/deploy.yml` deploys and packages and pushes the chart the Argo
+  CD `Application` pulls. The image lands at
+  `ghcr.io/cafaye/parlor:sha-<full 40 chars>` (plus `<branch>`, plus
+  `latest` on the default branch); the chart lands at
+  `oci://ghcr.io/cafaye/charts/parlor:0.1.0`. The chart's `version` IS the
+  OCI tag — `chart.reusable.yml` reads name and version from `Chart.yaml`
+  and never takes them as inputs — so `Chart.yaml`'s `version` is the tag
+  the substrate's `Application` must match (`targetRevision: 0.1.0`): a
+  service that bumps one and not the other is a service that never
+  deploys. `src/lib/chart.test.ts` now asserts the four facts that make
+  the loop work — the caller calls the composed workflow (a caller that
+  inlines the steps has forked it), grants `packages: write` (a reusable
+  workflow can request a permission but cannot grant itself one), passes
+  `push: true` (the reusable workflows default to `push: false`, so a
+  caller that omits it publishes nothing and says nothing), and names a
+  chart dir (default `chart/`, resolved from the `chart-dir` input) whose
+  `Chart.yaml` version equals the tag — with four red controls, one per
+  fact, each shown red at the tree level before green.
+
 - **parlor's Helm chart, and the Ingress that makes `app.cafaye.com`
   reach it** (`worker/parlor-w86b-chart`, absorbing the old `m93`).
   `caf gen chart` wrote six files from `cafaye.yml` — `Chart.yaml`,

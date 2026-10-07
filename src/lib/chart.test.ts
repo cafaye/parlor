@@ -34,6 +34,21 @@
  * part of the suite: `ingress.enabled: false` emits no Ingress, and
  * enabled with an empty host FAILS the template. Both were shown red
  * before green (see the packet report).
+ *
+ * The publish caller assertions read `.github/workflows/publish.yml` —
+ * kit's caller template, copied verbatim — and assert the facts that make
+ * the publish loop work: that it calls kit's composed publish workflow
+ * (a caller that inlines the steps has forked the composition), that it
+ * grants `packages: write` (a reusable workflow can request a permission
+ * but cannot grant itself one), that it passes `push: true` (the reusable
+ * workflows default to `push: false`, so a caller that omits it publishes
+ * nothing and says nothing), and that the chart dir it names — `chart/`,
+ * resolved from the `chart-dir` input with kit's default — holds a
+ * `Chart.yaml` whose `version` is `0.1.0`, the OCI tag the substrate's
+ * Application pulls. The four red controls are part of the suite: a
+ * caller that inlines the steps, a caller with `push: false`, a caller
+ * with no `packages: write` grant, and a chart whose version has drifted
+ * from the tag. All four were shown red before green.
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -55,6 +70,19 @@ const deploymentYaml = readFileSync(`${chartDir}/templates/deployment.yaml`, "ut
 const serviceYaml = readFileSync(`${chartDir}/templates/service.yaml`, "utf8");
 const ingressYaml = readFileSync(`${chartDir}/templates/ingress.yaml`, "utf8");
 const dockerfile = readFileSync(resolve(REPO, "Dockerfile"), "utf8");
+
+// kit/templates/publish/publish.yml, copied verbatim to
+// .github/workflows/publish.yml — the whole of parlor's side of the publish
+// loop is that one caller file.
+const publishWorkflowPath = resolve(REPO, ".github/workflows/publish.yml");
+
+// kit/templates/substrate/manifests/applications/parlor.yaml — the Argo CD
+// Application the chart is pulled by. The chart's version IS the OCI tag
+// (chart.reusable.yml reads name and version from Chart.yaml and never takes
+// them as inputs), so this number and Chart.yaml's `version` are one fact
+// written twice: a service that bumps one and not the other is a service
+// that never deploys.
+const TARGET_REVISION = "0.1.0";
 
 /** Run `helm template` against the chart; returns stdout, or throws on a non-zero exit. */
 function helmTemplate(args: string[] = []): string {
@@ -155,5 +183,142 @@ describe("helm template against the committed values", () => {
     expect(() => helmTemplate(["--set", "ingress.host="])).toThrow(
       /an Ingress with no host is a silent misroute/,
     );
+  });
+});
+
+// --- the publish caller ----------------------------------------------------
+//
+// `.github/workflows/publish.yml` is kit's caller template copied verbatim.
+// It is the whole of parlor's side of the publish loop: one `uses:` of kit's
+// composed publish workflow, which publishes both the image
+// `config/deploy.yml` deploys and the chart the Argo CD Application pulls.
+
+/**
+ * The chart dir the caller names, resolved the way the reusable workflow
+ * resolves it: the `chart-dir:` input if the caller has one, else kit's
+ * default `chart/`. Resolved rather than assumed because the caller is the
+ * verbatim template and the template names no chart-dir — the default is
+ * the fact.
+ */
+function chartDirNamedBy(workflowYaml: string): string {
+  return capture(/^\s*chart-dir: (\S+)\s*$/m, workflowYaml) ?? "chart";
+}
+
+/**
+ * The facts that make the publish loop work, asserted against the caller
+ * workflow's text and the chart it names. PURE — it takes text, not paths —
+ * because the red controls below feed it broken text and expect it to throw;
+ * a check that cannot fail is worse than no test.
+ */
+function expectPublishLoop(
+  workflowYaml: string,
+  chartDir: string,
+  chartYaml: string,
+): void {
+  // THE COMPOSITION LIVES IN KIT. A caller that inlines the steps has forked
+  // it, and a fix in kit's publish.reusable.yml stops landing here.
+  if (
+    !workflowYaml.includes(
+      "uses: cafaye/kit/.github/workflows/publish.reusable.yml@master",
+    )
+  ) {
+    throw new Error(
+      "the publish caller must call kit's composed publish workflow — `uses: cafaye/kit/.github/workflows/publish.reusable.yml@master` — and not inline the steps: the composition lives in kit, and a caller that inlines it has forked it, so a fix in kit stops landing here",
+    );
+  }
+  // THE GRANT IS THE CALLER'S TO MAKE. A reusable workflow can request a
+  // permission but cannot grant itself one; a caller that omits this gets a
+  // 401 at the push that reads like a wrong password rather than a missing
+  // grant.
+  if (!/^\s*packages: write\s*$/m.test(workflowYaml)) {
+    throw new Error(
+      "the publish caller must grant `packages: write` — a reusable workflow can request a permission but cannot grant itself one, and omitting it is a 401 at the push that reads like a wrong password",
+    );
+  }
+  // THE OPT-IN. The reusable workflows default to `push: false`, so a caller
+  // that omits the input — or sets it false — publishes nothing and says
+  // nothing.
+  if (!/^\s*push: true\s*$/m.test(workflowYaml)) {
+    throw new Error(
+      "the publish caller must pass `push: true` — the reusable workflows default to `push: false`, so a caller that omits the input publishes nothing and says nothing",
+    );
+  }
+  // THE TRIGGER. A publish workflow that does not run on push to master
+  // publishes nothing on push to master.
+  if (!/^\s*branches: \[master\]\s*$/m.test(workflowYaml)) {
+    throw new Error(
+      "the publish caller must trigger on push to master — `on: push: branches: [master]` — or a push to master publishes nothing",
+    );
+  }
+  // THE VERSION SEAM, both sides named. The chart's version IS the tag the
+  // substrate pulls; a service that bumps one and not the other is a service
+  // that never deploys.
+  const chartVersion = capture(/^version: (.+)$/m, chartYaml);
+  if (chartVersion !== TARGET_REVISION) {
+    throw new Error(
+      `chart ${chartDir}/Chart.yaml version ${chartVersion ?? "(absent)"} is not the OCI tag the substrate pulls — targetRevision: ${TARGET_REVISION}. The chart's version IS the tag (chart.reusable.yml reads name and version from Chart.yaml and never takes them as inputs), and the two are the same fact written twice; a service that bumps one and not the other is a service that never deploys`,
+    );
+  }
+}
+
+describe("the publish caller", () => {
+  it("calls kit's composed publish workflow, grants packages: write, passes push: true, and names a chart dir whose Chart.yaml version is the tag the substrate pulls", () => {
+    // Read here rather than at module scope so a tree with no caller fails
+    // THIS describe block, not the chart assertions above.
+    const workflowYaml = readFileSync(publishWorkflowPath, "utf8");
+    const chartDir = chartDirNamedBy(workflowYaml);
+    const chartYaml = readFileSync(resolve(REPO, chartDir, "Chart.yaml"), "utf8");
+    expectPublishLoop(workflowYaml, chartDir, chartYaml);
+  });
+
+  it("RED CONTROL: a caller that inlines the steps instead of calling the composed workflow goes red", () => {
+    // "The caller removed" at the assertion half: the workflow text with the
+    // call to kit's composed publish workflow deleted. The file-read half is
+    // the green test's readFileSync throwing ENOENT — the same red.
+    const workflowYaml = readFileSync(publishWorkflowPath, "utf8").replace(
+      /^ {4}uses: cafaye\/kit\/\.github\/workflows\/publish\.reusable\.yml@master\n/m,
+      "",
+    );
+    expect(() => expectPublishLoop(workflowYaml, "chart", chartYaml)).toThrow(
+      /composed publish workflow/,
+    );
+  });
+
+  it("RED CONTROL: a caller with push: false goes red", () => {
+    // The reusable workflows default to `push: false`; a caller that sets it
+    // false publishes nothing and says nothing.
+    const workflowYaml = readFileSync(publishWorkflowPath, "utf8").replace(
+      /^(\s*)push: true\s*$/m,
+      "$1push: false",
+    );
+    expect(() => expectPublishLoop(workflowYaml, "chart", chartYaml)).toThrow(
+      /push: true/,
+    );
+  });
+
+  it("RED CONTROL: a caller with no packages: write grant goes red", () => {
+    // A reusable workflow can request a permission but cannot grant itself
+    // one; the grant omitted is a 401 at the push.
+    const workflowYaml = readFileSync(publishWorkflowPath, "utf8").replace(
+      /^\s*packages: write\s*$\n/m,
+      "",
+    );
+    expect(() => expectPublishLoop(workflowYaml, "chart", chartYaml)).toThrow(
+      /packages: write/,
+    );
+  });
+
+  it("RED CONTROL: a chart whose version has drifted from the tag the substrate pulls goes red", () => {
+    // Chart.yaml version 0.1.1 against the Application's targetRevision
+    // 0.1.0: the push succeeds, the pull finds nothing, and Argo reports no
+    // error. The failure message names both sides.
+    const drifted = chartYaml.replace(/^version: .+$/m, "version: 0.1.1");
+    expect(() =>
+      expectPublishLoop(
+        readFileSync(publishWorkflowPath, "utf8"),
+        "chart",
+        drifted,
+      ),
+    ).toThrow(/targetRevision: 0\.1\.0/);
   });
 });
