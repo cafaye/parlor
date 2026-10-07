@@ -72,7 +72,7 @@ and an operation in the document with no table entry is a red suite.
 The document describes the routing contract and deliberately leaves the rest
 to the upstreams: request and response bodies are identity's and billing's
 contracts, the exact success status is the `2XX` wildcard (the forwarder
-passes it through), and `/healthz`//`readyz` are absent on purpose — a probe
+passes it through), and `/healthz` and `/readyz` are absent on purpose — a probe
 is infrastructure, not contract, which is the courier/muse practice and what
 keeps core's `openapi.paths-are-versioned` rule satisfiable. The document's
 header states all of this, and records the three gaps core's harness reports
