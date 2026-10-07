@@ -49,7 +49,7 @@ const DOCUMENT_PATH = resolve(process.cwd(), "openapi/v1.yaml");
 // The YAML subset parser
 // ---------------------------------------------------------------------------
 
-type YamlNode = string | YamlNode[] | { [key: string]: YamlNode };
+type YamlNode = string | YamlNode[] | { [key: string]: YamlNode } | null;
 
 /** One line: its indentation and its content with comments stripped. */
 type Line = { indent: number; text: string };
@@ -288,7 +288,7 @@ for (const [path, item] of Object.entries(paths as Record<string, unknown>)) {
   }
 }
 
-const byPathAndMethod = (entries: { path: string; method: string }[]) =>
+const byPathAndMethod = <T extends { path: string; method: string }>(entries: T[]) =>
   new Map(entries.map((entry) => [`${entry.method} ${entry.path}`, entry]));
 
 const table = byPathAndMethod(tableEntries);
