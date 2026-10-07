@@ -1668,3 +1668,228 @@ describe("fieldErrorMessage: the tenancy codes", () => {
     expect(message).not.toContain("some_future_code");
   });
 });
+
+// ---------------------------------------------------------------------------
+// The MFA surface.
+//
+// The four routes the settings section drives. The shapes are transcribed from
+// `identity/openapi/v1.yaml` and the statuses from the same document — the
+// confirm route's 401 (a refused code) and 404 (an enrollment that is not
+// this caller's, is expired, or is already confirmed) are the two the screen
+// has to be able to tell apart, so both are asserted here.
+// ---------------------------------------------------------------------------
+
+describe("the MFA surface", () => {
+  const ENROLLMENT_ID = "8f2c1a44-0000-4000-8000-000000000001";
+
+  describe("mfaStatus", () => {
+    it("reads /v1/mfa with the token as a bearer credential", async () => {
+      const { transport, calls } = stubTransport(() => json(200, { enabled: false }));
+      const client = createIdentityClient({ transport });
+
+      await client.mfaStatus("tok");
+
+      expect(calls[0].url).toBe("/v1/mfa");
+      expect(calls[0].method).toBe("GET");
+      expect(calls[0].headers.Authorization).toBe("Bearer tok");
+    });
+
+    it("treats a 200 with enabled:false as the answer, not a 404", async () => {
+      // The question has an answer for every signed-in user, so a client that
+      // read a 404 here would be reporting "this is not your account" for a
+      // person who simply has no factor yet.
+      const { transport } = stubTransport(() => json(200, { enabled: false }));
+      const client = createIdentityClient({ transport });
+
+      await expect(client.mfaStatus("tok")).resolves.toEqual({ enabled: false });
+    });
+
+    it("returns the enrolled status with its optional fields", async () => {
+      const { transport } = stubTransport(() =>
+        json(200, {
+          enabled: true,
+          method: "totp",
+          enrolled_at: "2026-09-30T12:04:11Z",
+          recovery_codes_remaining: 8,
+        }),
+      );
+      const client = createIdentityClient({ transport });
+
+      await expect(client.mfaStatus("tok")).resolves.toEqual({
+        enabled: true,
+        method: "totp",
+        enrolled_at: "2026-09-30T12:04:11Z",
+        recovery_codes_remaining: 8,
+      });
+    });
+
+    it("raises an unauthorized error when the token is rejected", async () => {
+      const { transport } = stubTransport(() => problem(401, { code: "unauthorized", title: "Unauthenticated" }));
+      const client = createIdentityClient({ transport });
+
+      const failure = await theFailure(client.mfaStatus("tok"));
+
+      expect(failure.status).toBe(401);
+    });
+  });
+
+  describe("startMfaEnrollment", () => {
+    it("posts to /v1/mfa/enrollments with the token as a bearer credential", async () => {
+      const { transport, calls } = stubTransport(() =>
+        json(201, { enrollment_id: ENROLLMENT_ID, secret: "JBSWY3DPEHPK3PXP" }),
+      );
+      const client = createIdentityClient({ transport });
+
+      await client.startMfaEnrollment("tok");
+
+      expect(calls[0].url).toBe("/v1/mfa/enrollments");
+      expect(calls[0].method).toBe("POST");
+      expect(calls[0].headers.Authorization).toBe("Bearer tok");
+    });
+
+    it("sends an empty body for a first enrollment, because the code is the optional half", async () => {
+      // The document requires a body and makes `code` optional, so a first
+      // enrollment sends `{}` — a client that sent no body at all would be
+      // refused by a service that reads the request body as required.
+      const { transport, calls } = stubTransport(() => json(201, { enrollment_id: ENROLLMENT_ID }));
+      const client = createIdentityClient({ transport });
+
+      await client.startMfaEnrollment("tok");
+
+      expect(calls[0].body).toBe("{}");
+    });
+
+    it("sends the current code when this is a rotation", async () => {
+      const { transport, calls } = stubTransport(() => json(201, { enrollment_id: ENROLLMENT_ID }));
+      const client = createIdentityClient({ transport });
+
+      await client.startMfaEnrollment("tok", { code: "482913" });
+
+      expect(calls[0].body).toBe('{"code":"482913"}');
+    });
+
+    it("returns the one-time secret and provisioning URI", async () => {
+      const { transport } = stubTransport(() =>
+        json(201, {
+          enrollment_id: ENROLLMENT_ID,
+          secret: "JBSWY3DPEHPK3PXP",
+          provisioning_uri: "otpauth://totp/Acme:kaka@example.com?secret=JBSWY3DPEHPK3PXP",
+          method: "totp",
+          digits: 6,
+          period_seconds: 30,
+          algorithm: "SHA1",
+          expires_at: "2026-09-30T12:14:11Z",
+          replaced: false,
+        }),
+      );
+      const client = createIdentityClient({ transport });
+
+      const enrollment = await client.startMfaEnrollment("tok");
+
+      expect(enrollment.secret).toBe("JBSWY3DPEHPK3PXP");
+      expect(enrollment.provisioning_uri).toContain("otpauth://totp/");
+      expect(enrollment.replaced).toBe(false);
+    });
+  });
+
+  describe("confirmMfaEnrollment", () => {
+    it("posts the code to the enrollment's own confirm route", async () => {
+      const { transport, calls } = stubTransport(() =>
+        json(200, { enabled: true, recovery_codes: ["AAAA-BBBB-CCCC-DDDD"] }),
+      );
+      const client = createIdentityClient({ transport });
+
+      await client.confirmMfaEnrollment("tok", ENROLLMENT_ID, { code: "482913" });
+
+      expect(calls[0].url).toBe(`/v1/mfa/enrollments/${ENROLLMENT_ID}/confirm`);
+      expect(calls[0].method).toBe("POST");
+      expect(calls[0].body).toBe('{"code":"482913"}');
+    });
+
+    it("returns the recovery codes the confirm mints", async () => {
+      const codes = ["AAAA-BBBB-CCCC-DDDD", "EEEEFFFFGGGGHHHH"];
+      const { transport } = stubTransport(() =>
+        json(200, {
+          enabled: true,
+          method: "totp",
+          enrolled_at: "2026-09-30T12:04:11Z",
+          recovery_codes: codes,
+          replaced_existing_secret: false,
+        }),
+      );
+      const client = createIdentityClient({ transport });
+
+      const confirmed = await client.confirmMfaEnrollment("tok", ENROLLMENT_ID, { code: "482913" });
+
+      expect(confirmed.recovery_codes).toEqual(codes);
+      expect(confirmed.enabled).toBe(true);
+    });
+
+    it("raises an unauthorized error on a refused code, whatever the cause", async () => {
+      // Wrong, already spent, malformed, and produced by a replaced secret are
+      // all the same 401 — the document is explicit, and the client keeps the
+      // status so the screen can render its one sentence.
+      const { transport } = stubTransport(() => problem(401, { code: "invalid_code", title: "The code was refused" }));
+      const client = createIdentityClient({ transport });
+
+      const failure = await theFailure(client.confirmMfaEnrollment("tok", ENROLLMENT_ID, { code: "000000" }));
+
+      expect(failure.status).toBe(401);
+    });
+
+    it("raises a not-found error for an enrollment that is not this caller's", async () => {
+      // Another user's, an expired one's and an already-confirmed one's are all
+      // 404, and the client keeps the status so the screen can tell "start
+      // again" from "try another code".
+      const { transport } = stubTransport(() => problem(404, { code: "not_found", title: "No such enrollment" }));
+      const client = createIdentityClient({ transport });
+
+      const failure = await theFailure(client.confirmMfaEnrollment("tok", ENROLLMENT_ID, { code: "482913" }));
+
+      expect(failure.status).toBe(404);
+    });
+  });
+
+  describe("regenerateMfaRecoveryCodes", () => {
+    it("posts the code to /v1/mfa/recovery-codes", async () => {
+      const { transport, calls } = stubTransport(() =>
+        json(200, { recovery_codes: ["AAAA-BBBB-CCCC-DDDD"], recovery_codes_remaining: 10 }),
+      );
+      const client = createIdentityClient({ transport });
+
+      await client.regenerateMfaRecoveryCodes("tok", { code: "482913" });
+
+      expect(calls[0].url).toBe("/v1/mfa/recovery-codes");
+      expect(calls[0].method).toBe("POST");
+      expect(calls[0].headers.Authorization).toBe("Bearer tok");
+      expect(calls[0].body).toBe('{"code":"482913"}');
+    });
+
+    it("returns the fresh set and the count that replaced the old one", async () => {
+      const { transport } = stubTransport(() =>
+        json(200, {
+          recovery_codes: ["AAAA-BBBB-CCCC-DDDD", "EEEEFFFFGGGGHHHH"],
+          issued_at: "2026-09-30T12:04:11Z",
+          recovery_codes_remaining: 10,
+        }),
+      );
+      const client = createIdentityClient({ transport });
+
+      const codes = await client.regenerateMfaRecoveryCodes("tok", { code: "482913" });
+
+      expect(codes.recovery_codes).toHaveLength(2);
+      expect(codes.recovery_codes_remaining).toBe(10);
+    });
+
+    it("raises an unauthorized error when the factor is refused", async () => {
+      // The route's 401 covers "refused" and "no second factor" alike, and the
+      // client does not try to tell them apart — one status, one sentence.
+      const { transport } = stubTransport(() => problem(401, { code: "invalid_code", title: "The factor was refused" }));
+      const client = createIdentityClient({ transport });
+
+      const failure = await theFailure(client.regenerateMfaRecoveryCodes("tok", { code: "000000" }));
+
+      expect(failure.status).toBe(401);
+    });
+  });
+});

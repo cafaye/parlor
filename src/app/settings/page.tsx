@@ -10,17 +10,12 @@ import { SettingsScreen } from "./settings-screen";
  * ---------------------------------------------------------------------------
  * Version 1 shipped the four controls the API supported then. The routes the
  * report listed as waiting — `PATCH /v1/me` for a display name, `GET
- * /v1/sessions` and `DELETE /v1/sessions/{id}` for the session list — have
- * since landed on identity's master, and the sections that waited for them
- * are here. What is still absent is absent for the same reason it was then,
- * and in the same form: not greyed, not "coming soon", not behind a disabled
- * control.
+ * /v1/sessions` and `DELETE /v1/sessions/{id}` for the session list, and the
+ * four routes under `/v1/mfa` for the second factor — have since landed on
+ * identity's master, and the sections that waited for them are here. What is
+ * still absent is absent for the same reason it was then, and in the same
+ * form: not greyed, not "coming soon", not behind a disabled control.
  *
- *   * **Second factor** is withheld by decision, not by a missing route: the
- *     forwarder refuses `/v1/session/mfa` and `/v1/mfa/*` on purpose, because
- *     reaching them from a browser turns a second factor into a thing this
- *     origin can drive. That is FEATURE-PARITY §7a, and it is a decision
- *     rather than a gap.
  *   * **API tokens** await `/v1/accounts/{id}/api-keys`, refused by the
  *     forwarder for the same reason.
  *
@@ -39,7 +34,7 @@ export default function SettingsPage() {
       <header className="mb-8">
         <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
         <p className="mt-1 text-sm text-muted">
-          Your name, your address, and everywhere you are signed in.
+          Your name, your address, your second factor, and everywhere you are signed in.
         </p>
       </header>
       <SettingsScreen />

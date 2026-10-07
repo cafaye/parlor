@@ -458,9 +458,38 @@ gate:
     # screen does NOT have), 6 in `src/lib/token-store.test.ts` for the expiry
     # the store now keeps beside the token, and 2 in `src/components/shell/
     # header.test.tsx` for the nav link. Same rule, same commit as the tests.
+    # 895 IS 868, plus the 27 the MFA enrollment surface brings, and every one
+    # of them is here because the failure it guards is invisible in a rendered
+    # string:
+    #
+    #   * 15 in `src/lib/identity.test.ts`, on the four client methods. The
+    #     cases are the ones a lazy reader gets wrong: `GET /v1/mfa` answers 200
+    #     with `{"enabled": false}` and never a 404, a first enrollment sends
+    #     `{}` because the document requires a body and `code` is the optional
+    #     half of it, the confirm's 401 (a refused code, whatever the cause) and
+    #     404 (an enrollment that is not this caller's, is expired, or is already
+    #     confirmed) are different answers the screen has to be able to tell
+    #     apart, and the recovery-codes route's 401 covers "refused" and "no
+    #     second factor" alike;
+    #   * 2 in `src/lib/upstream.test.ts` — the four management routes forwarded
+    #     through the table, and a non-uuid enrollment id refused before an
+    #     address is contacted. Both were proved able to fail before this floor
+    #     moved: deleting the four table entries turns three tests red (the
+    #     forward, the "refuses a route identity serves but this app never
+    #     calls" case, and the table-and-clients-agree walk), and dropping the
+    #     segment's uuid value-match turns the same three red by the other door;
+    #   * 10 in `src/app/settings/page.test.tsx`, on the section. The one that
+    #     matters asserts what is NOT in the document: after the confirm, the
+    #     secret and the provisioning URI are gone, because the confirm replaced
+    #     the enroll state rather than annotating it — a secret that survives
+    #     its step is a secret this app is storing, which is the defect the
+    #     service's "returned here and never again" language exists to prevent.
+    #     Proved able to fail: lifting the secret into a piece of state the
+    #     confirmed view also renders turned four tests red, the "never renders
+    #     the secret again" one among them.
     - id: suite
       match: '^[ ]*Tests[ ]+([0-9]+)[ ]+passed(?![ ]*\|)'
-      minimum: 868
+      minimum: 895
     # The tally `tests/validate-ci.sh` prints, which is the second half of this
     # gate: the checks that the tree still has the shape CI assumes — one
     # runtime pin, `npm ci` and not `npm install`, the gate command, the

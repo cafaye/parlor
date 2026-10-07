@@ -880,15 +880,21 @@ of that file before changing anything in it.
   path that reads a destination from a header, a query string, a path segment or
   a body. `Host`, `X-Forwarded-Host` and `?url=` are all ignored, and there are
   tests that assert each of them by name.
-- **An allow-list, and the upstream path is REBUILT from it.** Twenty-six routes,
-  transcribed from the two clients: twenty-one to identity, five to billing —
+- **An allow-list, and the upstream path is REBUILT from it.** Thirty routes,
+  transcribed from the two clients: twenty-five to identity, five to billing —
   the count is `grep -oE 'upstream: "[a-z]+"' src/lib/upstream.ts | sort | uniq -c`.
-  identity serves thirty; token introspection, the MFA routes, API keys, OIDC
+  identity serves thirty-four; token introspection, the LOGIN challenge
+  (`POST /v1/session/mfa`), the MFA disable (`DELETE /v1/mfa`), API keys, OIDC
   clients, email changes and `/v1/probe/{id}` are refused **before an address is
-  contacted**. Because the path is rebuilt from the table rather than forwarded
+  contacted**. The four MFA MANAGEMENT routes (`GET /v1/mfa`, `POST
+  /v1/mfa/enrollments`, `POST /v1/mfa/enrollments/{enrollmentId}/confirm`,
+  `POST /v1/mfa/recovery-codes`) are allowed because the client performs them
+  and the settings section drives them — the same bar every entry answers to.
+  Because the path is rebuilt from the table rather than forwarded
   as received, traversal, an absolute URL in a segment and a doubled slash are
   not filtered — they are not expressible.
-- **Wildcard segments are value-matched.** `:accountId` and `:userId` must be
+- **Wildcard segments are value-matched.** `:accountId`, `:userId` and
+  `:enrollmentId` must be
   uuids. The router percent-decodes each segment before the handler sees it, so
   `accounts/%2e%2e%2f%2e%2e` arrives as one segment reading `../../`; a check
   that only counted positions would splice it into the upstream URL.

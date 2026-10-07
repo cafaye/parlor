@@ -311,25 +311,27 @@ type Route = {
  * table is a red suite rather than a 404 nobody sees.
  *
  * The identity surfaces deliberately absent: `/v1/introspections`,
- * `/v1/session/mfa`, `/v1/mfa` and its four children,
+ * `/v1/session/mfa` — the LOGIN challenge, which the login flow owns and this
+ * table still refuses — `DELETE /v1/mfa`, the disable, which is a destructive
+ * security action with no screen behind it yet,
  * `/v1/accounts/{id}/api-keys` and its delete, `/v1/accounts/{id}/oidc-clients`,
  * `/v1/email-changes` and its two children, and `/v1/probe/{accountID}`. None is
- * in `src/lib/identity.ts`. The MFA routes in particular would be a real
- * capability change: reaching them from a browser turns a second factor into a
- * thing this origin can drive.
+ * in `src/lib/identity.ts`.
  *
- * The social-login pair is the mirror image of that list and was on it until
- * this packet: the service has served it the whole time, and this app simply
- * could not reach it, which is a decision nobody took rather than one somebody
- * made. It is now here because `src/lib/identity.ts` can perform both
- * operations, which is the same bar every other entry in this table answers to.
+ * The social-login pair was on this list until the packet that added it: the
+ * service had served it the whole time, and this app simply could not reach it,
+ * which is a decision nobody took rather than one somebody made. It is here
+ * because `src/lib/identity.ts` can perform both operations, which is the same
+ * bar every other entry in this table answers to.
  *
- * The consequence of the MFA routes staying absent is worth stating next to the
- * social routes arriving: the social CALLBACK can answer 202 with a challenge,
- * and this origin cannot finish that login, because the route that redeems a
- * challenge is still refused here. A provider account with a confirmed second
- * factor reaches a dead end rather than a wrong answer. Widening the table is a
- * capability decision and is not one this packet makes.
+ * The MFA MANAGEMENT routes crossed that same bar in the packet that added
+ * them: the client can perform all four, and the settings section drives them.
+ * What did NOT cross is the login challenge — `POST /v1/session/mfa` redeems
+ * the `mfa_required` answer `POST /v1/session` can give, and finishing a
+ * sign-in is the login flow's business, not a forwarder table's. The
+ * consequence is a dead end rather than a wrong answer: a provider account
+ * with a confirmed second factor cannot finish signing in until that packet
+ * lands. See `REPORT-parlor-mfa-enroll-01.md`.
  */
 const ROUTES: readonly Route[] = [
   // --- identity: the session and user routes ------------------------------
@@ -436,6 +438,29 @@ const ROUTES: readonly Route[] = [
   { method: "POST", path: ["email-verifications", "confirm"], upstream: "identity" },
   { method: "GET", path: ["email-verification"], upstream: "identity" },
 
+  // --- identity: the second-factor management surface ----------------------
+  //
+  // THE FOUR ROUTES THE SETTINGS SCREEN DRIVES, and the one MFA route that is
+  // deliberately still absent: `DELETE /v1/mfa`, the disable. It is a
+  // destructive security action — it revokes every session the account holds
+  // — and it has no screen and no client method yet, so it stays refused
+  // above. A route with no caller is a capability this app does not have, and
+  // the allow-list is where that is enforced.
+  //
+  // The confirm route's `:enrollmentId` is value-matched as a uuid, because
+  // the document declares it `format: uuid` and the handler's own note is
+  // that another user's, an expired one's and an already-confirmed one's are
+  // all 404 — so the id is not a way to learn which enrollments exist, and a
+  // segment that is not a uuid is not one this app has ever held.
+  { method: "GET", path: ["mfa"], upstream: "identity" },
+  { method: "POST", path: ["mfa", "enrollments"], upstream: "identity" },
+  {
+    method: "POST",
+    path: ["mfa", "enrollments", ":enrollmentId", "confirm"],
+    upstream: "identity",
+  },
+  { method: "POST", path: ["mfa", "recovery-codes"], upstream: "identity" },
+
   // --- billing ------------------------------------------------------------
   { method: "GET", path: ["plans"], upstream: "billing", query: ["cursor", "limit", "order"] },
   { method: "GET", path: ["plans", ":slug"], upstream: "billing" },
@@ -450,6 +475,7 @@ const SEGMENT_KINDS: Record<string, SegmentKind> = {
   userId: "uuid",
   id: "uuid",
   sessionId: "uuid",
+  enrollmentId: "uuid",
   slug: "slug",
   provider: "provider",
 };
