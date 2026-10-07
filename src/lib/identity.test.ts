@@ -47,16 +47,21 @@ const problem = (
     detail?: string;
     errors?: { field: string; code: string }[];
   },
+  headers: Record<string, string> = {},
 ) =>
-  json(status, {
-    type: `https://errors.cafaye.com/${fields.code}`,
-    title: fields.title,
+  json(
     status,
-    detail: fields.detail,
-    code: fields.code,
-    trace_id: "trace_123",
-    ...(fields.errors ? { errors: fields.errors } : {}),
-  });
+    {
+      type: `https://errors.cafaye.com/${fields.code}`,
+      title: fields.title,
+      status,
+      detail: fields.detail,
+      code: fields.code,
+      trace_id: "trace_123",
+      ...(fields.errors ? { errors: fields.errors } : {}),
+    },
+    headers,
+  );
 
 const CREDENTIALS = { email: "kaka@example.com", password: "correct horse" };
 
@@ -210,9 +215,13 @@ describe("login", () => {
     );
     const client = createIdentityClient({ baseUrl, transport });
 
+    // The 200 arm is the session half of the union, and the token lives inside
+    // it rather than at the top level: a caller that read `token` off the result
+    // would find nothing on the 202 arm, and "nothing" is the one answer that
+    // must never render as a signed-in state.
     await expect(client.login(CREDENTIALS)).resolves.toEqual({
-      token: "tok_abc",
-      expires_at: "2026-10-01T00:00:00Z",
+      kind: "session",
+      session: { token: "tok_abc", expires_at: "2026-10-01T00:00:00Z" },
     });
   });
 
@@ -238,6 +247,155 @@ describe("login", () => {
     expect(error).toBeInstanceOf(IdentityError);
     expect(error.status).toBe(401);
     expect(error.code).toBe("unauthorized");
+  });
+
+  it("answers a second-factor account with the 202 as a result, not a throw", async () => {
+    // The 202 is a success — the credentials were accepted and a second factor
+    // is owed — so it resolves. A version that routed it through `send`'s
+    // failure path would throw, and the login screen would render "Invalid
+    // email or password" for a person whose password was just accepted.
+    const { transport } = stubTransport(() =>
+      json(202, { mfa_required: true, challenge: "ch_1", expires_at: "2026-10-01T00:00:00Z" }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const result = await client.login(CREDENTIALS);
+
+    expect(result.kind).toBe("mfa_required");
+  });
+
+  it("carries the challenge and its expiry through", async () => {
+    const { transport, calls } = stubTransport(() =>
+      json(202, { mfa_required: true, challenge: "ch_1", expires_at: "2026-10-01T00:00:00Z" }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const result = await client.login(CREDENTIALS);
+
+    expect(result).toEqual({
+      kind: "mfa_required",
+      challenge: "ch_1",
+      expiresAt: "2026-10-01T00:00:00Z",
+    });
+    // The 202 is still the ordinary login request — same URL, same method,
+    // same body. Only the answer differs.
+    expect(calls[0].url).toBe("https://identity.test/v1/session");
+    expect(calls[0].method).toBe("POST");
+    expect(JSON.parse(calls[0].body ?? "null")).toEqual(CREDENTIALS);
+  });
+
+  it("sends no bearer token when logging in, on either arm", async () => {
+    const { transport, calls } = stubTransport(() =>
+      json(202, { mfa_required: true, challenge: "ch_1", expires_at: "2026-10-01T00:00:00Z" }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await client.login(CREDENTIALS);
+
+    expect(calls[0].headers.Authorization).toBeUndefined();
+  });
+});
+
+describe("completeSecondFactor", () => {
+  it("posts the challenge and the code to /v1/session/mfa", async () => {
+    const { transport, calls } = stubTransport(() =>
+      json(200, { token: "tok_abc", expires_at: "2026-10-01T00:00:00Z" }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await client.completeSecondFactor({ challenge: "ch_1", code: "482913" });
+
+    expect(calls[0].url).toBe("https://identity.test/v1/session/mfa");
+    expect(calls[0].method).toBe("POST");
+    expect(JSON.parse(calls[0].body ?? "null")).toEqual({ challenge: "ch_1", code: "482913" });
+  });
+
+  it("sends no bearer token: the challenge in the body IS the credential", async () => {
+    const { transport, calls } = stubTransport(() =>
+      json(200, { token: "tok_abc", expires_at: "2026-10-01T00:00:00Z" }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await client.completeSecondFactor({ challenge: "ch_1", code: "482913" });
+
+    expect(calls[0].headers.Authorization).toBeUndefined();
+  });
+
+  it("returns the minted session on 200", async () => {
+    const { transport } = stubTransport(() =>
+      json(200, { token: "tok_abc", expires_at: "2026-10-01T00:00:00Z" }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await expect(
+      client.completeSecondFactor({ challenge: "ch_1", code: "482913" }),
+    ).resolves.toEqual({
+      token: "tok_abc",
+      expires_at: "2026-10-01T00:00:00Z",
+    });
+  });
+
+  it("raises one unauthorized error for a refused code, whatever the cause", async () => {
+    // A wrong TOTP code, a spent recovery code, a used step, a malformed
+    // value and a rotated-away secret are all the same 401 with the same body.
+    // The client reads the status and nothing else, so the collapse the
+    // service deliberate chose is preserved.
+    const { transport } = stubTransport(() =>
+      problem(401, { code: "unauthorized", title: "Unauthorized" }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const error = await theFailure(
+      client.completeSecondFactor({ challenge: "ch_1", code: "000000" }),
+    );
+
+    expect(error).toBeInstanceOf(IdentityError);
+    expect(error.status).toBe(401);
+  });
+
+  it("reads the lockout window from Retry-After on a 423", async () => {
+    const { transport } = stubTransport(() =>
+      problem(423, { code: "account_locked", title: "Locked" }, { "Retry-After": "900" }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const error = await theFailure(
+      client.completeSecondFactor({ challenge: "ch_1", code: "000000" }),
+    );
+
+    expect(error.status).toBe(423);
+    expect(error.retryAfter).toBe(900);
+  });
+
+  it("leaves the wait null when a 423 carries no Retry-After", async () => {
+    // A 423 without the header is still a lockout, but the wait is not a fact
+    // the service sent. Null is the honest reading — the screen falls back to
+    // a bare "try again later" rather than rendering a number it invented.
+    const { transport } = stubTransport(() =>
+      problem(423, { code: "account_locked", title: "Locked" }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const error = await theFailure(
+      client.completeSecondFactor({ challenge: "ch_1", code: "000000" }),
+    );
+
+    expect(error.status).toBe(423);
+    expect(error.retryAfter).toBeNull();
+  });
+
+  it("surfaces a 503 when the deployment cannot verify a second factor", async () => {
+    const { transport } = stubTransport(() =>
+      problem(503, { code: "service_unavailable", title: "Unavailable" }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const error = await theFailure(
+      client.completeSecondFactor({ challenge: "ch_1", code: "482913" }),
+    );
+
+    expect(error).toBeInstanceOf(IdentityError);
+    expect(error.status).toBe(503);
   });
 });
 

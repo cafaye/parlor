@@ -4,7 +4,8 @@
  * The endpoints this file speaks are fixed by contract:
  *
  *   POST   /v1/users     201 {id,email} | 422 | 409
- *   POST   /v1/session  200 {token,expires_at} | 401
+ *   POST   /v1/session  200 {token,expires_at} | 202 {mfa_required,challenge,expires_at} | 401
+ *   POST   /v1/session/mfa  200 {token,expires_at} | 401 | 423 | 503
  *   DELETE /v1/session  204
  *   GET    /v1/me        200 {id,email,display_name?} | 401
  *   PATCH  /v1/me        200 {id,email,display_name?} | 422 | 401
@@ -90,6 +91,43 @@ export type Credentials = { email: string; password: string };
  */
 export type User = { id: string; email: string; display_name?: string };
 export type Session = { token: string; expires_at: string };
+
+/**
+ * What `POST /v1/session` can answer: a session, or a second factor owed.
+ *
+ * A DISCRIMINATED union rather than a `Session` with an optional field, because
+ * the whole risk on this route is reading the wrong one of two mutually
+ * exclusive bodies. The 202 arm carries NO `token` — not an empty one, no
+ * field at all — and a caller that defaulted a missing `token` to `""` would
+ * be inventing a signed-in state the service never minted. `kind` makes the
+ * caller state which it got.
+ *
+ * The 202 is a SUCCESS rather than a thrown error, and that is the service's
+ * own stance: 202 means "accepted for processing", the credentials were correct
+ * and the authentication is not finished. Modelling it as a failure would put
+ * an ordinary half-done sign-in in the same arm as a refused one, and the
+ * login screen would render "Invalid email or password" for a person whose
+ * password was just accepted.
+ */
+export type LoginResult =
+  | { kind: "session"; session: Session }
+  | { kind: "mfa_required"; challenge: string; expiresAt: string };
+
+/**
+ * The body of `POST /v1/session/mfa`.
+ *
+ * `challenge` is sent in the body even though the service also accepts it in
+ * the `__Host-mfa-challenge` cookie: the explicit body value wins when both
+ * are present, and a value this app sends is a value this app controls rather
+ * than one a browser's cookie jar happens to hold.
+ *
+ * `code` is either a six-digit TOTP code or a recovery code in the
+ * `XXXX-XXXX-XXXX-XXXX` form. One field, because the service accepts either
+ * shape and a second field would invite a caller to put the wrong shape in the
+ * wrong place and be told it was malformed rather than not accepted — the same
+ * one-field rule `RegenerateRecoveryCodesInput` follows.
+ */
+export type CompleteSecondFactorInput = { challenge: string; code: string };
 
 /**
  * Client-side mirror of the `display_name` bound in `PATCH /v1/me`'s request
@@ -272,7 +310,17 @@ export type Transport = (request: TransportRequest) => Promise<Response>;
  */
 export type IdentityClient = {
   register: (credentials: Credentials) => Promise<User>;
-  login: (credentials: Credentials) => Promise<Session>;
+  /**
+   * The first leg of a sign in, which is sometimes the whole of one.
+   *
+   * A 200 mints a session. A 202 means the credentials were accepted and a
+   * second factor is owed — it mints nothing and sets the `__Host-mfa-challenge`
+   * cookie — so the answer is a `LoginResult` rather than a bare `Session`: a
+   * caller that read `token` off every successful sign-in would find nothing on
+   * the 202 arm, and "nothing" is the one answer that must never render as a
+   * signed-in state. See `LoginResult` for the two arms.
+   */
+  login: (credentials: Credentials) => Promise<LoginResult>;
   logout: (token: string) => Promise<void>;
   me: (token: string) => Promise<User>;
 
@@ -415,15 +463,42 @@ export type IdentityClient = {
   // sends it and the forwarder carries it — see the `cookie` entry in
   // `FORWARDED_REQUEST_HEADERS`.
   //
-  // The third leg is not here: redeeming a challenge from the `mfa_required`
-  // arm is `POST /v1/session/mfa`, which the forwarder's table deliberately
-  // refuses. See the note on `ROUTES` in `src/lib/upstream.ts`.
+  // The third leg is `POST /v1/session/mfa`, and it IS here now — see
+  // `completeSecondFactor` below, which the password path's prompt drives. It
+  // is still unreachable from THIS screen: a social sign-in that lands on the
+  // challenge has no form to answer it with, so the honest answer is the
+  // sentence that points at the password path. See
+  // `HANDOFF-parlor-02-social-ui.md` for the finding.
   // ---------------------------------------------------------------------------
   startSocialLogin: (provider: SocialProvider) => Promise<string>;
   completeSocialLogin: (
     provider: SocialProvider,
     input: SocialCallbackInput,
   ) => Promise<SocialSignIn>;
+
+  // ---------------------------------------------------------------------------
+  // The second-factor LOGIN leg — `POST /v1/session/mfa`, and the only route in
+  // the service that turns a second factor into a session.
+  //
+  // It is the other half of `login`'s 202 arm, and it is here because the
+  // client can perform it: the same bar the four MFA management routes
+  // crossed. The session is minted inside the same transaction that consumes
+  // the challenge, so a challenge cannot be answered twice and a code cannot
+  // buy two sessions.
+  //
+  // IT TAKES NO TOKEN. The challenge IS the credential — presented in the body
+  // (which wins when both are present) or in the `__Host-mfa-challenge` cookie
+  // the 202 set — so `send` is called with no `token` and no `Authorization`
+  // header goes out at all, exactly like the anonymous recovery pair.
+  //
+  // The 401 is one status and one sentence for five different facts (a wrong
+  // TOTP code, a spent recovery code, a code whose step was already used, a
+  // malformed value, a rotated-away secret) and this client does not undo that
+  // collapse: it reads the status and the `Retry-After` header and nothing
+  // else. The 423 carries the lockout window in `Retry-After`; the 503 says
+  // the deployment cannot verify a second factor at all.
+  // ---------------------------------------------------------------------------
+  completeSecondFactor: (input: CompleteSecondFactorInput) => Promise<Session>;
 
   // ---------------------------------------------------------------------------
   // The MFA surface — four routes, all session-scoped, three of them one-time.
@@ -728,6 +803,17 @@ export class IdentityError extends Error {
   readonly fieldErrors: FieldError[];
   /** `trace_id` from the body, else `X-Trace-Id`. What support will ask for. */
   readonly traceId: string | null;
+  /**
+   * The `Retry-After` header on a 423, in whole seconds, or null.
+   *
+   * Only the second-factor lockout answers 423 today, and the wait is the one
+   * fact a person needs from it: the factor is locked for fifteen minutes
+   * after five failures, and a bare "try again" sends them to retry forever
+   * against a lock that ignores them. Null on every other status, and on a
+   * 423 whose header is missing or unparseable — the honest reading of a value
+   * that is not there.
+   */
+  readonly retryAfter: number | null;
 
   constructor(
     message: string,
@@ -737,6 +823,7 @@ export class IdentityError extends Error {
       title?: string | null;
       fieldErrors?: FieldError[];
       traceId?: string | null;
+      retryAfter?: number | null;
     },
   ) {
     super(message);
@@ -746,6 +833,7 @@ export class IdentityError extends Error {
     this.title = options.title ?? null;
     this.fieldErrors = options.fieldErrors ?? [];
     this.traceId = options.traceId ?? null;
+    this.retryAfter = options.retryAfter ?? null;
   }
 }
 
@@ -786,7 +874,44 @@ export function createIdentityClient(
 
   return {
     register: (credentials) => send(transport, `${base}/v1/users`, "POST", { body: credentials }),
-    login: (credentials) => send(transport, `${base}/v1/session`, "POST", { body: credentials }),
+
+    // -----------------------------------------------------------------------
+    // The login leg.
+    //
+    // This does NOT go through `send`, and the reason is the mirror image of the
+    // social pair's: there, the interesting case is a status `send` would treat
+    // as a FAILURE (a 302 is not `ok`); here, it is a status `send` would treat
+    // as a SUCCESS and then misread. A 202 IS `response.ok`, so `send` would
+    // read the challenge body as a `Session` — a body with no `token` — and
+    // hand a screen a "session" that minted nothing. The 202 branch comes first
+    // for the same reason `startSocialLogin`'s 3xx branch does: the status that
+    // needs its own handling is the one the shared helper's path gets wrong.
+    //
+    // The 202 mints no session and sets no session cookie — the credentials
+    // were accepted and the authentication is not finished, which is what 202
+    // means. So the arm carries the challenge and nothing else, and the
+    // challenge is a one-time credential that is never stored beyond the span
+    // of the prompt that answers it.
+    // -----------------------------------------------------------------------
+    login: async (credentials) => {
+      const response = await transport({
+        url: `${base}/v1/session`,
+        method: "POST",
+        headers: {
+          Accept: "application/json, application/problem+json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(credentials),
+      });
+
+      if (response.status === 202) {
+        return { kind: "mfa_required", ...(await readMfaChallenge(response)) };
+      }
+
+      if (!response.ok) throw await parseError(response);
+      return { kind: "session", session: (await readJson(response)) as Session };
+    },
+
     logout: (token) => send(transport, `${base}/v1/session`, "DELETE", { token }),
     me: (token) => send(transport, `${base}/v1/me`, "GET", { token }),
 
@@ -971,6 +1096,24 @@ export function createIdentityClient(
     },
 
     // -----------------------------------------------------------------------
+    // The second-factor login leg.
+    //
+    // `send` rather than a hand-rolled status branch, because every answer this
+    // route can give that is not a 200 is a failure: a 401 (refused, whatever
+    // the cause), a 423 (locked, with the window in `Retry-After`), a 503 (the
+    // deployment cannot verify a second factor). There is no status `send` would
+    // misread, which is the property the two surfaces above each had to write
+    // their own handling to avoid.
+    //
+    // NO TOKEN, and that is the service's rule rather than an omission here: the
+    // challenge in the body IS the credential, so `send` is called with no
+    // `token` and no `Authorization` header goes out at all — the same shape as
+    // the anonymous recovery pair.
+    // -----------------------------------------------------------------------
+    completeSecondFactor: (input) =>
+      send(transport, `${base}/v1/session/mfa`, "POST", { body: input }),
+
+    // -----------------------------------------------------------------------
     // The MFA surface.
     //
     // All four take the token, because every route is `sessionCredentialOnly`
@@ -1026,6 +1169,30 @@ function socialCallbackUrl(
   const search = query.toString();
   const segment = encodeURIComponent(provider);
   return `${base}/v1/auth/oauth/${segment}/callback${search ? `?${search}` : ""}`;
+}
+
+/**
+ * Reads the 202 challenge body `POST /v1/session` answers.
+ *
+ * `readString` rather than `String(…)` for the reason `readSocialSignIn` spells
+ * out on the same shape: the body is `unknown`-valued, and a service that sent
+ * an object where the contract says `challenge` is a string would otherwise
+ * have `"[object Object]"` handed to a second-factor screen as somebody's
+ * challenge. `readString` returns a string or nothing, and "nothing" is the
+ * honest reading of a field that is not one.
+ *
+ * The 202 status IS the signal that a challenge is owed — the handler only
+ * answers 202 from `writeChallenge`, which always sets `mfa_required: true` —
+ * so the flag is not re-checked here the way `readSocialSignIn` checks it.
+ */
+async function readMfaChallenge(
+  response: Response,
+): Promise<{ challenge: string; expiresAt: string }> {
+  const record = asRecord(await readJson(response));
+  return {
+    challenge: readString(record?.challenge) ?? "",
+    expiresAt: readString(record?.expires_at) ?? "",
+  };
 }
 
 /**
@@ -1095,8 +1262,9 @@ async function send<T>(
   options: { body?: unknown; token?: string } = {},
 ): Promise<T> {
   const headers: Record<string, string> = { Accept: "application/json, application/problem+json" };
-  // Only a request that carries a token has one to send. register and login
-  // must arrive with no Authorization header at all.
+  // Only a request that carries a token has one to send. register, login and
+  // completeSecondFactor must arrive with no Authorization header at all — the
+  // last because the challenge in the body IS the credential there.
   if (options.token) headers.Authorization = `Bearer ${options.token}`;
 
   const body = options.body === undefined ? undefined : JSON.stringify(options.body);
@@ -1143,17 +1311,38 @@ async function parseError(response: Response): Promise<IdentityError> {
 
   const body = asRecord(safeParse(raw));
   const traceId = readString(body?.trace_id) ?? response.headers.get("X-Trace-Id");
+  const retryAfter = readRetryAfter(response.headers.get("retry-after"));
   const nested = asRecord(body?.error);
-  if (nested) return fromNestedEnvelope(nested, status, traceId);
-  if (body) return fromProblemEnvelope(body, status, traceId);
+  if (nested) return fromNestedEnvelope(nested, status, traceId, retryAfter);
+  if (body) return fromProblemEnvelope(body, status, traceId, retryAfter);
 
-  return new IdentityError(`Request to identity failed (${status})`, { status, traceId });
+  return new IdentityError(`Request to identity failed (${status})`, {
+    status,
+    traceId,
+    retryAfter,
+  });
+}
+
+/**
+ * The `Retry-After` header as whole seconds, or null when it is absent or not a
+ * number.
+ *
+ * Null rather than NaN for the unparseable case: a proxy that wrote garbage
+ * into the header has not told the caller anything, and a screen that read NaN
+ * off this would render "try again in NaN seconds" — which is worse than the
+ * bare "try again" the field exists to replace.
+ */
+function readRetryAfter(value: string | null): number | null {
+  if (value === null) return null;
+  const seconds = Number(value);
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds : null;
 }
 
 function fromProblemEnvelope(
   body: Record<string, unknown>,
   status: number,
   traceId: string | null,
+  retryAfter: number | null,
 ): IdentityError {
   const code = readString(body.code) ?? "internal";
   const title = readString(body.title) ?? null;
@@ -1164,6 +1353,7 @@ function fromProblemEnvelope(
     title,
     fieldErrors: readProblemFieldErrors(body.errors),
     traceId,
+    retryAfter,
   });
 }
 
@@ -1177,6 +1367,7 @@ function fromNestedEnvelope(
   error: Record<string, unknown>,
   status: number,
   traceId: string | null,
+  retryAfter: number | null,
 ): IdentityError {
   const fieldErrors: FieldError[] = [];
   const fields = asRecord(error.fields);
@@ -1194,6 +1385,7 @@ function fromNestedEnvelope(
       title: readString(error.title) ?? readString(error.message) ?? null,
       fieldErrors,
       traceId,
+      retryAfter,
     },
   );
 }

@@ -524,9 +524,49 @@ gate:
     #     Proved able to fail: lifting the secret into a piece of state the
     #     confirmed view also renders turned four tests red, the "never renders
     #     the secret again" one among them.
+     #
+     # IT IS 964 BY THE NEXT ACCOUNT. 940 -> 964, a +24 in three files, every one
+     # of them here because the failure it guards is invisible in a rendered
+     # string — the second-factor LOGIN challenge, the leg that finishes a
+     # sign-in for an account with a confirmed second factor and the half of the
+     # flow the enrollment packet left unreachable:
+     #
+     #   * 10 in `src/lib/identity.test.ts`, on the two client methods. Three on
+     #     `login`'s 202 arm — the answer is a RESULT and not a throw, the
+     #     challenge and its expiry survive the trip, and no bearer token goes
+     #     out on either arm — and seven on `completeSecondFactor`: the request
+     #     shape (`{challenge, code}` to `/v1/session/mfa`, no token, because
+     #     the challenge in the body IS the credential), the minted session on
+     #     the 200, the one 401 that covers five causes, the 423's `Retry-After`
+     #     read as whole seconds, the null when the header is absent, and the
+     #     503;
+     #   * 2 in `src/lib/upstream.test.ts` — the route forwarded through the
+     #     table, and the lockout window crossing BACK on the 423. The second is
+     #     the one that needed `retry-after` on the response allow-list: without
+     #     it the client sees a bare 423 and the screen can only say "try again",
+     #     which sends a person to retry forever against a lock that ignores them
+     #     for fifteen minutes;
+     #   * 12 in `src/app/login/page.test.tsx`, on the prompt. The ones that
+     #     matter assert what is NOT done as much as what is: the challenge is
+     #     never rendered, a refused code writes no token and navigates nowhere,
+     #     the 401 sentence is one sentence for three different service details,
+     #     and the way back leaves the email and password in the fields. The
+     #     completion path asserts the same signed-in outcome the password path
+     #     asserts — token in the store, header signed in, navigation home —
+     #     because a second factor must not be a worse sign-in than a password.
+     #
+     # The red proofs for this floor were run before it moved, six of them,
+     # each named above with its guard: deleting the table entry turns the
+     # forward, the 423 relay and the table-and-clients-agree walk red; dropping
+     # `retry-after` from the response allow-list turns the 423 relay and the
+     # header-list test red; routing the 202 through the failure path turns the
+     # three login-arm tests red; rendering the challenge turns the
+     # never-renders test red; varying the 401 sentence by the service's detail
+     # turns the same-sentence test red; and skipping the `adoptSession` write
+     # turns the completion, header-signed-in and recovery-code tests red.
     - id: suite
       match: '^[ ]*Tests[ ]+([0-9]+)[ ]+passed(?![ ]*\|)'
-      minimum: 940
+      minimum: 964
     # The tally `tests/validate-ci.sh` prints, which is the second half of this
     # gate: the checks that the tree still has the shape CI assumes — one
     # runtime pin, `npm ci` and not `npm install`, the gate command, the

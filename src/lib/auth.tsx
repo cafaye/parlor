@@ -23,6 +23,7 @@ import {
   IdentityError,
   type Credentials,
   type IdentityClient,
+  type LoginResult,
   type Session,
   type User,
 } from "@/lib/identity";
@@ -67,7 +68,17 @@ export type SessionState =
  */
 export type AuthValue = {
   session: SessionState;
-  login: (credentials: Credentials) => Promise<void>;
+  /**
+   * The first leg of a sign in, which is sometimes the whole of one.
+   *
+   * Returns the `LoginResult` rather than writing it into the void, because the
+   * 202 arm is a second factor owed and NOT a session: the caller has to know
+   * which of the two arrived before it can decide whether to navigate. The
+   * session arm's token is written here, exactly as it always was; the
+   * `mfa_required` arm mints nothing, so there is nothing to write until
+   * `completeSecondFactor` finishes the flow.
+   */
+  login: (credentials: Credentials) => Promise<LoginResult>;
   register: (credentials: Credentials) => Promise<User>;
   logout: () => Promise<void>;
   /**
@@ -198,13 +209,22 @@ export function AuthProvider({
   const loginMutation = useMutation({
     mutationFn: async (credentials: Credentials) => {
       const result = await identity.login(credentials);
-      // Writing the token changes the query key, which is what starts the
-      // `me` fetch. Nothing needs invalidating: the new key names a different
-      // session, so it has no data to be stale, and the old entry is dropped by
-      // `gcTime: 0` the moment it goes inactive. A person signing in as someone
-      // else sees the header go quiet and then the right name — never the
-      // previous one.
-      store.set(result.token, result.expires_at);
+      // Only the session arm has a token to write. Writing it changes the query
+      // key, which is what starts the `me` fetch. Nothing needs invalidating:
+      // the new key names a different session, so it has no data to be stale,
+      // and the old entry is dropped by `gcTime: 0` the moment it goes
+      // inactive. A person signing in as someone else sees the header go quiet
+      // and then the right name — never the previous one.
+      //
+      // The `mfa_required` arm mints nothing and sets no session cookie, so
+      // there is nothing to write: the token arrives with the SECOND leg, and
+      // `adoptSession` below is what writes it. Writing nothing here is the
+      // whole of the property — a challenge is a one-time credential for the
+      // leg that spends it, never a session.
+      if (result.kind === "session") {
+        store.set(result.session.token, result.session.expires_at);
+      }
+      return result;
     },
   });
 

@@ -40,6 +40,7 @@ export type StubIdentity = IdentityClient & {
   verificationStatus: MockedFunction<IdentityClient["verificationStatus"]>;
   startSocialLogin: MockedFunction<IdentityClient["startSocialLogin"]>;
   completeSocialLogin: MockedFunction<IdentityClient["completeSocialLogin"]>;
+  completeSecondFactor: MockedFunction<IdentityClient["completeSecondFactor"]>;
   mfaStatus: MockedFunction<IdentityClient["mfaStatus"]>;
   startMfaEnrollment: MockedFunction<IdentityClient["startMfaEnrollment"]>;
   confirmMfaEnrollment: MockedFunction<IdentityClient["confirmMfaEnrollment"]>;
@@ -107,6 +108,12 @@ export function stubIdentity(overrides: Partial<IdentityClient> = {}): StubIdent
     completeSocialLogin: vi.fn(
       overrides.completeSocialLogin ?? unscripted("completeSocialLogin"),
     ),
+    // The second-factor login leg, for the same reason: the login screen drives
+    // it, and a render test that reached it unscripted would take the tree down
+    // rather than fail the assertion it was writing.
+    completeSecondFactor: vi.fn(
+      overrides.completeSecondFactor ?? unscripted("completeSecondFactor"),
+    ),
     // The four MFA methods for the same reason: the settings section calls all
     // of them across its states, and a render test that reached one unscripted
     // would take the tree down rather than fail the assertion it was writing.
@@ -129,13 +136,19 @@ export function aUser(overrides: Partial<User> = {}): User {
 export function anIdentityError(
   status: number,
   code: string,
-  extra: { fieldErrors?: { field: string; code: string }[]; title?: string; detail?: string } = {},
+  extra: {
+    fieldErrors?: { field: string; code: string }[];
+    title?: string;
+    detail?: string;
+    retryAfter?: number | null;
+  } = {},
 ): IdentityError {
   return new IdentityError(extra.detail ?? extra.title ?? code, {
     status,
     code,
     title: extra.title,
     fieldErrors: extra.fieldErrors ?? [],
+    retryAfter: extra.retryAfter ?? null,
   });
 }
 

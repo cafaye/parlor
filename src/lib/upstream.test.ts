@@ -400,6 +400,66 @@ describe("the allow-list", () => {
     }
   });
 
+  it("forwards the second-factor login challenge", async () => {
+    // The leg that finishes a sign-in for an account with a confirmed second
+    // factor. It is in the table for the same reason the four management
+    // routes are: the client can perform it and the login screen drives it.
+    // Until it was declared, a user who turned on a second factor was signing
+    // themselves out of their own account — the credentials were accepted, the
+    // challenge was minted, and the leg that spends it was refused before an
+    // address was contacted.
+    const { forward, hops } = forwarder();
+
+    const response = await forward(
+      new Request("https://parlor.test/v1/session/mfa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ challenge: "ch_1", code: "482913" }),
+      }),
+      ["session", "mfa"],
+    );
+
+    expect(response.status).toBe(200);
+    expect(hops).toHaveLength(1);
+    expect(hops[0].url).toBe(`${IDENTITY_URL}/v1/session/mfa`);
+    expect(hops[0].method).toBe("POST");
+  });
+
+  it("hands the lockout window back to the browser on a 423", async () => {
+    // The 423's `Retry-After` is the one fact a person needs from a locked
+    // second factor — the wait, not a bare "try again" — so it crosses back
+    // like `Set-Cookie` and `X-Trace-Id` do. Without it the client sees a bare
+    // 423 and the login screen can only say "try again", which sends a person
+    // to retry forever against a lock that ignores them for fifteen minutes.
+    const { forward } = forwarder(
+      () =>
+        new Response(
+          JSON.stringify({
+            type: "https://errors.cafaye.com/account_locked",
+            title: "Locked",
+            status: 423,
+            code: "account_locked",
+          }),
+          {
+            status: 423,
+            headers: { "Content-Type": "application/problem+json", "Retry-After": "900" },
+          },
+        ),
+    );
+
+    const response = await forward(
+      new Request("https://parlor.test/v1/session/mfa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ challenge: "ch_1", code: "000000" }),
+      }),
+      ["session", "mfa"],
+    );
+
+    expect(response.status).toBe(423);
+    expect(response.headers.get("retry-after")).toBe("900");
+  });
+
   it("refuses an enrollment id that is not a uuid", async () => {
     const { forward, hops } = forwarder();
 
@@ -417,7 +477,7 @@ describe("the allow-list", () => {
   });
 
   it("refuses a route identity serves but this app never calls", async () => {
-    // identity serves /v1/introspections, /v1/session/mfa, DELETE /v1/mfa,
+    // identity serves /v1/introspections, DELETE /v1/mfa,
     // /v1/accounts/{id}/api-keys, /v1/accounts/{id}/oidc-clients,
     // /v1/email-changes/* and /v1/probe/{id}. Not one of them is in
     // `src/lib/identity.ts`, and the point of the allow-list is that a route
@@ -425,11 +485,12 @@ describe("the allow-list", () => {
     // a side effect of a client existing.
     //
     // The four MFA MANAGEMENT routes are no longer on this list — the client
-    // can perform all four and the settings screen drives them. What remains is
-    // the two that are still decisions: the LOGIN challenge
-    // (`POST /v1/session/mfa`), which the login flow owns, and the disable
-    // (`DELETE /v1/mfa`), which is a destructive security action with no screen
-    // behind it yet.
+    // can perform all four and the settings screen drives them — and neither is
+    // the LOGIN challenge (`POST /v1/session/mfa`), which the packet that
+    // finished the second-factor flow un-refused: the client can perform it
+    // and the login screen drives it. What remains is the one route that is
+    // still a decision: the disable (`DELETE /v1/mfa`), a destructive security
+    // action with no screen behind it yet.
     //
     // The expected status is per route rather than a constant, because the two
     // kinds of refusal are different answers: `DELETE /v1/mfa` is a 405 — the
@@ -438,7 +499,6 @@ describe("the allow-list", () => {
     // the hop; only the reason differs.
     const refused = [
       { segments: ["introspections"], method: "POST", status: 404 },
-      { segments: ["session", "mfa"], method: "POST", status: 404 },
       { segments: ["mfa"], method: "DELETE", status: 405 },
       { segments: ["email-changes", "current-address"], method: "POST", status: 404 },
       { segments: ["probe", "8f2c1a44-0000-4000-8000-000000000000"], method: "GET", status: 404 },
@@ -797,6 +857,10 @@ describe("upstream failures", () => {
           headers: {
             "Content-Type": "application/json",
             "X-Trace-Id": "trace_1",
+            // On the list, so it crosses: the 423 lockout window is the one fact
+            // a person needs from a locked second factor, and it travels as a
+            // header rather than in the body.
+            "Retry-After": "900",
             "X-Powered-By": "identity-internal-2",
             Server: "identity/1.0 (internal)",
           },
@@ -808,6 +872,10 @@ describe("upstream failures", () => {
     const names = [...response.headers.keys()].map((name) => name.toLowerCase()).sort();
     const expected = [...FORWARDED_RESPONSE_HEADERS, "cache-control"].sort();
     expect(names).toEqual(expected);
+    // The name crossing is not the value crossing: the wait is the fact, and a
+    // forwarder that relayed the header name with a mangled value would have
+    // passed the assertion above and broken the lockout sentence downstream.
+    expect(response.headers.get("retry-after")).toBe("900");
     expect(await response.text()).not.toContain("identity-internal-2");
   });
 });
@@ -872,6 +940,12 @@ describe("the table and the clients agree", () => {
 
     await client.register({ email: "kaka@example.com", password: "correct horse" });
     await client.login({ email: "kaka@example.com", password: "correct horse" });
+    // The second-factor login leg, walked through the same door. It resolves
+    // on `{}` like the management routes do — `send` reads the body and finds
+    // no token, which is a type lie the walk does not care about — so the
+    // assertion is the same one every other entry makes: the URL reached an
+    // upstream through the table rather than being refused.
+    await client.completeSecondFactor({ challenge: "ch_1", code: "482913" });
     await client.logout("t");
     await client.me("t");
     await client.updateMyDisplayName("t", { display_name: "Kaka" });

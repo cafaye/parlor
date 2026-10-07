@@ -181,7 +181,15 @@ describe("login page", () => {
   describe("with correct credentials", () => {
     function acceptsLogin() {
       return stubIdentity({
-        login: vi.fn(() => Promise.resolve({ token: "tok_abc", expires_at: "2026-10-01T00:00:00Z" })),
+        // The session arm of the union, which is what `login` resolves now: the
+        // token is inside it rather than at the top level, and the auth context
+        // writes it to the store on this arm only.
+        login: vi.fn(() =>
+          Promise.resolve({
+            kind: "session" as const,
+            session: { token: "tok_abc", expires_at: "2026-10-01T00:00:00Z" },
+          }),
+        ),
         me: vi.fn(() => Promise.resolve(aUser())),
       });
     }
@@ -241,6 +249,284 @@ describe("login page", () => {
 
       await waitFor(() => expect(push).toHaveBeenCalledWith("/"));
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("when the account has a confirmed second factor", () => {
+    const CHALLENGE = "ch_1";
+
+    /**
+     * A stub whose login answers the 202 and whose second leg mints a session.
+     *
+     * The challenge is a fixed string so a test can assert it is never
+     * rendered: it is a one-time credential, and the prompt must ask for a code
+     * without showing the thing that authorises it.
+     */
+    function stubsWithSecondFactor() {
+      return stubIdentity({
+        login: vi.fn(() =>
+          Promise.resolve({ kind: "mfa_required" as const, challenge: CHALLENGE, expiresAt: "2026-10-01T00:00:00Z" }),
+        ),
+        completeSecondFactor: vi.fn(() =>
+          Promise.resolve({ token: "tok_abc", expires_at: "2026-10-01T00:00:00Z" }),
+        ),
+        me: vi.fn(() => Promise.resolve(aUser())),
+      });
+    }
+
+    function fillInCode(code: string) {
+      fireEvent.change(screen.getByLabelText("Code"), { target: { value: code } });
+    }
+
+    function submitCode() {
+      fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    }
+
+    it("asks for the code without a reload", async () => {
+      // The 202 is the service saying "accepted, now a second factor" — the
+      // prompt is the next step of the SAME sign-in, not a new page. The
+      // credentials were never refused, so nothing is said about them.
+      renderWithProviders(loginPage(), { identity: stubsWithSecondFactor() });
+
+      fillIn(CREDENTIALS);
+      submit();
+
+      expect(await screen.findByLabelText("Code")).toBeInTheDocument();
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
+
+    it("never renders the challenge", async () => {
+      // The challenge is a one-time credential for the leg that spends it. It
+      // lives in component state for the span of the prompt and nowhere else —
+      // a screen that displayed it would be showing a credential to anybody
+      // who can read the page.
+      renderWithProviders(loginPage(), { identity: stubsWithSecondFactor() });
+
+      fillIn(CREDENTIALS);
+      submit();
+
+      await screen.findByLabelText("Code");
+      expect(document.body.textContent).not.toContain(CHALLENGE);
+    });
+
+    it("sends the challenge and the code to the service", async () => {
+      const identity = stubsWithSecondFactor();
+      renderWithProviders(loginPage(), { identity });
+
+      fillIn(CREDENTIALS);
+      submit();
+      await screen.findByLabelText("Code");
+
+      fillInCode("482913");
+      submitCode();
+
+      await waitFor(() =>
+        expect(identity.completeSecondFactor).toHaveBeenCalledWith({
+          challenge: CHALLENGE,
+          code: "482913",
+        }),
+      );
+    });
+
+    it("completes the sign-in on the correct code", async () => {
+      // The 200 mints the session, and the token lands in the same store the
+      // password path writes — which is what re-renders the header and starts
+      // the `me` fetch.
+      renderWithProviders(loginPage(), { identity: stubsWithSecondFactor() });
+
+      fillIn(CREDENTIALS);
+      submit();
+      await screen.findByLabelText("Code");
+
+      fillInCode("482913");
+      submitCode();
+
+      await waitFor(() => expect(createTokenStore().get()).toBe("tok_abc"));
+    });
+
+    it("goes home afterwards", async () => {
+      renderWithProviders(loginPage(), { identity: stubsWithSecondFactor() });
+
+      fillIn(CREDENTIALS);
+      submit();
+      await screen.findByLabelText("Code");
+
+      fillInCode("482913");
+      submitCode();
+
+      await waitFor(() => expect(push).toHaveBeenCalledWith("/"));
+    });
+
+    it("leaves the header signed in", async () => {
+      renderWithProviders(
+        <>
+          <ShellHeader />
+          {loginPage()}
+        </>,
+        { identity: stubsWithSecondFactor() },
+      );
+
+      fillIn(CREDENTIALS);
+      submit();
+      await screen.findByLabelText("Code");
+
+      fillInCode("482913");
+      submitCode();
+
+      expect(await screen.findByRole("button", { name: "Sign out" })).toBeInTheDocument();
+      expect(await screen.findByText(aUser().email)).toBeInTheDocument();
+    });
+
+    it("a recovery code works through the same field", async () => {
+      // The service accepts either shape — a six-digit TOTP code or a recovery
+      // code — in the one field. A second form for the second shape would be a
+      // distinction the service does not make.
+      const identity = stubsWithSecondFactor();
+      renderWithProviders(loginPage(), { identity });
+
+      fillIn(CREDENTIALS);
+      submit();
+      await screen.findByLabelText("Code");
+
+      fillInCode("7KQF-4W2X-5DTR-M3HN");
+      submitCode();
+
+      await waitFor(() =>
+        expect(identity.completeSecondFactor).toHaveBeenCalledWith({
+          challenge: CHALLENGE,
+          code: "7KQF-4W2X-5DTR-M3HN",
+        }),
+      );
+      await waitFor(() => expect(createTokenStore().get()).toBe("tok_abc"));
+    });
+
+    it("a refused code shows the refusal and does not sign in", async () => {
+      const identity = stubIdentity({
+        login: vi.fn(() =>
+          Promise.resolve({ kind: "mfa_required" as const, challenge: CHALLENGE, expiresAt: "2026-10-01T00:00:00Z" }),
+        ),
+        completeSecondFactor: vi.fn(() => Promise.reject(anIdentityError(401, "unauthorized"))),
+      });
+      renderWithProviders(loginPage(), { identity });
+
+      fillIn(CREDENTIALS);
+      submit();
+      await screen.findByLabelText("Code");
+
+      fillInCode("000000");
+      submitCode();
+
+      expect(await alertText()).toMatch(/code was not accepted/i);
+      expect(createTokenStore().get()).toBeNull();
+      expect(push).not.toHaveBeenCalled();
+    });
+
+    it("a refused code gives the same sentence for every cause", async () => {
+      // A wrong TOTP code, a spent recovery code and a used step are three
+      // different facts the service answers with one 401 and one body, on
+      // purpose: an attacker who can tell them apart learns which to keep
+      // trying. This screen keeps that collapse — the sentence is the same
+      // whatever the service's detail says.
+      const causes = [
+        { detail: "the totp code is wrong" },
+        { detail: "the recovery code was already spent" },
+        { detail: "that step was already used" },
+      ];
+      const sentences: string[] = [];
+
+      for (const cause of causes) {
+        const identity = stubIdentity({
+          login: vi.fn(() =>
+            Promise.resolve({ kind: "mfa_required" as const, challenge: CHALLENGE, expiresAt: "2026-10-01T00:00:00Z" }),
+          ),
+          completeSecondFactor: vi.fn(() =>
+            Promise.reject(anIdentityError(401, "unauthorized", cause)),
+          ),
+        });
+        renderWithProviders(loginPage(), { identity });
+
+        fillIn(CREDENTIALS);
+        submit();
+        await screen.findByLabelText("Code");
+
+        fillInCode("000000");
+        submitCode();
+        sentences.push(await alertText());
+
+        cleanup();
+      }
+
+      expect(new Set(sentences).size).toBe(1);
+    });
+
+    it("a locked factor shows the retry window", async () => {
+      // The 423's `Retry-After` is the one fact worth having from a lockout:
+      // the wait, not a bare "try again". Fifteen minutes is the service's
+      // window after five failures.
+      const identity = stubIdentity({
+        login: vi.fn(() =>
+          Promise.resolve({ kind: "mfa_required" as const, challenge: CHALLENGE, expiresAt: "2026-10-01T00:00:00Z" }),
+        ),
+        completeSecondFactor: vi.fn(() =>
+          Promise.reject(anIdentityError(423, "account_locked", { retryAfter: 900 })),
+        ),
+      });
+      renderWithProviders(loginPage(), { identity });
+
+      fillIn(CREDENTIALS);
+      submit();
+      await screen.findByLabelText("Code");
+
+      fillInCode("000000");
+      submitCode();
+
+      expect(await alertText()).toMatch(/try again in 15 minutes/i);
+    });
+
+    it("a deployment that cannot verify a second factor says so", async () => {
+      // A 503 is `MFA_ENCRYPTION_KEY` unset — a deployment problem, not a
+      // wrong code. Presenting it as a refusal would send somebody to check an
+      // app that is producing perfectly good codes.
+      const identity = stubIdentity({
+        login: vi.fn(() =>
+          Promise.resolve({ kind: "mfa_required" as const, challenge: CHALLENGE, expiresAt: "2026-10-01T00:00:00Z" }),
+        ),
+        completeSecondFactor: vi.fn(() =>
+          Promise.reject(anIdentityError(503, "service_unavailable")),
+        ),
+      });
+      renderWithProviders(loginPage(), { identity });
+
+      fillIn(CREDENTIALS);
+      submit();
+      await screen.findByLabelText("Code");
+
+      fillInCode("482913");
+      submitCode();
+
+      const text = await alertText();
+      expect(text).toMatch(/deployment cannot verify a second factor/i);
+      expect(text).not.toMatch(/code was not accepted/i);
+    });
+
+    it("offers a way back to the password form", async () => {
+      // A person who cannot complete the second factor — no phone, no recovery
+      // codes — is otherwise stuck on a page with no exit: the password form
+      // is gone and the only forward path is one they cannot take. The
+      // challenge is abandoned, not spent, and the email and password survive
+      // the round trip.
+      renderWithProviders(loginPage(), { identity: stubsWithSecondFactor() });
+
+      fillIn(CREDENTIALS);
+      submit();
+      await screen.findByLabelText("Code");
+
+      fireEvent.click(screen.getByRole("button", { name: "Back" }));
+
+      expect(await screen.findByLabelText("Email")).toBeInTheDocument();
+      expect(screen.getByLabelText("Email")).toHaveValue(CREDENTIALS.email);
+      expect(createTokenStore().get()).toBeNull();
+      expect(push).not.toHaveBeenCalled();
     });
   });
 
