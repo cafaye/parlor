@@ -94,6 +94,21 @@ All notable changes to parlor are recorded here. The format follows
   `hono.ts.snippet` — including a `defaultTextMapGetter` that silently discards
   every inbound `traceparent` — are in `HANDOFF-otel-01.md` §2.
 
+### Removed
+
+- **The customer list is gone from the product** (`worker/parlor-w66-launchhonest`,
+  B1). `/billing/customers` rendered every customer on the platform — and the
+  identity user or account each one is for — to anybody signed in: billing
+  scopes that collection by nothing, and a screen that shows every email is
+  not shippable. The route, the page and screen, their tests, the landing-page
+  card and the telemetry route template are removed, and `routeTree.gen.ts` is
+  regenerated. The billing CLIENT keeps `listCustomers`: it is a transcription
+  of billing's contract, which still declares the path, and removing the
+  consumer is not the same as touching the producer — billing is out of launch
+  scope. `/billing/plans` stays: a plan catalogue is not other people's PII.
+  The gate floor moved 964 → 954 (twenty-four tests left with the screen,
+  fourteen arrived; the account is in `gate.yml`).
+
 ### Fixed
 
 - **`ci (kit, node) / node` is green: 335 lint errors → 0.** kit's shared `node`
@@ -224,6 +239,32 @@ All notable changes to parlor are recorded here. The format follows
   not. DECISION NEEDED in identity.
 
 ### Changed
+
+- **billing is optional in the deploy render, and the app says so honestly**
+  (`worker/parlor-w66-launchhonest`, A5 + B5). `config/deploy.yml` no longer
+  dies on an empty `KIT_BILLING_URL`: `billing_url` is an optional read and
+  `env.clear` omits `BILLING_URL` entirely when it is empty, because the launch
+  stack deploys no billing and the render was the thing stopping the deploy.
+  `identity_url` stays required — identity is in the launch. In the app, a
+  missing `BILLING_URL` no longer dials `localhost:3000` (parlor's own port):
+  the forwarder answers a billing route with a distinct 503 carrying
+  `BILLING_NOT_CONFIGURED_CODE`, and the plans screen renders that as a
+  deployment fact with no retry rather than a transport error. A missing
+  `IDENTITY_URL` in production now throws naming the variable instead of
+  dialing `localhost:8080` — which inside a container is parlor itself —
+  gated on `NODE_ENV`, which the Dockerfile and the compose stack already
+  set; the dev default survives for `npm run dev`. Three tests were proved
+  able to fail against the old behavior.
+
+- **`/readyz` is a real readiness probe** (`worker/parlor-w66-launchhonest`,
+  B2). The rollout gate was a liveness gate wearing a readiness label: it
+  answered `{status:"ok",deps:"none"}` whatever the world looked like. It now
+  sweeps what the launch stack actually has — identity's own `/readyz` with
+  a short timeout, billing only when `BILLING_URL` is set — and fails closed:
+  an unreachable, non-2xx or unconfigured identity is a 503, not a pass. The
+  response keeps the platform contract's keys with `deps` as an array of
+  results, one per dependency probed. Ten of the seventeen tests in
+  `src/app/readyz/route.test.ts` fail against the old placeholder route.
 
 - **`cafaye.yml` no longer describes the app as Next.js.** It is TanStack Start on
   Cloudflare Workers: no `next` dependency, `dev`/`build` are `vite dev` and

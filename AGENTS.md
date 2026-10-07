@@ -816,12 +816,13 @@ Non-negotiable, because it is the property the screen exists to protect:
   `e2e/docker-compose.yml` both use, and that is a decision rather than a
   default: a supervisor asking "is this process alive?" wants the
   unconditional answer.
-- `/readyz` — readiness. `deps: "none"` is a reserved placeholder string that
-  becomes an array when a dependency check is wired in. Note that parlor now
-  calls identity, and *that* has not been done yet — a real check is its own
-  packet, because a slow identity must not necessarily mean "not ready", and
-  that is a decision rather than a default. Keep the response keys stable: the
-  platform contract reads them.
+- `/readyz` — readiness, and a real sweep: identity's own `/readyz` with a
+  short timeout, billing only when `BILLING_URL` is set (the launch stack
+  deploys no billing, and an unconfigured dependency is not a failed one).
+  `deps` is an array of `{name, ok}` results, one per dependency probed, and
+  any failure — timeout, refusal, non-2xx, unconfigured — is a 503 rather
+  than a pass: the rollout gate is this route, and it must not fail open.
+  Keep the response keys stable: the platform contract reads them.
 - Both are `no-store`. If you change either shape, change the tests and
   `cafaye.yml` in the same commit.
 
