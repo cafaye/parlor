@@ -20,7 +20,6 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as VerifyEmailRouteImport } from './routes/verify-email'
 import { Route as AccountsIndexRouteImport } from './routes/accounts/index'
 import { Route as AccountsAccountIdRouteImport } from './routes/accounts/$accountId'
-import { Route as BillingCustomersRouteImport } from './routes/billing/customers'
 import { Route as BillingPlansRouteImport } from './routes/billing/plans'
 import { Route as InvitationsTokenRouteImport } from './routes/invitations/$token'
 import { Route as V1SplatRouteImport } from './routes/v1/$'
@@ -83,11 +82,6 @@ const AccountsAccountIdRoute = AccountsAccountIdRouteImport.update({
   path: '/accounts/$accountId',
   getParentRoute: () => rootRouteImport,
 } as any)
-const BillingCustomersRoute = BillingCustomersRouteImport.update({
-  id: '/billing/customers',
-  path: '/billing/customers',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const BillingPlansRoute = BillingPlansRouteImport.update({
   id: '/billing/plans',
   path: '/billing/plans',
@@ -131,7 +125,6 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRoute
   '/verify-email': typeof VerifyEmailRouteWithChildren
   '/accounts/$accountId': typeof AccountsAccountIdRoute
-  '/billing/customers': typeof BillingCustomersRoute
   '/billing/plans': typeof BillingPlansRoute
   '/invitations/$token': typeof InvitationsTokenRoute
   '/v1/$': typeof V1SplatRoute
@@ -150,7 +143,6 @@ export interface FileRoutesByTo {
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
   '/accounts/$accountId': typeof AccountsAccountIdRoute
-  '/billing/customers': typeof BillingCustomersRoute
   '/billing/plans': typeof BillingPlansRoute
   '/invitations/$token': typeof InvitationsTokenRoute
   '/v1/$': typeof V1SplatRoute
@@ -171,7 +163,6 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRoute
   '/verify-email': typeof VerifyEmailRouteWithChildren
   '/accounts/$accountId': typeof AccountsAccountIdRoute
-  '/billing/customers': typeof BillingCustomersRoute
   '/billing/plans': typeof BillingPlansRoute
   '/invitations/$token': typeof InvitationsTokenRoute
   '/v1/$': typeof V1SplatRoute
@@ -193,7 +184,6 @@ export interface FileRouteTypes {
     | '/settings'
     | '/verify-email'
     | '/accounts/$accountId'
-    | '/billing/customers'
     | '/billing/plans'
     | '/invitations/$token'
     | '/v1/$'
@@ -212,7 +202,6 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/settings'
     | '/accounts/$accountId'
-    | '/billing/customers'
     | '/billing/plans'
     | '/invitations/$token'
     | '/v1/$'
@@ -232,7 +221,6 @@ export interface FileRouteTypes {
     | '/settings'
     | '/verify-email'
     | '/accounts/$accountId'
-    | '/billing/customers'
     | '/billing/plans'
     | '/invitations/$token'
     | '/v1/$'
@@ -253,7 +241,6 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRoute
   VerifyEmailRoute: typeof VerifyEmailRouteWithChildren
   AccountsAccountIdRoute: typeof AccountsAccountIdRoute
-  BillingCustomersRoute: typeof BillingCustomersRoute
   BillingPlansRoute: typeof BillingPlansRoute
   InvitationsTokenRoute: typeof InvitationsTokenRoute
   V1SplatRoute: typeof V1SplatRoute
@@ -340,13 +327,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AccountsAccountIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/billing/customers': {
-      id: '/billing/customers'
-      path: '/billing/customers'
-      fullPath: '/billing/customers'
-      preLoaderRoute: typeof BillingCustomersRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/billing/plans': {
       id: '/billing/plans'
       path: '/billing/plans'
@@ -417,7 +397,6 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRoute: SettingsRoute,
   VerifyEmailRoute: VerifyEmailRouteWithChildren,
   AccountsAccountIdRoute: AccountsAccountIdRoute,
-  BillingCustomersRoute: BillingCustomersRoute,
   BillingPlansRoute: BillingPlansRoute,
   InvitationsTokenRoute: InvitationsTokenRoute,
   V1SplatRoute: V1SplatRoute,

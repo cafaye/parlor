@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import PlansPage from "./page";
-import type { PlanPage } from "@/lib/billing";
+import { BILLING_NOT_CONFIGURED_CODE, type PlanPage } from "@/lib/billing";
 import { aBillingError, aPlan, stubBilling } from "@/test/support/billing";
 import { stubIdentity } from "@/test/support/identity";
 import { renderWithProviders } from "@/test/support/render";
@@ -315,6 +315,26 @@ describe("when the plans cannot be loaded", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
 
     await waitFor(() => expect(billing.listPlans.mock.calls.length).toBeGreaterThan(1));
+  });
+
+  it("says billing is not configured — a deployment fact, not a failure — when the forwarder says so", async () => {
+    // The launch stack deploys no billing, so the forwarder answers a billing
+    // route with a 503 carrying `BILLING_NOT_CONFIGURED_CODE`. That is the
+    // same STATUS as the `unavailable` failure above and a different fact: a
+    // retry cannot fix a deployment, so no retry is offered, and the sentence
+    // names the deployment rather than the service. The two tests together are
+    // the discriminator — same status code, two different screens.
+    renderPlans(
+      stubBilling({
+        listPlans: vi.fn(() => Promise.reject(aBillingError(503, BILLING_NOT_CONFIGURED_CODE))),
+      }),
+    );
+
+    expect(await screen.findByText(/not configured/i)).toBeInTheDocument();
+    // Not an alert: nothing went wrong from the reader's perspective, so the
+    // polite live region is the honest one.
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /try again/i })).not.toBeInTheDocument();
   });
 });
 

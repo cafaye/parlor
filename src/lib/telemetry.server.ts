@@ -340,7 +340,6 @@ const ROUTE_TEMPLATES: readonly string[] = [
   "/",
   "/accounts",
   "/accounts/{accountId}",
-  "/billing/customers",
   "/billing/plans",
   "/forgot-password",
   "/healthz",

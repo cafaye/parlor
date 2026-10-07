@@ -564,9 +564,43 @@ gate:
      # never-renders test red; varying the 401 sentence by the service's detail
      # turns the same-sentence test red; and skipping the `adoptSession` write
      # turns the completion, header-signed-in and recovery-code tests red.
+     #
+     # IT IS 954 BY THE NEXT ACCOUNT. 964 -> 954, a decrease of ten, and the
+     # decrease is the packet: the customer list is removed from the product
+     # (B1), and the twenty-four tests in its deleted page.test.tsx are
+     # removed with it. A test for a screen this build refuses to render is
+     # not a floor to defend.
+     #
+     # WHAT THE FOURTEEN ADDED ARE, for the same reason as every account above
+     # — a floor that goes up or down with no account of what it bought is a
+     # floor nobody trusts:
+     #
+     #   * 2 in `src/lib/upstream.test.ts` — a billing route answered with a
+     #     distinct 503 and an empty hop list when `BILLING_URL` is unset, and
+     #     the control that an unconfigured billing does not take identity
+     #     down with it. Both were proved able to fail against the old
+     #     forwarder, which dialed a default instead of answering;
+     #   * 2 in `src/app/v1/[...path]/route.test.ts` — a missing
+     #     `IDENTITY_URL` throwing naming the variable under `NODE_ENV=
+     #     production`, and the control that the compose default still serves
+     #     `npm run dev`. The first was proved able to fail against the old
+     #     reader, which returned `localhost:8080` and let the container boot
+     #     into a sign-in it could not serve;
+     #   * 1 in `src/app/billing/plans/page.test.tsx` — the not-configured
+     #     answer rendered as a deployment fact with no retry, against the
+     #     same 503 status carrying a different code. Proved able to fail
+     #     against the old screen, which showed the generic error;
+     #   * 8 in `src/app/readyz/route.test.ts` — the real sweep: identity
+     #     reachable, unreachable, non-2xx and unconfigured, billing in the
+     #     sweep only when configured, the launch stack's one-dep shape, the
+     #     bounded probe, and the contract keys. Ten of the seventeen in that
+     #     file fail against the old placeholder route, the unreachable-
+     #     identity one among them;
+     #   * 1 in `src/app/page.test.tsx` — the landing page links nowhere near
+     #     the removed customer list.
     - id: suite
       match: '^[ ]*Tests[ ]+([0-9]+)[ ]+passed(?![ ]*\|)'
-      minimum: 964
+      minimum: 954
     # The tally `tests/validate-ci.sh` prints, which is the second half of this
     # gate: the checks that the tree still has the shape CI assumes — one
     # runtime pin, `npm ci` and not `npm install`, the gate command, the

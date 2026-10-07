@@ -77,15 +77,15 @@ test("every service in the stack reports itself ready, from the outside", async 
   // "it is up" are two facts and not one. Two because they fail for two
   // reasons: a bad route in the proxy, and a process that is not answering.
   //
-  // Note what this does NOT prove: parlor's /readyz reports `deps: "none"`
-  // because nothing has wired a real identity probe into it yet (AGENTS.md,
-  // "Health surfaces" — "a real check is its own packet, because a slow identity
-  // must not necessarily mean not ready, and that is a decision rather than a
-  // default"). A harness that trusted `/readyz` alone would have called this
-  // stack ready on the first run, when it was up and could not sign a single
-  // person in. session.e2e.spec.ts is what proves the dependency.
+  // parlor's /readyz probes identity for real now, so this 200 means the
+  // rollout gate is a readiness gate rather than a liveness one — but the
+  // assertion is still on the exact bytes, because a /readyz that returns 200
+  // with the wrong body is a failure and not a pass (AGENTS.md, "Health
+  // surfaces"). What it reports is the launch stack's shape: identity, and
+  // nothing else, because this stack deploys no billing.
   await page.goto(`${parlorBaseUrl}/readyz`);
   await expect(rendered(page)).toContainText('"status":"ok"');
+  await expect(rendered(page)).toContainText('"name":"identity"');
 
   // identity. Note the shape: `deps` is a *string* here and an object in gateway's
   // and parlor's answers. The platform contract fixes the keys (`status`,

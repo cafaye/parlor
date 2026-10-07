@@ -144,20 +144,20 @@
 # A service with no `/readyz` would be a finding to report, not a reason to
 # sleep. All three application services here have one: identity (`/readyz`,
 # which pings its database), gateway (`/readyz`, which reports `identity` and
-# `redis` by name), and parlor (`/readyz`, currently reporting
-# `"deps":"none"` — see AGENTS.md, "Health surfaces").
+# `redis` by name), and parlor (`/readyz`, which probes identity and reports
+# the dependencies it actually has — see AGENTS.md, "Health surfaces").
 #
 # The edge has no `/readyz` of its own and that is deliberate: it is a proxy, it
 # does not implement the platform's health contract, and giving it one would be a
 # second answer to a question the contract already has. Its healthcheck asks the
 # *app's* liveness through the proxy, which is the only question it can answer.
 #
-# parlor's `/readyz` NOT probing identity is deliberate and is why the E2E
-# spec asserts the user-visible result instead: a stack that comes up and then
-# cannot authenticate is exactly the failure this tier exists to catch, and a
-# readiness endpoint that lied about it would hide the failure. It is also, as
-# measured, not hypothetical: the first run of this tier brought the whole stack
-# up green and then could not sign a single person in.
+# parlor's `/readyz` probes identity for real, so this stack's green `/readyz`
+# now means something it did not before: the rollout gate is a readiness gate.
+# The E2E spec still asserts the user-visible result — a stack that comes up
+# and then cannot authenticate is exactly the failure this tier exists to
+# catch — but a readiness endpoint that lied about identity would no longer
+# hide it.
 #
 # ---------------------------------------------------------------------------
 # SECRETS

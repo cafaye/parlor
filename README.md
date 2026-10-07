@@ -41,7 +41,6 @@ would your product still build? It has to be.
 | One account | `/accounts/[accountId]` | Facts, members, rename, invite, leave, delete — gated by your role. |
 | Accept an invitation | `/invitations/[token]` | Redeem a token. Does not accept on load. |
 | Plan catalogue | `/billing/plans` | What can be bought, at what price, on what cadence. Paged. |
-| Customers | `/billing/customers` | Billing's customer records. Platform-wide, and labelled so. |
 | Session shell | `src/components/shell/` | Header: navigation, sign out when authed, sign in when not. |
 | The one origin | `/v1/*` | The BFF. Answers the browser's identity and billing calls on this app's own origin and forwards them server-side. |
 | Identity client | `src/lib/identity.ts` | Typed, transport-injected client for every identity endpoint this app calls. The tables below are the source of truth for which. |
@@ -53,7 +52,7 @@ would your product still build? It has to be.
 | Token store | `src/lib/token-store.ts` | `localStorage` persistence, injectable. |
 | The forwarder | `src/lib/upstream.ts` | The BFF's allow-list: one fixed destination per service, twenty-four routes, and the only code that names a service address at run time. |
 | Liveness | `/healthz` | `{"status":"ok"}` — process is up. No dependency checks, on purpose. |
-| Readiness | `/readyz` | `{"status":"ok","deps":"none"}` — `deps` is a reserved placeholder. |
+| Readiness | `/readyz` | `{"status":"ok","deps":[{"name":"identity","ok":true}]}` — a real sweep: identity's own `/readyz` with a short timeout, billing only when `BILLING_URL` is set. Any failure is a 503. |
 | Theme tokens | `src/styles/tokens.css` | The cafaye design system: two ramps, a semantic layer, and a measured focus ring. Contrast-checked in `src/styles/tokens.test.ts`. |
 | Primitives | `src/components/ui/` | Button, Input, Select, Field, Callout, ConfirmDialog, Spinner, Surface, TextLink/CardLink, Panel, and the state components. One import path: `@/components/ui`. |
 | Design system guide | [`docs/design-system.md`](docs/design-system.md) | Which component to reach for, what the variants mean, and the four decisions that were measured rather than chosen. |
@@ -149,8 +148,9 @@ than accidents:
   /v1/customers` "returns every customer, because there is no account to scope
   it by". There is nothing to authenticate with, and handing a live identity
   session token to a service that does not authenticate it would put a credential
-  in a third party's request logs. `/billing/customers` is therefore labelled as
-  the platform's list, not somebody's.
+  in a third party's request logs. The customer screen that endpoint fed is
+  removed from the product: billing scopes the collection by nothing, and a
+  screen that renders every customer's email is not shippable.
 - **There is no subscription surface.** No `/v1/subscriptions*` exists and
   `Customer` has no plan field, so nothing on the wire records which plan a
   customer is on. A `Plan` is a catalogue row. This is why `/billing/plans` is a

@@ -138,6 +138,7 @@
  * The dependency runs the other way too — `telemetry.ts` does not import this
  * file — so there is no cycle to reason about.
  */
+import { BILLING_NOT_CONFIGURED_CODE } from "@/lib/billing";
 import { tracedFetch } from "@/lib/telemetry.server";
 
 /** The services this app forwards to. Nothing else is reachable. */
@@ -554,7 +555,14 @@ export type UpstreamForwarder = (
 export type UpstreamOptions = {
   /** Where identity runs. Read on the server, from the environment. */
   identityUrl: string;
-  /** Where billing runs. Same. */
+  /**
+   * Where billing runs. Same — EXCEPT THAT EMPTY MEANS "NOT CONFIGURED", AND IS
+   * NOT A DEFAULT-IN-WAITING. The launch stack deploys no billing, so an empty
+   * `billingUrl` is a real deployment state rather than a misconfiguration, and
+   * the forwarder answers a billing route with a distinct 503 (see `forward`
+   * below) rather than dialing anything. A test that wants billing reachable
+   * passes an address; a test that wants the launch stack passes "".
+   */
   billingUrl: string;
   /** The seam. Tests pass a recorder; the route handler passes nothing. */
   fetchImpl?: typeof fetch;
@@ -601,6 +609,19 @@ export function createUpstreamForwarder(options: UpstreamOptions): UpstreamForwa
       return problem(405, "method_not_allowed", "Method not allowed.", {
         headers: { allow: allowedMethods(segments).join(", ") },
       });
+    }
+
+    // BILLING IS OPTIONAL, AND AN UNCONFIGURED BILLING IS AN HONEST ANSWER
+    // RATHER THAN A TRANSPORT ERROR. The launch stack deploys no billing, so
+    // `BILLING_URL` may be empty; when it is, a billing route is answered here
+    // with a 503 carrying a distinct code rather than a request to a default
+    // address. The alternative — letting `buildUrl` splice an empty base into a
+    // relative URL — is a fetch that throws and a 502 three layers from the
+    // cause, which is the failure mode this packet exists to remove. The code
+    // is `BILLING_NOT_CONFIGURED_CODE` from `src/lib/billing.ts`, so the screens
+    // that branch on it and the forwarder that mints it agree on one spelling.
+    if (match.upstream === "billing" && bases.billing === "") {
+      return problem(503, BILLING_NOT_CONFIGURED_CODE, "Billing is not configured.");
     }
 
     const url = buildUrl(bases[match.upstream], match, segments, request.url);

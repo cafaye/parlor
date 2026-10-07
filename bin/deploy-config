@@ -92,13 +92,15 @@ trap 'rm -rf "$WORK"' EXIT
 
 # ---------------------------------------------------------------------------
 # The throwaway operator facts. Every one of these is a value the ERB preamble in
-# config/deploy.yml REQUIRES by name, and supplying all of them here is also the
-# proof that the list is complete: the render fails on the first one that is
-# missing, which is the check at the bottom.
+# config/deploy.yml reads by name, and supplying all of them here is also the
+# proof that the list is complete: the render fails on the first required one
+# that is missing, which is the check at the bottom.
 #
-# `KIT_IDENTITY_URL` and `KIT_BILLING_URL` are this repository's own two — they
-# are not in kit's template, and a required variable that only exists in prose is
-# a required variable nobody exports.
+# `KIT_IDENTITY_URL` is this repository's own required variable — it is not in
+# kit's template, and a required variable that only exists in prose is a
+# required variable nobody exports. `KIT_BILLING_URL` is this repository's own
+# OPTIONAL one: the launch stack deploys no billing, and the render succeeding
+# without it is asserted in check 8b below.
 # ---------------------------------------------------------------------------
 export KIT_SERVICE=parlor
 export KIT_REGISTRY_ORG=cafaye
@@ -268,15 +270,17 @@ fi
 
 # ---------------------------------------------------------------------------
 # 8. A MISSING REQUIRED VARIABLE IS REFUSED AT RENDER TIME, NAMING ITSELF. This
-#    is the check this service needs most and kit's does not: parlor requires two
+#    is the check this service needs most and kit's does not: parlor requires
 #    variables kit's template does not, and a required variable that is only
 #    mentioned in a comment is a variable nobody exports — the deploy then bakes
 #    in `http://localhost:8080` and serves a broken sign-in.
 #
-#    Each of the seven is tried in turn, so a preamble that quietly stops
+#    Each of the six is tried in turn, so a preamble that quietly stops
 #    requiring one of them is a failure here rather than a surprise on a host.
+#    KIT_BILLING_URL is NOT among them any more: the launch stack deploys no
+#    billing, and the render succeeding without it is the whole of A5 — see 8b.
 # ---------------------------------------------------------------------------
-for var in KIT_SERVICE KIT_REGISTRY_ORG KIT_REPO KIT_WEB_HOST KIT_APP_DOMAIN KIT_IDENTITY_URL KIT_BILLING_URL; do
+for var in KIT_SERVICE KIT_REGISTRY_ORG KIT_REPO KIT_WEB_HOST KIT_APP_DOMAIN KIT_IDENTITY_URL; do
   if msg=$(env -u "$var" "$RUBY" -rerb -e 'print ERB.new(File.read(ARGV[0])).result' "$CONFIG" 2>&1 >/dev/null); then
     no "the render refuses to proceed with ${var} unset" 'it rendered successfully'
   elif printf '%s' "$msg" | grep -q "$var"; then
@@ -286,6 +290,33 @@ for var in KIT_SERVICE KIT_REGISTRY_ORG KIT_REPO KIT_WEB_HOST KIT_APP_DOMAIN KIT
       "it failed without naming the variable: $(printf '%s' "$msg" | tail -1)"
   fi
 done
+
+# ---------------------------------------------------------------------------
+# 8b. AN UNSET KIT_BILLING_URL RENDERS, AND OMITS BILLING_URL ENTIRELY. The
+#     launch stack deploys no billing, so an empty variable is a real
+#     deployment state rather than a misconfiguration: the render succeeds,
+#     `env.clear` carries no BILLING_URL at all (not an empty value, which the
+#     app would read as an address to dial), and kamal accepts the result —
+#     that acceptance is the launch deploy of identity + gateway + courier +
+#     parlor actually rendering parlor's config.
+# ---------------------------------------------------------------------------
+NO_BILLING="$WORK/no-billing.yml"
+if msg=$(env -u KIT_BILLING_URL "$RUBY" -rerb -e 'print ERB.new(File.read(ARGV[0])).result' "$CONFIG" 2>&1 >"$NO_BILLING"); then
+  if [ -s "$NO_BILLING" ] && ! grep -qE '^[[:space:]]*BILLING_URL:' "$NO_BILLING"; then
+    if bounded "$KAMAL" config -c "$NO_BILLING" --version latest >/dev/null 2>&1; then
+      ok "an unset KIT_BILLING_URL renders, omits BILLING_URL, and kamal accepts the result"
+    else
+      no "an unset KIT_BILLING_URL renders, omits BILLING_URL, and kamal accepts the result" \
+        "kamal refused the no-billing render — the launch deploy cannot render parlor's config"
+    fi
+  else
+    no "an unset KIT_BILLING_URL renders, omits BILLING_URL, and kamal accepts the result" \
+      "the render succeeded but the rendered config still declares BILLING_URL — an empty value is a value the app would dial"
+  fi
+else
+  no "an unset KIT_BILLING_URL renders, omits BILLING_URL, and kamal accepts the result" \
+    "the render refused to proceed: $(printf '%s' "$msg" | tail -1)"
+fi
 
 # ---------------------------------------------------------------------------
 # 9. THE NEGATIVE CONTROLS. Every check above that can pass for the wrong reason

@@ -15,6 +15,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { BILLING_NOT_CONFIGURED_CODE } from "./billing";
 import {
   FORWARDED_RESPONSE_HEADERS,
   MAX_REQUEST_BODY_BYTES,
@@ -614,6 +615,50 @@ describe("the allow-list", () => {
     // In the route's declaration order, not the caller's, so two callers asking
     // the same question produce the same URL.
     expect(hops[0].url).toBe(`${BILLING_URL}/v1/plans?cursor=abc&limit=2&order=desc`);
+  });
+
+  it("answers a billing route with a distinct 503 when billing is not configured, and dials nothing", async () => {
+    // The launch stack deploys no billing, so an empty `billingUrl` is a real
+    // deployment state rather than a misconfiguration. The forwarder must not
+    // dial a default: `DEFAULT_BILLING_URL` used to be `localhost:3000`, which
+    // inside a container is parlor's own port, and a request to it is a request
+    // to parlor — a 502 three layers from the cause and nothing naming the
+    // variable. So the answer is minted here, and the hop list stays empty.
+    const { fetchImpl, hops } = recordingFetch();
+    const forward = createUpstreamForwarder({
+      identityUrl: IDENTITY_URL,
+      billingUrl: "",
+      fetchImpl,
+    });
+
+    const response = await forward(new Request("https://parlor.test/v1/plans"), ["plans"]);
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("content-type")).toBe("application/problem+json");
+    const body = (await response.json()) as { code?: unknown };
+    expect(body.code).toBe(BILLING_NOT_CONFIGURED_CODE);
+    // The whole point: nothing was dialed. A hop here is the old bug.
+    expect(hops).toHaveLength(0);
+  });
+
+  it("still forwards an identity route when billing is not configured", async () => {
+    // The control for the test above: an unconfigured billing must not take
+    // identity down with it. The launch stack's entire reason to exist is a
+    // sign-in, and `/v1/session` is the route that serves it.
+    const { fetchImpl, hops } = recordingFetch();
+    const forward = createUpstreamForwarder({
+      identityUrl: IDENTITY_URL,
+      billingUrl: "",
+      fetchImpl,
+    });
+
+    const response = await forward(
+      new Request("https://parlor.test/v1/session", { method: "POST", body: "{}" }),
+      ["session"],
+    );
+
+    expect(response.status).toBe(200);
+    expect(hops.map((hop) => hop.url)).toEqual([`${IDENTITY_URL}/v1/session`]);
   });
 });
 
