@@ -881,8 +881,8 @@ of that file before changing anything in it.
   path that reads a destination from a header, a query string, a path segment or
   a body. `Host`, `X-Forwarded-Host` and `?url=` are all ignored, and there are
   tests that assert each of them by name.
-- **An allow-list, and the upstream path is REBUILT from it.** Thirty routes,
-  transcribed from the two clients: twenty-five to identity, five to billing —
+- **An allow-list, and the upstream path is REBUILT from it.** Thirty-five routes,
+  transcribed from the two clients: thirty to identity, five to billing —
   the count is `grep -oE 'upstream: "[a-z]+"' src/lib/upstream.ts | sort | uniq -c`.
   identity serves thirty-four; token introspection, the LOGIN challenge
   (`POST /v1/session/mfa`), the MFA disable (`DELETE /v1/mfa`), API keys, OIDC
