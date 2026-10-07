@@ -19,6 +19,10 @@ export type StubIdentity = IdentityClient & {
   login: MockedFunction<IdentityClient["login"]>;
   logout: MockedFunction<IdentityClient["logout"]>;
   me: MockedFunction<IdentityClient["me"]>;
+  updateMyDisplayName: MockedFunction<IdentityClient["updateMyDisplayName"]>;
+  listSessions: MockedFunction<IdentityClient["listSessions"]>;
+  revokeSession: MockedFunction<IdentityClient["revokeSession"]>;
+  deleteMyAccount: MockedFunction<IdentityClient["deleteMyAccount"]>;
   listAccounts: MockedFunction<IdentityClient["listAccounts"]>;
   createAccount: MockedFunction<IdentityClient["createAccount"]>;
   getAccount: MockedFunction<IdentityClient["getAccount"]>;
@@ -57,7 +61,23 @@ export function stubIdentity(overrides: Partial<IdentityClient> = {}): StubIdent
     login: vi.fn(overrides.login ?? unscripted("login")),
     logout: vi.fn(overrides.logout ?? unscripted("logout")),
     me: vi.fn(overrides.me ?? unscripted("me")),
-    listAccounts: vi.fn(overrides.listAccounts ?? unscripted("listAccounts")),
+    // The three display-name and sessions methods have resolving defaults
+    // rather than `unscripted` because the settings screen calls them on render.
+    // A test that does not care about them should not have to script them, and a
+    // test that does passes its own override.
+    updateMyDisplayName: vi.fn(
+      overrides.updateMyDisplayName ?? (() => Promise.resolve(aUser())),
+    ),
+    listSessions: vi.fn(
+      overrides.listSessions ?? (() => Promise.resolve({ sessions: [] })),
+    ),
+    revokeSession: vi.fn(overrides.revokeSession ?? (() => Promise.resolve())),
+    // The settings screen reads the personal account's name for the
+    // type-to-confirm, so the accounts list resolves with one by default.
+    deleteMyAccount: vi.fn(overrides.deleteMyAccount ?? (() => Promise.resolve())),
+    listAccounts: vi.fn(
+      overrides.listAccounts ?? (() => Promise.resolve([{ id: "acc_1", name: "Kaka", slug: "kaka", personal: true, role: "owner", created_at: "2026-01-01T00:00:00Z" }])),
+    ),
     createAccount: vi.fn(overrides.createAccount ?? unscripted("createAccount")),
     getAccount: vi.fn(overrides.getAccount ?? unscripted("getAccount")),
     renameAccount: vi.fn(overrides.renameAccount ?? unscripted("renameAccount")),

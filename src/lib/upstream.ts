@@ -332,11 +332,31 @@ type Route = {
  * capability decision and is not one this packet makes.
  */
 const ROUTES: readonly Route[] = [
-  // --- identity: the four session and user routes -------------------------
+  // --- identity: the session and user routes ------------------------------
+  //
+  // `PATCH /v1/me` sets or clears the caller's display name, and the two are
+  // one request: an omitted `display_name` and an empty string decode the same
+  // way upstream, so there is no "leave unchanged" to forward.
+  //
+  // The two sessions routes are a LIST and a per-row REVOKE, and they are
+  // declared together because they are one surface: `GET /v1/sessions` answers
+  // the caller's live sessions with never a token, and `DELETE
+  // /v1/sessions/{session_id}` ends one. The revoke is refused with a single 404
+  // for all four ways of not owning the id, which is the service's own
+  // anti-probing stance and is not this file's to narrow or widen.
   { method: "POST", path: ["users"], upstream: "identity" },
   { method: "POST", path: ["session"], upstream: "identity" },
   { method: "DELETE", path: ["session"], upstream: "identity" },
   { method: "GET", path: ["me"], upstream: "identity" },
+  { method: "PATCH", path: ["me"], upstream: "identity" },
+  // `DELETE /v1/me` ends the caller's account. It shares the `me` shape under a
+  // third method, and the two-lookup rule in `forward` is what tells the three
+  // apart — finding "the route for this shape" and then checking its method
+  // would answer 405 to a deletion. The 204 carries no body and no
+  // `Content-Type`; the 409 names the team accounts the caller solely owns.
+  { method: "DELETE", path: ["me"], upstream: "identity" },
+  { method: "GET", path: ["sessions"], upstream: "identity" },
+  { method: "DELETE", path: ["sessions", ":sessionId"], upstream: "identity" },
 
   // --- identity: the tenancy surface --------------------------------------
   { method: "GET", path: ["accounts"], upstream: "identity" },
@@ -429,6 +449,7 @@ const SEGMENT_KINDS: Record<string, SegmentKind> = {
   accountId: "uuid",
   userId: "uuid",
   id: "uuid",
+  sessionId: "uuid",
   slug: "slug",
   provider: "provider",
 };

@@ -71,6 +71,21 @@ export type AuthValue = {
   register: (credentials: Credentials) => Promise<User>;
   logout: () => Promise<void>;
   /**
+   * Forget the session this browser holds WITHOUT asking the service.
+   *
+   * For the case where the session is already dead server-side: a session this
+   * app revoked by id (`DELETE /v1/sessions/{id}`), a password reset redeemed
+   * in another tab. Calling `logout` there would send a token the service has
+   * already refused, and the 401 it answers with is noise rather than
+   * information — the revocation already happened, and the local half is the
+   * only half left to clear.
+   *
+   * The same two writes `logout`'s `finally` makes — `store.set(null)` and
+   * `queryClient.clear()` — because the token is the query key and an entry
+   * keyed on a dead token is an entry that can only ever 401.
+   */
+  forgetSession: () => void;
+  /**
    * Take a session identity has already minted, without asking it again.
    *
    * `login` and `register` both make their request and write the token
@@ -218,6 +233,10 @@ export function AuthProvider({
     login: (credentials) => loginMutation.mutateAsync(credentials),
     register: (credentials) => registerMutation.mutateAsync(credentials),
     logout: () => logoutMutation.mutateAsync(),
+    forgetSession: () => {
+      store.set(null);
+      queryClient.clear();
+    },
     // Deliberately NOT a mutation. There is nothing in flight here — the request
     // that matters has already resolved by the time this is called, and a
     // mutation would put a second one in `pending` for the span between the

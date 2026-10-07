@@ -3,7 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import SettingsPage from "@/app/settings/page";
 
 /**
- * `/settings` — the profile screen, version 1.
+ * `/settings` — the profile screen, version 2.
  *
  * A flat `settings.tsx` rather than a `settings/` directory, because there is
  * exactly one screen here and no sibling to keep beside it; `billing/plans.tsx`

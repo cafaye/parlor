@@ -263,6 +263,190 @@ describe("me", () => {
   });
 });
 
+describe("updateMyDisplayName", () => {
+  it("patches /v1/me with the token as a bearer credential", async () => {
+    const { transport, calls } = stubTransport(() =>
+      json(200, { id: "usr_1", email: "kaka@example.com", display_name: "Kaka" }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await client.updateMyDisplayName("tok_abc", { display_name: "Kaka" });
+
+    expect(calls[0].url).toBe("https://identity.test/v1/me");
+    expect(calls[0].method).toBe("PATCH");
+    expect(calls[0].headers.Authorization).toBe("Bearer tok_abc");
+    expect(JSON.parse(calls[0].body ?? "null")).toEqual({ display_name: "Kaka" });
+  });
+
+  it("always sends the display_name field, because an omitted one clears", async () => {
+    // The contract: an empty string and an omitted field decode the same way
+    // upstream, so there is no "leave unchanged" to express — every commit is
+    // "this is my name now" or "nothing", and clearing is the empty string.
+    const { transport, calls } = stubTransport(() =>
+      json(200, { id: "usr_1", email: "kaka@example.com" }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await client.updateMyDisplayName("tok_abc", { display_name: "" });
+
+    expect(JSON.parse(calls[0].body ?? "null")).toEqual({ display_name: "" });
+  });
+
+  it("returns the updated user, with the name omitted when cleared", async () => {
+    const { transport } = stubTransport(() =>
+      json(200, { id: "usr_1", email: "kaka@example.com" }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await expect(client.updateMyDisplayName("tok_abc", { display_name: "" })).resolves.toEqual({
+      id: "usr_1",
+      email: "kaka@example.com",
+    });
+  });
+
+  it("surfaces a too-long name as a 422 on the display_name field", async () => {
+    const { transport } = stubTransport(() =>
+      problem(422, {
+        code: "validation_failed",
+        title: "Validation failed",
+        errors: [{ field: "display_name", code: "too_long" }],
+      }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const error = (await client
+      .updateMyDisplayName("tok_abc", { display_name: "x" })
+      .catch((thrown: unknown) => thrown)) as IdentityError;
+
+    expect(error.status).toBe(422);
+    expect(error.fieldErrors).toEqual([{ field: "display_name", code: "too_long" }]);
+  });
+});
+
+describe("listSessions", () => {
+  it("reads /v1/sessions with the token as a bearer credential", async () => {
+    const { transport, calls } = stubTransport(() => json(200, { sessions: [] }));
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await client.listSessions("tok_abc");
+
+    expect(calls[0].url).toBe("https://identity.test/v1/sessions");
+    expect(calls[0].method).toBe("GET");
+    expect(calls[0].headers.Authorization).toBe("Bearer tok_abc");
+  });
+
+  it("returns the caller's sessions, which carry no token and no digest", async () => {
+    const { transport } = stubTransport(() =>
+      json(200, {
+        sessions: [
+          {
+            id: "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+            created_at: "2026-09-30T09:14:02Z",
+            expires_at: "2026-10-30T09:14:02Z",
+            user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+            ip: "203.0.113.7",
+            current: true,
+          },
+        ],
+      }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await expect(client.listSessions("tok_abc")).resolves.toEqual({
+      sessions: [
+        {
+          id: "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+          created_at: "2026-09-30T09:14:02Z",
+          expires_at: "2026-10-30T09:14:02Z",
+          user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+          ip: "203.0.113.7",
+          current: true,
+        },
+      ],
+    });
+  });
+});
+
+describe("revokeSession", () => {
+  it("deletes the session with the token as a bearer credential", async () => {
+    const { transport, calls } = stubTransport(() => new Response(null, { status: 204 }));
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await client.revokeSession("tok_abc", "3f2504e0-4f89-11d3-9a0c-0305e82c3301");
+
+    expect(calls[0].url).toBe("https://identity.test/v1/sessions/3f2504e0-4f89-11d3-9a0c-0305e82c3301");
+    expect(calls[0].method).toBe("DELETE");
+    expect(calls[0].headers.Authorization).toBe("Bearer tok_abc");
+  });
+
+  it("resolves on an empty 204 body", async () => {
+    const { transport } = stubTransport(() => new Response(null, { status: 204 }));
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await expect(
+      client.revokeSession("tok_abc", "3f2504e0-4f89-11d3-9a0c-0305e82c3301"),
+    ).resolves.toBeUndefined();
+  });
+
+  it("reads one 404 for a session that is not the caller's", async () => {
+    // Never existed, somebody else's, already revoked and a malformed id are
+    // one answer, because a 403 against a 404 would let a signed-in caller
+    // probe whether a session id belongs to a live session anywhere.
+    const { transport } = stubTransport(() =>
+      problem(404, { code: "not_found", title: "Not found" }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const error = (await client
+      .revokeSession("tok_abc", "3f2504e0-4f89-11d3-9a0c-0305e82c3301")
+      .catch((thrown: unknown) => thrown)) as IdentityError;
+
+    expect(error.status).toBe(404);
+  });
+});
+
+describe("deleteMyAccount", () => {
+  it("deletes /v1/me with the token as a bearer credential", async () => {
+    const { transport, calls } = stubTransport(() => new Response(null, { status: 204 }));
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await client.deleteMyAccount("tok_abc");
+
+    expect(calls[0].url).toBe("https://identity.test/v1/me");
+    expect(calls[0].method).toBe("DELETE");
+    expect(calls[0].headers.Authorization).toBe("Bearer tok_abc");
+  });
+
+  it("resolves on an empty 204 body", async () => {
+    const { transport } = stubTransport(() => new Response(null, { status: 204 }));
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await expect(client.deleteMyAccount("tok_abc")).resolves.toBeUndefined();
+  });
+
+  it("surfaces a sole-owner refusal as a 409 with the service's detail", async () => {
+    // The one non-constant answer: a caller who is the only owner of a team
+    // account is refused, and the problem document's detail names each account
+    // by name and slug so the caller can act.
+    const { transport } = stubTransport(() =>
+      problem(409, {
+        code: "account_ownership_conflict",
+        title: "Account ownership conflict",
+        detail: 'sole owner of a team account: "Acme" (acme). Transfer ownership to somebody else.',
+      }),
+    );
+    const client = createIdentityClient({ baseUrl, transport });
+
+    const error = (await client
+      .deleteMyAccount("tok_abc")
+      .catch((thrown: unknown) => thrown)) as IdentityError;
+
+    expect(error.status).toBe(409);
+    expect(error.code).toBe("account_ownership_conflict");
+    expect(error.message).toContain("Acme");
+  });
+});
+
 describe("logout", () => {
   it("deletes the session with the token as a bearer credential", async () => {
     const { transport, calls } = stubTransport(() => new Response(null, { status: 204 }));

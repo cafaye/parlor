@@ -3,22 +3,31 @@ import { Link } from "@tanstack/react-router";
 import { SettingsScreen } from "./settings-screen";
 
 /**
- * `/settings` — the profile screen, version 1.
+ * `/settings` — the profile screen, version 2.
  *
  * ---------------------------------------------------------------------------
- * THIS PAGE IS DELIBERATELY MOSTLY ABSENT, AND THE ABSENCE IS THE WORK
+ * WHAT IS HERE, AND WHAT IS STILL ABSENT
  * ---------------------------------------------------------------------------
- * `REPORT-parlor-profile-01.md` measured the identity API against the profile
- * screen the product wants and found routes for one of the four sections. There
- * is no route to read or write a display name, none to list sessions, none to
- * revoke one, and none to delete a user account; the service's only PATCHes
- * touch accounts, members and MFA enrollments. So those sections are not here
- * in any form — not greyed, not "coming soon", not behind a disabled control.
+ * Version 1 shipped the four controls the API supported then. The routes the
+ * report listed as waiting — `PATCH /v1/me` for a display name, `GET
+ * /v1/sessions` and `DELETE /v1/sessions/{id}` for the session list — have
+ * since landed on identity's master, and the sections that waited for them
+ * are here. What is still absent is absent for the same reason it was then,
+ * and in the same form: not greyed, not "coming soon", not behind a disabled
+ * control.
+ *
+ *   * **Second factor** is withheld by decision, not by a missing route: the
+ *     forwarder refuses `/v1/session/mfa` and `/v1/mfa/*` on purpose, because
+ *     reaching them from a browser turns a second factor into a thing this
+ *     origin can drive. That is FEATURE-PARITY §7a, and it is a decision
+ *     rather than a gap.
+ *   * **API tokens** await `/v1/accounts/{id}/api-keys`, refused by the
+ *     forwarder for the same reason.
  *
  * A disabled control is a promise the API cannot keep, and a "coming soon"
  * heading is a promise this app cannot date. Both are worse than a shorter
- * screen, because a person plans around them. What is here is four controls
- * that each call a route the forwarder's allow-list already carries, so every
+ * screen, because a person plans around them. What is here is a set of
+ * controls that each call a route the forwarder's allow-list carries, so every
  * one of them does what its label says.
  *
  * The server/client split is the same one `accounts/page.tsx` uses: the heading
@@ -30,7 +39,7 @@ export default function SettingsPage() {
       <header className="mb-8">
         <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
         <p className="mt-1 text-sm text-muted">
-          Your address, and the session you are signed in with.
+          Your name, your address, and everywhere you are signed in.
         </p>
       </header>
       <SettingsScreen />
