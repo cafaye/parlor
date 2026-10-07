@@ -8,6 +8,39 @@ All notable changes to parlor are recorded here. The format follows
 
 ### Added
 
+- **parlor's Helm chart, and the Ingress that makes `app.cafaye.com`
+  reach it** (`worker/parlor-w86b-chart`, absorbing the old `m93`).
+  `caf gen chart` wrote six files from `cafaye.yml` — `Chart.yaml`,
+  `values.yaml`, and the Deployment/Service/Ingress templates — and
+  `values.yaml` turns the Ingress on: `enabled: true`, `host:
+  app.cafaye.com` (the host the fleet's own fixtures name —
+  `billing/test/fixtures/stripe/checkout.session.completed*.json`
+  carries `https://app.cafaye.com/welcome`), `clusterIssuer:
+  letsencrypt-prod` (the issuer kit's install creates once per
+  cluster; the chart names it and never creates it), `tls: true`, so
+  cert-manager provisions `parlor-tls`. Without this packet the
+  four-service launch stack deploys with no way to reach the app.
+  `helm template` on the committed values renders the Ingress with
+  all four properties, and both red controls hold: `enabled: false`
+  emits no Ingress, and enabled with an empty host fails the template
+  ("an Ingress with no host is a silent misroute"). `src/lib/chart.test.ts`
+  asserts the seam the substrate's Argo Application sources
+  (`parlor` / `0.1.0`), that `templates/application.yaml` stays absent
+  (the substrate owns the `Application` — two Applications named
+  `parlor` in `argocd` fight each other), that the image tag is never
+  `latest`, that the readiness path is `/readyz`, and that the
+  container port matches the Dockerfile's `EXPOSE` (3000 = 3000; the
+  generator's `LanguagePort("typescript")` agrees with the image).
+  Two generator defects were worked around here and reported to the
+  caf packet rather than fixed: the emitted `Chart.yaml` description
+  is unquoted and contains `app:`, which makes `helm` refuse the
+  chart outright ("mapping values are not allowed in this context") —
+  quoted here; and the generator no longer emits
+  `templates/application.yaml` at all, so there was nothing to
+  delete — its own README already says the substrate owns the
+  `Application`, which makes the old brief's "delete the file"
+  instruction a no-op against this generator version.
+
 - **An OpenAPI document for the `/v1/*` routing surface, and the manifest
   entry that names it** (`worker/parlor-w86-http-surface`).
   `openapi/v1.yaml` is an OpenAPI 3.1 transcription of the forwarder's

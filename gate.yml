@@ -598,9 +598,47 @@ gate:
      #     identity one among them;
      #   * 1 in `src/app/page.test.tsx` — the landing page links nowhere near
      #     the removed customer list.
+    # IT IS 970 BY THE NEXT ACCOUNT. 954 -> 970, a +16 in two files, and the
+    # first seven of them are a finding rather than an addition: m86a (the
+    # HTTP-surface packet) added `src/lib/openapi-document.test.ts` and its
+    # seven tests — the two-direction drift between the forwarder's allow-list
+    # and `openapi/v1.yaml`, a table entry with no operation and an operation
+    # with no table entry each a red suite — and did NOT move this floor. The
+    # declared 954 was therefore 7 below the real count (961) before this
+    # packet, which is the exact defect a decrease-detector exists to catch
+    # and the reason this packet re-measures rather than inherits. Measured on
+    # this tree: `npm test` -> `Tests  970 passed (970)`, 38 files.
+    #
+    # The other 9 are in `src/lib/chart.test.ts`, the chart packet's test. It
+    # lives under `src/lib/` and not beside `chart/` because vitest's include
+    # glob only matches tests under `src/` — a test that does not run is not a
+    # test. The assertions, each here because the failure it guards is
+    # invisible in a rendered string: the name/version seam (`parlor` /
+    # `0.1.0`) the substrate's Argo Application sources; `templates/
+    # application.yaml` staying absent (the substrate owns the `Application`
+    # — two Applications named `parlor` in `argocd` fight each other); the
+    # image tag never `latest`; the readiness path `/readyz`; the container
+    # port matching the Dockerfile's `EXPOSE` (3000 = 3000 — the generator's
+    # `LanguagePort("typescript")` agrees with the image); the templates being
+    # present and non-empty; and the three `helm template` assertions — the
+    # Ingress rendering with `host: app.cafaye.com`, `ingressClassName:
+    # traefik`, the `cert-manager.io/cluster-issuer: letsencrypt-prod`
+    # annotation and a `spec.tls` block, plus the two red controls that are
+    # part of the suite: `ingress.enabled: false` emits no Ingress, and
+    # enabled with an empty host FAILS the template.
+    #
+    # SEVEN RED PROOFS were run before this floor moved, each a deliberate
+    # break of the chart watched turning the suite red: the readiness path
+    # broken to `/up`; the Chart.yaml version drifted to 0.2.0;
+    # `templates/application.yaml` recreated; the image tag set to `latest`;
+    # `templates/` emptied (the file-scope reads throw ENOENT and the whole
+    # file fails — a test that would pass against an empty templates/
+    # directory is not a test, and this one does not); the ingress host
+    # drifted to example.com; and the clusterIssuer emptied. Each was restored
+    # with `git checkout -- chart/` and the suite re-measured green.
     - id: suite
       match: '^[ ]*Tests[ ]+([0-9]+)[ ]+passed(?![ ]*\|)'
-      minimum: 954
+      minimum: 970
     # The tally `tests/validate-ci.sh` prints, which is the second half of this
     # gate: the checks that the tree still has the shape CI assumes — one
     # runtime pin, `npm ci` and not `npm install`, the gate command, the
