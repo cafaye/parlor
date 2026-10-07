@@ -9,9 +9,11 @@
  * Everything on this screen calls a route `src/lib/upstream.ts` already carries,
  * and nothing on it calls one it does not. That is the whole design rule, and
  * `page.tsx` says why at length; this file's job is to keep it true as the screen
- * grows. The sections with no route — second factor, API tokens — are absent
- * rather than disabled, so "every control here works" stays a statement a
- * person can check.
+ * grows. The sections with no route — API tokens — are absent rather than
+ * disabled, so "every control here works" stays a statement a person can check.
+ * The second-factor section is the one that joined: it lives in
+ * `mfa-section.tsx` because it is a state machine with one-time secrets, not a
+ * panel with a button.
  *
  * ---------------------------------------------------------------------------
  * THE DISPLAY NAME'S SET-OR-CLEAR, AND WHAT THE UI DOES ABOUT IT
@@ -103,6 +105,7 @@ import { useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { SignedOut } from "./page";
+import { MfaSection } from "./mfa-section";
 import {
   Button,
   Callout,
@@ -168,6 +171,7 @@ export function SettingsScreen() {
     <div className="flex flex-col gap-8">
       <DisplayNamePanel token={token} user={session.user} />
       <EmailPanel email={session.user.email} />
+      <MfaSection />
       <SessionsPanel token={token} />
       <SessionPanel email={session.user.email} />
       <DeleteAccountPanel token={token} />

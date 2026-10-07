@@ -8,6 +8,29 @@ All notable changes to parlor are recorded here. The format follows
 
 ### Added
 
+- **The second-factor section of `/settings`** (`worker/parlor-w31-mfaenroll`).
+  identity's MFA management surface — `GET /v1/mfa`, `POST /v1/mfa/enrollments`,
+  `POST /v1/mfa/enrollments/{enrollmentId}/confirm`, `POST
+  /v1/mfa/recovery-codes` — is now reachable from the browser: the four routes
+  crossed the forwarder's allow-list (the client performs them and a screen
+  drives them, which is the bar every entry answers to), `src/lib/identity.ts`
+  carries the four methods typed from `identity/openapi/v1.yaml`, and
+  `src/app/settings/mfa-section.tsx` renders the state machine: disabled →
+  enroll (secret and provisioning URI, copyable, shown once) → confirm (code
+  input) → confirmed (recovery codes once, and the sign-out the confirm's
+  session revocation leaves behind). The enabled state adds Replace (a
+  rotation the service authorises with the current code) and New recovery
+  codes. `src/lib/mfa.ts` holds the status query with the token in its key, so
+  a second factor is never served to a session that cannot read it. The
+  secret and the codes are held in component state for exactly one step and
+  are never written to the query cache — a secret that outlives its step is a
+  secret this app is storing, which is the defect the service's "returned
+  here and never again" language exists to prevent, and `page.test.tsx` proves
+  it by asserting the secret is absent from the document after the confirm.
+  The gate floor moved 868 → 895 with the account in `gate.yml`. What this
+  leaves — the LOGIN challenge, which is still refused and still owned by the
+  login flow — is in `REPORT-parlor-mfa-enroll-01.md`.
+
 - **A `traceparent` this hop derives, and nothing a caller chose.** A caller
   cannot put its own parent on an upstream request: `traceparent` is not on
   `FORWARDED_REQUEST_HEADERS`, and the header that crosses is minted from this

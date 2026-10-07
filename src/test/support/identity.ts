@@ -40,6 +40,10 @@ export type StubIdentity = IdentityClient & {
   verificationStatus: MockedFunction<IdentityClient["verificationStatus"]>;
   startSocialLogin: MockedFunction<IdentityClient["startSocialLogin"]>;
   completeSocialLogin: MockedFunction<IdentityClient["completeSocialLogin"]>;
+  mfaStatus: MockedFunction<IdentityClient["mfaStatus"]>;
+  startMfaEnrollment: MockedFunction<IdentityClient["startMfaEnrollment"]>;
+  confirmMfaEnrollment: MockedFunction<IdentityClient["confirmMfaEnrollment"]>;
+  regenerateMfaRecoveryCodes: MockedFunction<IdentityClient["regenerateMfaRecoveryCodes"]>;
 };
 
 /**
@@ -102,6 +106,17 @@ export function stubIdentity(overrides: Partial<IdentityClient> = {}): StubIdent
     startSocialLogin: vi.fn(overrides.startSocialLogin ?? unscripted("startSocialLogin")),
     completeSocialLogin: vi.fn(
       overrides.completeSocialLogin ?? unscripted("completeSocialLogin"),
+    ),
+    // The four MFA methods for the same reason: the settings section calls all
+    // of them across its states, and a render test that reached one unscripted
+    // would take the tree down rather than fail the assertion it was writing.
+    mfaStatus: vi.fn(overrides.mfaStatus ?? unscripted("mfaStatus")),
+    startMfaEnrollment: vi.fn(overrides.startMfaEnrollment ?? unscripted("startMfaEnrollment")),
+    confirmMfaEnrollment: vi.fn(
+      overrides.confirmMfaEnrollment ?? unscripted("confirmMfaEnrollment"),
+    ),
+    regenerateMfaRecoveryCodes: vi.fn(
+      overrides.regenerateMfaRecoveryCodes ?? unscripted("regenerateMfaRecoveryCodes"),
     ),
   };
 }

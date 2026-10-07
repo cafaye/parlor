@@ -13,12 +13,12 @@
  *   DELETE /v1/sessions/{session_id}  204 | 401 | 403 | 404
  *
  * plus the two password-reset routes below, the tenancy surface the same
- * service exposes under /v1/accounts and /v1/invitations, and the two social
- * routes under /v1/auth/oauth — which are the only two whose request is made by
- * the browser rather than by this client. See "The tenancy surface" below for
- * where the tenancy shapes come from, which is not the place you would expect;
- * the social shapes come from `identity/openapi/v1.yaml`, which does describe
- * them.
+ * service exposes under /v1/accounts and /v1/invitations, the four MFA routes
+ * under /v1/mfa, and the two social routes under /v1/auth/oauth — which are
+ * the only two whose request is made by the browser rather than by this
+ * client. See "The tenancy surface" below for where the tenancy shapes come
+ * from, which is not the place you would expect; the social and MFA shapes
+ * come from `identity/openapi/v1.yaml`, which does describe them.
  *
  * Two decisions are worth stating up front, because both will look like
  * accidents otherwise.
@@ -424,6 +424,33 @@ export type IdentityClient = {
     provider: SocialProvider,
     input: SocialCallbackInput,
   ) => Promise<SocialSignIn>;
+
+  // ---------------------------------------------------------------------------
+  // The MFA surface — four routes, all session-scoped, three of them one-time.
+  //
+  // `mfaStatus` answers 200 with `{"enabled": false}` when there is no
+  // credential, never a 404. `startMfaEnrollment` returns the secret and the
+  // provisioning URI HERE AND NEVER AGAIN. `confirmMfaEnrollment` revokes
+  // every session the account holds — including the caller's — and returns the
+  // recovery codes once. `regenerateMfaRecoveryCodes` requires a code and
+  // returns a fresh set once.
+  //
+  // The disable route, `DELETE /v1/mfa`, is deliberately NOT here: it is a
+  // destructive security action with no screen behind it yet, and a client
+  // method with no caller is a capability this app does not have. The
+  // forwarder refuses it for the same reason.
+  // ---------------------------------------------------------------------------
+  mfaStatus: (token: string) => Promise<MFAStatus>;
+  startMfaEnrollment: (token: string, input?: StartEnrollmentInput) => Promise<StartedEnrollment>;
+  confirmMfaEnrollment: (
+    token: string,
+    enrollmentId: string,
+    input: ConfirmEnrollmentInput,
+  ) => Promise<ConfirmedEnrollment>;
+  regenerateMfaRecoveryCodes: (
+    token: string,
+    input: RegenerateRecoveryCodesInput,
+  ) => Promise<RecoveryCodes>;
 };
 
 /**
@@ -557,6 +584,138 @@ export type SocialCallbackInput = {
   code?: string;
   state: string;
   error?: string;
+};
+
+// ---------------------------------------------------------------------------
+// The MFA surface
+//
+// Four routes under /v1/mfa, transcribed from `identity/openapi/v1.yaml`
+// (which does describe them, unlike the tenancy surface) and cross-checked
+// against the handler in `identity/internal/httpapi/mfa.go`.
+//
+// ALL FOUR ARE SESSION-SCOPED — every one is wrapped in
+// `sessionCredentialOnly`, like the tenancy routes — so every call takes the
+// token and a call without one is a 401 rather than a 403. None is anonymous
+// and none answers a redirect, so all four go through `send` like the tenancy
+// surface rather than writing their own status handling like the social pair.
+//
+// THREE OF THE FOUR HAND OUT A ONE-TIME VALUE, and that is the fact this
+// surface exists around. The enrollment secret, the provisioning URI and the
+// recovery codes are each returned in exactly one response and NEVER AGAIN:
+// there is no endpoint that re-reads them and no column that stores them,
+// only a SHA-256 digest per code. A client that caches them, or a screen that
+// re-renders them from state, is showing a person a secret the service has
+// already forgotten — which is a defect rather than a shortcut. The settings
+// section's tests are where that is proved.
+// ---------------------------------------------------------------------------
+
+/**
+ * The 200 from `GET /v1/mfa`.
+ *
+ * `method`, `enrolled_at` and `recovery_codes_remaining` are `omitempty` in
+ * the handler and ABSENT when `enabled` is false — "totp" and "no method yet"
+ * are different answers, which is why these are optional rather than
+ * defaulted to a placeholder. A 200 with `{"enabled": false}` and never a
+ * 404: the question has an answer for every signed-in user, so a settings
+ * page never has to distinguish "you have none" from "this is not your
+ * account".
+ */
+export type MFAStatus = {
+  enabled: boolean;
+  method?: string;
+  enrolled_at?: string;
+  recovery_codes_remaining?: number;
+};
+
+/**
+ * The body of `POST /v1/mfa/enrollments`.
+ *
+ * `code` authorises a ROTATION and is not needed for a first enrollment; the
+ * service decides which case it is from the rows, so a client that sends one
+ * for a first enrollment is not wrong, only redundant. The body itself is
+ * required by the document, so a first enrollment sends `{}` — which is why
+ * the parameter below defaults rather than being optional at the call.
+ */
+export type StartEnrollmentInput = { code?: string };
+
+/**
+ * The 201 from `POST /v1/mfa/enrollments`.
+ *
+ * `secret` and `provisioning_uri` are HERE AND NOWHERE ELSE: no endpoint
+ * re-reads them, so a client that loses this body starts a new enrollment,
+ * which mints a new secret. The reasoning is the one an OIDC `client_secret`
+ * follows — a secret this service can produce again is a secret this service
+ * is storing, and a stored TOTP secret is a second factor for whoever reads
+ * the database.
+ *
+ * `replaced` says the previous credential is STILL LIVE behind this pending
+ * one, so an abandoned rotation costs nothing and the old phone keeps working
+ * until the new one is confirmed.
+ */
+export type StartedEnrollment = {
+  enrollment_id: string;
+  secret: string;
+  provisioning_uri: string;
+  method: string;
+  digits: number;
+  period_seconds: number;
+  algorithm: string;
+  expires_at: string;
+  replaced: boolean;
+};
+
+/**
+ * The body of `POST /v1/mfa/enrollments/{enrollmentId}/confirm`.
+ *
+ * `code` is required always — an unconfirmed enrollment is not a second
+ * factor yet, so this is the only thing that makes it one. Wrong, already
+ * spent, malformed, and produced by a secret this rotation has already
+ * replaced are all the same 401: four different facts, one sentence, because
+ * a client that could tell them apart would only learn which to keep trying.
+ */
+export type ConfirmEnrollmentInput = { code: string };
+
+/**
+ * The 200 from the confirm.
+ *
+ * EVERY SESSION THE ACCOUNT HOLDS WAS REVOKED to produce this response,
+ * including the caller's own — a session minted under a one-factor policy was
+ * minted on a password alone, and leaving it alive means whoever holds it does
+ * not have to solve the new problem. There is no token in this body and nowhere
+ * else: enabling MFA signs the session in only via the already-working path,
+ * and the settings section's copy says so rather than promising otherwise.
+ *
+ * `recovery_codes` are here and never again — ten of them, each accepted
+ * exactly once and destroyed by use.
+ */
+export type ConfirmedEnrollment = {
+  enabled: boolean;
+  method: string;
+  enrolled_at: string;
+  recovery_codes: string[];
+  replaced_existing_secret: boolean;
+};
+
+/**
+ * The body of `POST /v1/mfa/recovery-codes` — one field, `code`, which the
+ * service reads as either a six-digit TOTP code or a recovery code in the
+ * `XXXX-XXXX-XXXX-XXXX` form. One field rather than two, so a caller cannot
+ * put a recovery code in the TOTP field and be told it was malformed rather
+ * than not accepted.
+ */
+export type RegenerateRecoveryCodesInput = { code: string };
+
+/**
+ * The 200 from `POST /v1/mfa/recovery-codes`.
+ *
+ * The old set is destroyed in the same transaction that writes the new one —
+ * a partial write would leave two live sets, which is a second recovery path
+ * through codes nobody audited. The new codes are returned once.
+ */
+export type RecoveryCodes = {
+  recovery_codes: string[];
+  issued_at: string;
+  recovery_codes_remaining: number;
 };
 
 export class IdentityError extends Error {
@@ -810,6 +969,30 @@ export function createIdentityClient(
 
       return readSocialSignIn(await readJson(response), response.status);
     },
+
+    // -----------------------------------------------------------------------
+    // The MFA surface.
+    //
+    // All four take the token, because every route is `sessionCredentialOnly`
+    // and a call without one is a 401 rather than a 403. All four go through
+    // `send`, because none of them is anonymous and none answers a redirect —
+    // the two properties that made the social pair write their own status
+    // handling.
+    //
+    // `startMfaEnrollment` defaults its input to `{}` because the document
+    // requires a body and `code` is the optional half of it: a first
+    // enrollment sends an empty object, a rotation sends `{ code }`.
+    // -----------------------------------------------------------------------
+    mfaStatus: (token) => send(transport, `${base}/v1/mfa`, "GET", { token }),
+    startMfaEnrollment: (token, input = {}) =>
+      send(transport, `${base}/v1/mfa/enrollments`, "POST", { token, body: input }),
+    confirmMfaEnrollment: (token, enrollmentId, input) =>
+      send(transport, `${base}/v1/mfa/enrollments/${enrollmentId}/confirm`, "POST", {
+        token,
+        body: input,
+      }),
+    regenerateMfaRecoveryCodes: (token, input) =>
+      send(transport, `${base}/v1/mfa/recovery-codes`, "POST", { token, body: input }),
   };
 }
 

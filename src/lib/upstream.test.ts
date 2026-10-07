@@ -367,20 +367,81 @@ describe("the allow-list", () => {
     expect(hops[0].method).toBe("DELETE");
   });
 
+  it("forwards the four MFA management routes the settings screen drives", async () => {
+    // All four are in `src/lib/identity.ts` and the settings section calls
+    // them, which is the bar every other entry in the table answers to. The
+    // confirm route's `:enrollmentId` is value-matched as a uuid because the
+    // document declares it one — a segment that is not a uuid is not an
+    // enrollment this app has ever held.
+    const enrollmentId = "8f2c1a44-0000-4000-8000-000000000001";
+    const routes = [
+      { segments: ["mfa"], method: "GET" },
+      { segments: ["mfa", "enrollments"], method: "POST" },
+      { segments: ["mfa", "enrollments", enrollmentId, "confirm"], method: "POST" },
+      { segments: ["mfa", "recovery-codes"], method: "POST" },
+    ];
+
+    for (const route of routes) {
+      const { forward, hops } = forwarder();
+      const response = await forward(
+        new Request(`https://parlor.test/${route.segments.join("/")}`, {
+          method: route.method,
+          headers: { Authorization: "Bearer t" },
+          body: route.method === "GET" ? undefined : "{}",
+        }),
+        route.segments,
+      );
+
+      expect(response.status, `${route.method} /${route.segments.join("/")}`).toBe(200);
+      expect(hops, `${route.method} /${route.segments.join("/")}`).toHaveLength(1);
+      // The forwarder rebuilds the upstream path from the route table, so the
+      // `/v1` the segments sit under is part of every hop URL.
+      expect(hops[0].url).toBe(`${IDENTITY_URL}/v1/${route.segments.join("/")}`);
+    }
+  });
+
+  it("refuses an enrollment id that is not a uuid", async () => {
+    const { forward, hops } = forwarder();
+
+    const response = await forward(
+      new Request("https://parlor.test/v1/mfa/enrollments/not-a-uuid/confirm", {
+        method: "POST",
+        headers: { Authorization: "Bearer t" },
+        body: "{}",
+      }),
+      ["mfa", "enrollments", "not-a-uuid", "confirm"],
+    );
+
+    expect(response.status).toBe(404);
+    expect(hops).toHaveLength(0);
+  });
+
   it("refuses a route identity serves but this app never calls", async () => {
-    // identity serves /v1/introspections, /v1/session/mfa, /v1/mfa/*,
+    // identity serves /v1/introspections, /v1/session/mfa, DELETE /v1/mfa,
     // /v1/accounts/{id}/api-keys, /v1/accounts/{id}/oidc-clients,
     // /v1/email-changes/* and /v1/probe/{id}. Not one of them is in
     // `src/lib/identity.ts`, and the point of the allow-list is that a route
     // being reachable from the internet is a decision somebody makes rather than
     // a side effect of a client existing.
+    //
+    // The four MFA MANAGEMENT routes are no longer on this list — the client
+    // can perform all four and the settings screen drives them. What remains is
+    // the two that are still decisions: the LOGIN challenge
+    // (`POST /v1/session/mfa`), which the login flow owns, and the disable
+    // (`DELETE /v1/mfa`), which is a destructive security action with no screen
+    // behind it yet.
+    //
+    // The expected status is per route rather than a constant, because the two
+    // kinds of refusal are different answers: `DELETE /v1/mfa` is a 405 — the
+    // shape exists under GET, so the forwarder says "this route, not this
+    // method" — while the rest are 404s, shapes no route declares. Both refuse
+    // the hop; only the reason differs.
     const refused = [
-      { segments: ["introspections"], method: "POST" },
-      { segments: ["session", "mfa"], method: "POST" },
-      { segments: ["mfa"], method: "GET" },
-      { segments: ["mfa", "enrollments"], method: "POST" },
-      { segments: ["email-changes", "current-address"], method: "POST" },
-      { segments: ["probe", "8f2c1a44-0000-4000-8000-000000000000"], method: "GET" },
+      { segments: ["introspections"], method: "POST", status: 404 },
+      { segments: ["session", "mfa"], method: "POST", status: 404 },
+      { segments: ["mfa"], method: "DELETE", status: 405 },
+      { segments: ["email-changes", "current-address"], method: "POST", status: 404 },
+      { segments: ["probe", "8f2c1a44-0000-4000-8000-000000000000"], method: "GET", status: 404 },
     ];
 
     for (const route of refused) {
@@ -390,7 +451,7 @@ describe("the allow-list", () => {
         route.segments,
       );
 
-      expect(response.status, `${route.method} /${route.segments.join("/")}`).toBe(404);
+      expect(response.status, `${route.method} /${route.segments.join("/")}`).toBe(route.status);
       expect(hops, `${route.method} /${route.segments.join("/")}`).toHaveLength(0);
     }
   });
@@ -851,6 +912,15 @@ describe("the table and the clients agree", () => {
     await client
       .completeSocialLogin("github", { state: "st_1", code: "the-code" })
       .catch(() => undefined);
+    // The four MFA management routes, walked through the same door. None of
+    // them throws on `{}` — a status with `enabled: false` is a valid answer
+    // and the other three read their fields as undefined — so the walk asserts
+    // the same thing the social pair's does: each URL reached an upstream
+    // through the table rather than being refused.
+    await client.mfaStatus("t");
+    await client.startMfaEnrollment("t");
+    await client.confirmMfaEnrollment("t", id, { code: "482913" });
+    await client.regenerateMfaRecoveryCodes("t", { code: "482913" });
 
     await billing.listPlans({ limit: 2 });
     await billing.getPlanBySlug("pro");

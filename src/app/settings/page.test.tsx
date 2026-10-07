@@ -4,10 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import SettingsPage from "./page";
 import { createTokenStore } from "@/lib/token-store";
 import { anIdentityError, aUser, stubIdentity } from "@/test/support/identity";
+import type { IdentityClient } from "@/lib/identity";
 import { renderWithProviders } from "@/test/support/render";
 import type { SessionSummary, User } from "@/lib/identity";
 
-const { push } = vi.hoisted(() => ({ push: vi.fn() }));
+const { push, writeText } = vi.hoisted(() => ({
+  push: vi.fn(),
+  writeText: vi.fn(() => Promise.resolve()),
+}));
 vi.mock("@/lib/navigation", () => ({ useNavigation: () => ({ push, refresh: vi.fn() }) }));
 
 /**
@@ -58,6 +62,9 @@ const aSession = (overrides: Partial<SessionSummary> = {}): SessionSummary => ({
   ...overrides,
 });
 
+/** The 200 `GET /v1/mfa` answers when the account has no second factor. */
+const mfaDisabled = () => vi.fn(() => Promise.resolve({ enabled: false }));
+
 function signIn(expiresAt: string | null = EXPIRES_AT) {
   createTokenStore().set("tok_abc", expiresAt);
 }
@@ -82,6 +89,7 @@ function renderSettings(
     ),
     listSessions: vi.fn(() => Promise.resolve({ sessions: [aSession()] })),
     revokeSession: vi.fn(() => Promise.resolve()),
+    mfaStatus: mfaDisabled(),
   }),
   options: { expiresAt?: string | null } = {},
 ) {
@@ -136,6 +144,7 @@ describe("the verification badge", () => {
         verificationStatus: verified(),
         requestEmailVerification: accepted(),
         logout: vi.fn(() => Promise.resolve()),
+        mfaStatus: mfaDisabled(),
       }),
     );
 
@@ -162,6 +171,7 @@ describe("the verification badge", () => {
         verificationStatus: verified(),
         requestEmailVerification: accepted(),
         logout: vi.fn(() => Promise.resolve()),
+        mfaStatus: mfaDisabled(),
       }),
     );
 
@@ -180,6 +190,7 @@ describe("the verification badge", () => {
         verificationStatus,
         requestEmailVerification: accepted(),
         logout: vi.fn(() => Promise.resolve()),
+        mfaStatus: mfaDisabled(),
       }),
     );
 
@@ -200,6 +211,7 @@ describe("the verification badge", () => {
           ),
         requestEmailVerification: accepted(),
         logout: vi.fn(() => Promise.resolve()),
+        mfaStatus: mfaDisabled(),
       }),
     );
 
@@ -232,6 +244,7 @@ describe("the resend", () => {
         verificationStatus: unverified(),
         requestEmailVerification,
         logout: vi.fn(() => Promise.resolve()),
+        mfaStatus: mfaDisabled(),
       }),
     );
 
@@ -267,6 +280,7 @@ describe("the resend", () => {
         logout: vi.fn(() => Promise.resolve()),
         listSessions: vi.fn(() => Promise.resolve({ sessions: [] })),
         revokeSession: vi.fn(() => Promise.resolve()),
+        mfaStatus: mfaDisabled(),
       }),
     );
 
@@ -287,6 +301,7 @@ describe("the resend", () => {
         verificationStatus: unverified(),
         requestEmailVerification: vi.fn().mockRejectedValue(anIdentityError(503, "service_unavailable")),
         logout: vi.fn(() => Promise.resolve()),
+        mfaStatus: mfaDisabled(),
       }),
     );
 
@@ -307,6 +322,7 @@ describe("the resend", () => {
         logout: vi.fn(() => Promise.resolve()),
         listSessions: vi.fn(() => Promise.resolve({ sessions: [] })),
         revokeSession: vi.fn(() => Promise.resolve()),
+        mfaStatus: mfaDisabled(),
       }),
     );
 
@@ -340,6 +356,7 @@ describe("the resend", () => {
           return Promise.reject(anIdentityError(409, "conflict"));
         }),
         logout: vi.fn(() => Promise.resolve()),
+        mfaStatus: mfaDisabled(),
       }),
     );
 
@@ -400,6 +417,7 @@ describe("signing out from the profile screen", () => {
         verificationStatus: unverified(),
         requestEmailVerification: accepted(),
         logout: vi.fn(() => Promise.reject(anIdentityError(503, "service_unavailable"))),
+        mfaStatus: mfaDisabled(),
       }),
     );
 
@@ -423,6 +441,7 @@ describe("signing out from the profile screen", () => {
         verificationStatus: unverified(),
         requestEmailVerification: accepted(),
         logout,
+        mfaStatus: mfaDisabled(),
       }),
     );
 
@@ -445,6 +464,7 @@ describe("the display name panel", () => {
         logout: vi.fn(() => Promise.resolve()),
         listSessions: vi.fn(() => Promise.resolve({ sessions: [aSession()] })),
         revokeSession: vi.fn(() => Promise.resolve()),
+        mfaStatus: mfaDisabled(),
       }),
     );
 
@@ -479,6 +499,7 @@ describe("the display name panel", () => {
         logout: vi.fn(() => Promise.resolve()),
         listSessions: vi.fn(() => Promise.resolve({ sessions: [] })),
         revokeSession: vi.fn(() => Promise.resolve()),
+        mfaStatus: mfaDisabled(),
         updateMyDisplayName: vi.fn(() => Promise.resolve(aUser({ display_name: "Kaka 2" }))),
       }),
     );
@@ -507,6 +528,7 @@ describe("the display name panel", () => {
         logout: vi.fn(() => Promise.resolve()),
         listSessions: vi.fn(() => Promise.resolve({ sessions: [aSession()] })),
         revokeSession: vi.fn(() => Promise.resolve()),
+        mfaStatus: mfaDisabled(),
         updateMyDisplayName: vi.fn(() => Promise.resolve(aUser())),
       }),
     );
@@ -533,6 +555,7 @@ describe("the display name panel", () => {
         logout: vi.fn(() => Promise.resolve()),
         listSessions: vi.fn(() => Promise.resolve({ sessions: [aSession()] })),
         revokeSession: vi.fn(() => Promise.resolve()),
+        mfaStatus: mfaDisabled(),
       }),
     );
 
@@ -552,6 +575,7 @@ describe("the display name panel", () => {
         logout: vi.fn(() => Promise.resolve()),
         listSessions: vi.fn(() => Promise.resolve({ sessions: [aSession()] })),
         revokeSession: vi.fn(() => Promise.resolve()),
+        mfaStatus: mfaDisabled(),
         updateMyDisplayName: vi.fn(() =>
           Promise.reject(
             anIdentityError(422, "validation_failed", {
@@ -581,6 +605,7 @@ describe("the display name panel", () => {
         logout: vi.fn(() => Promise.resolve()),
         listSessions: vi.fn(() => Promise.resolve({ sessions: [aSession()] })),
         revokeSession: vi.fn(() => Promise.resolve()),
+        mfaStatus: mfaDisabled(),
         updateMyDisplayName: vi
           .fn()
           .mockRejectedValue(new TypeError("Failed to fetch. ECONNREFUSED 10.0.0.4:8080")),
@@ -611,6 +636,7 @@ describe("the display name panel", () => {
         logout: vi.fn(() => Promise.resolve()),
         listSessions: vi.fn(() => Promise.resolve({ sessions: [aSession()] })),
         revokeSession: vi.fn(() => Promise.resolve()),
+        mfaStatus: mfaDisabled(),
         updateMyDisplayName,
       }),
     );
@@ -628,7 +654,6 @@ describe("the display name panel", () => {
     await screen.findByRole("status");
   });
 });
-
 describe("the sessions panel", () => {
   it("lists the sessions with the facts a person recognises", async () => {
     renderSettings();
@@ -666,6 +691,7 @@ describe("the sessions panel", () => {
           }),
         ),
         revokeSession: vi.fn(() => Promise.resolve()),
+        mfaStatus: mfaDisabled(),
       }),
     );
 
@@ -684,6 +710,7 @@ describe("the sessions panel", () => {
         logout: vi.fn(() => Promise.resolve()),
         listSessions: vi.fn(() => Promise.resolve({ sessions: [aSession({ user_agent: "" })] })),
         revokeSession: vi.fn(() => Promise.resolve()),
+        mfaStatus: mfaDisabled(),
       }),
     );
 
@@ -699,6 +726,7 @@ describe("the sessions panel", () => {
         logout: vi.fn(() => Promise.resolve()),
         listSessions: () => new Promise(() => undefined),
         revokeSession: vi.fn(() => Promise.resolve()),
+        mfaStatus: mfaDisabled(),
       }),
     );
 
@@ -718,6 +746,7 @@ describe("the sessions panel", () => {
         logout: vi.fn(() => Promise.resolve()),
         listSessions,
         revokeSession: vi.fn(() => Promise.resolve()),
+        mfaStatus: mfaDisabled(),
       }),
     );
 
@@ -740,6 +769,7 @@ describe("the sessions panel", () => {
             anIdentityError(500, "internal", { detail: "dial tcp 10.0.0.4:5432: connection refused" }),
           ),
         revokeSession: vi.fn(() => Promise.resolve()),
+        mfaStatus: mfaDisabled(),
       }),
     );
 
@@ -759,6 +789,7 @@ describe("the sessions panel", () => {
         logout: vi.fn(() => Promise.resolve()),
         listSessions: vi.fn(() => Promise.resolve({ sessions: [] })),
         revokeSession: vi.fn(() => Promise.resolve()),
+        mfaStatus: mfaDisabled(),
       }),
     );
 
@@ -786,6 +817,7 @@ describe("the sessions panel", () => {
           }),
         ),
         revokeSession: vi.fn(() => Promise.resolve()),
+        mfaStatus: mfaDisabled(),
       }),
     );
 
@@ -828,6 +860,7 @@ describe("the sessions panel", () => {
         logout: vi.fn(() => Promise.resolve()),
         listSessions: vi.fn(() => Promise.resolve({ sessions: [aSession()] })),
         revokeSession: vi.fn(() => Promise.reject(anIdentityError(404, "not_found"))),
+        mfaStatus: mfaDisabled(),
       }),
     );
 
@@ -854,6 +887,7 @@ describe("the sessions panel", () => {
         logout: vi.fn(() => Promise.resolve()),
         listSessions: vi.fn(() => Promise.resolve({ sessions: [aSession()] })),
         revokeSession,
+        mfaStatus: mfaDisabled(),
       }),
     );
 
@@ -867,13 +901,15 @@ describe("the sessions panel", () => {
     await waitFor(() => expect(screen.queryByText("This device")).not.toBeInTheDocument());
   });
 });
-
 describe("what this screen deliberately does not have", () => {
   it("offers exactly the controls whose routes the forwarder allows", async () => {
-    // Second factor and API tokens have no route this app can reach — see
-    // `REPORT-parlor-profile-v2-01.md` §3 — so they are ABSENT here rather than
-    // greyed out. A greyed control is still a promise the API cannot keep, and
-    // this screen's whole claim is that every control on it does something.
+    // Display name, other sessions, delete-account and the second factor all
+    // have routes in `identity` now — see `REPORT-parlor-profile-v2-01.md` §3 —
+    // so they are here and do what their labels say. What is left is absent for
+    // the same reason it was then, and in the same form: not greyed, not
+    // "coming soon", not behind a disabled control. A greyed control is still a
+    // promise the API cannot keep, and this screen's whole claim is that every
+    // control on it does something.
     renderSettings();
     await screen.findByText("Not verified");
 
@@ -882,6 +918,7 @@ describe("what this screen deliberately does not have", () => {
     expect(controlNames()).toEqual([
       "Save name",
       "Resend verification email",
+      "Set up a second factor",
       "Revoke",
       "Sign out",
       "Delete account",
@@ -892,12 +929,242 @@ describe("what this screen deliberately does not have", () => {
     renderSettings();
     await screen.findByText("Not verified");
 
-    // Display name, sessions and delete-account are here now; what is left is
-    // second factor (withheld by decision — FEATURE-PARITY §7a) and API tokens
-    // (refused by the forwarder). Not even a heading that hints at one.
-    for (const absent of [/second factor/i, /api (key|token)/i]) {
+    // Display name, sessions, delete-account and the second factor are here
+    // now; what is left is API tokens (refused by the forwarder). Not even a
+    // heading that hints at one.
+    for (const absent of [/api (key|token)/i]) {
       expect(document.body.textContent).not.toMatch(absent);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The second factor section.
+//
+// The one-time properties are the point. The secret and the recovery codes are
+// returned by the service exactly once, so the tests assert what is NOT in the
+// document after the step that showed them: a secret that survives its step is
+// a secret this app is storing, which is the defect the service's "returned
+// here and never again" language exists to prevent.
+// ---------------------------------------------------------------------------
+
+describe("the second factor section", () => {
+  const SECRET = "JBSWY3DPEHPK3PXP";
+  const URI = "otpauth://totp/Acme:kaka@example.com?secret=JBSWY3DPEHPK3PXP";
+  const ENROLLMENT_ID = "8f2c1a44-0000-4000-8000-000000000001";
+  const CODES = ["AAAA-BBBB-CCCC-DDDD", "EEEE-FFFF-GGGG-HHHH"];
+
+  const mfaEnabled = () =>
+    vi.fn(() =>
+      Promise.resolve({
+        enabled: true,
+        method: "totp",
+        enrolled_at: VERIFIED_AT,
+        recovery_codes_remaining: 8,
+      }),
+    );
+
+  const enrollment = (overrides: Record<string, unknown> = {}) =>
+    vi.fn(() =>
+      Promise.resolve({
+        enrollment_id: ENROLLMENT_ID,
+        secret: SECRET,
+        provisioning_uri: URI,
+        method: "totp",
+        digits: 6,
+        period_seconds: 30,
+        algorithm: "SHA1",
+        expires_at: "2026-03-14T12:00:00Z",
+        replaced: false,
+        ...overrides,
+      }),
+    );
+
+  const confirmed = () =>
+    vi.fn(() =>
+      Promise.resolve({
+        enabled: true,
+        method: "totp",
+        enrolled_at: "2026-03-14T12:00:00Z",
+        recovery_codes: CODES,
+        replaced_existing_secret: false,
+      }),
+    );
+
+  /** A signed-in render with the verification surface scripted and MFA overridden. */
+  function renderMfa(overrides: Partial<IdentityClient> = {}) {
+    return renderSettings(
+      stubIdentity({
+        me: vi.fn(() => Promise.resolve(aUser())),
+        verificationStatus: unverified(),
+        requestEmailVerification: accepted(),
+        logout: vi.fn(() => Promise.resolve()),
+        mfaStatus: mfaDisabled(),
+        ...overrides,
+      }),
+    );
+  }
+
+  it("says the second factor is not enabled, and offers the one control that adds it", async () => {
+    renderMfa();
+
+    expect(await screen.findByText("Not enabled")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Set up a second factor" })).toBeInTheDocument();
+  });
+
+  it("shows the secret and the provisioning URI once, with the code input", async () => {
+    const { identity } = renderMfa({ startMfaEnrollment: enrollment() });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Set up a second factor" }));
+
+    expect(await screen.findByText(SECRET)).toBeInTheDocument();
+    expect(screen.getByText(URI)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Confirm" })).toBeInTheDocument();
+    expect(identity.startMfaEnrollment).toHaveBeenCalledWith("tok_abc");
+  });
+
+  it("confirms with the code and shows the recovery codes once", async () => {
+    const { identity } = renderMfa({
+      startMfaEnrollment: enrollment(),
+      confirmMfaEnrollment: confirmed(),
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Set up a second factor" }));
+    fireEvent.change(await screen.findByLabelText("Code"), { target: { value: "482913" } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+
+    expect(await screen.findByText(CODES[0])).toBeInTheDocument();
+    expect(screen.getByText(CODES[1])).toBeInTheDocument();
+    expect(identity.confirmMfaEnrollment).toHaveBeenCalledWith("tok_abc", ENROLLMENT_ID, {
+      code: "482913",
+    });
+    // The sign-out notice, because the confirm revokes every session the
+    // account holds — including the one this screen is sitting in.
+    expect(await screen.findByText(/every session was signed out/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sign in again" })).toBeInTheDocument();
+  });
+
+  it("never renders the secret again after the confirm", async () => {
+    renderMfa({
+      startMfaEnrollment: enrollment(),
+      confirmMfaEnrollment: confirmed(),
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Set up a second factor" }));
+    await screen.findByText(SECRET);
+    fireEvent.change(screen.getByLabelText("Code"), { target: { value: "482913" } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+
+    await screen.findByText(CODES[0]);
+    // The secret and the URI are gone from the document: the confirm replaced
+    // the enroll state rather than annotating it, so the one-time values leave
+    // the screen at the same moment the codes arrive.
+    expect(screen.queryByText(SECRET)).not.toBeInTheDocument();
+    expect(screen.queryByText(URI)).not.toBeInTheDocument();
+  });
+
+  it("refuses a wrong code with one sentence and lets the person try again", async () => {
+    renderMfa({
+      startMfaEnrollment: enrollment(),
+      confirmMfaEnrollment: vi.fn(() => Promise.reject(anIdentityError(401, "invalid_code"))),
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Set up a second factor" }));
+    fireEvent.change(await screen.findByLabelText("Code"), { target: { value: "000000" } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+
+    const summary = await screen.findByRole("alert");
+    expect(summary).toHaveTextContent(/that code was not accepted/i);
+    // The enrollment is still pending and the secret is still the one the code
+    // was computed from, so the person can try again rather than start over.
+    expect(screen.getByText(SECRET)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Confirm" })).toBeInTheDocument();
+  });
+
+  it("says the second factor is enabled, with the facts and the two controls", async () => {
+    renderMfa({ mfaStatus: mfaEnabled() });
+
+    expect(await screen.findByText("Enabled")).toBeInTheDocument();
+    expect(screen.getByText("8")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Replace" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New recovery codes" })).toBeInTheDocument();
+  });
+
+  it("signs the person out and goes to sign in when the confirm revokes the session", async () => {
+    const { identity } = renderMfa({
+      startMfaEnrollment: enrollment(),
+      confirmMfaEnrollment: confirmed(),
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Set up a second factor" }));
+    fireEvent.change(await screen.findByLabelText("Code"), { target: { value: "482913" } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Sign in again" }));
+
+    await waitFor(() => expect(identity.logout).toHaveBeenCalledWith("tok_abc"));
+    // The local half, asserted on the STORE: the session is dead and the token
+    // has to go with it, or the next reload signs the person into a session the
+    // service has already revoked.
+    expect(createTokenStore().get()).toBeNull();
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/login"));
+  });
+
+  it("issues a new set of recovery codes once, after the current code", async () => {
+    const { identity } = renderMfa({
+      mfaStatus: mfaEnabled(),
+      regenerateMfaRecoveryCodes: vi.fn(() =>
+        Promise.resolve({
+          recovery_codes: CODES,
+          issued_at: "2026-03-14T12:00:00Z",
+          recovery_codes_remaining: 10,
+        }),
+      ),
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "New recovery codes" }));
+    fireEvent.change(await screen.findByLabelText("Code"), { target: { value: "482913" } });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(await screen.findByText(CODES[0])).toBeInTheDocument();
+    expect(identity.regenerateMfaRecoveryCodes).toHaveBeenCalledWith("tok_abc", { code: "482913" });
+  });
+
+  it("replaces the factor: the current code authorises the rotation, the new secret is shown once", async () => {
+    const { identity } = renderMfa({
+      mfaStatus: mfaEnabled(),
+      startMfaEnrollment: enrollment({ replaced: true }),
+      confirmMfaEnrollment: confirmed(),
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Replace" }));
+    fireEvent.change(await screen.findByLabelText("Code"), { target: { value: "482913" } });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(await screen.findByText(SECRET)).toBeInTheDocument();
+    expect(identity.startMfaEnrollment).toHaveBeenCalledWith("tok_abc", { code: "482913" });
+  });
+
+  describe("the copy button", () => {
+    beforeEach(() => {
+      Object.defineProperty(navigator, "clipboard", {
+        value: { writeText },
+        configurable: true,
+      });
+    });
+
+    afterEach(() => {
+      Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
+      writeText.mockClear();
+    });
+
+    it("copies the secret to the clipboard", async () => {
+      renderMfa({ startMfaEnrollment: enrollment() });
+
+      fireEvent.click(await screen.findByRole("button", { name: "Set up a second factor" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Copy Secret" }));
+
+      expect(writeText).toHaveBeenCalledWith(SECRET);
+    });
   });
 });
 
@@ -975,6 +1242,7 @@ describe("the delete account panel", () => {
         logout: vi.fn(() => Promise.resolve()),
         listSessions: vi.fn(() => Promise.resolve({ sessions: [aSession()] })),
         revokeSession: vi.fn(() => Promise.resolve()),
+        mfaStatus: mfaDisabled(),
         deleteMyAccount: vi.fn(() =>
           Promise.reject(
             anIdentityError(409, "account_ownership_conflict", {
@@ -1011,6 +1279,7 @@ describe("the delete account panel", () => {
         logout: vi.fn(() => Promise.resolve()),
         listSessions: vi.fn(() => Promise.resolve({ sessions: [aSession()] })),
         revokeSession: vi.fn(() => Promise.resolve()),
+        mfaStatus: mfaDisabled(),
         deleteMyAccount: vi
           .fn()
           .mockRejectedValue(new TypeError("Failed to fetch. ECONNREFUSED 10.0.0.4:8080")),
@@ -1045,6 +1314,7 @@ describe("the delete account panel", () => {
         logout: vi.fn(() => Promise.resolve()),
         listSessions: vi.fn(() => Promise.resolve({ sessions: [aSession()] })),
         revokeSession: vi.fn(() => Promise.resolve()),
+        mfaStatus: mfaDisabled(),
         deleteMyAccount,
       }),
     );
@@ -1074,3 +1344,4 @@ describe("the delete account panel", () => {
     await waitFor(() => expect(createTokenStore().get()).toBeNull());
   });
 });
+
