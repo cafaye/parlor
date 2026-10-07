@@ -23,9 +23,9 @@
 
 import { useInfiniteQuery } from "@tanstack/react-query";
 
-import { Button, EmptyState, ErrorState, LoadingState, Panel } from "@/components/ui";
+import { Button, Callout, EmptyState, ErrorState, LoadingState, Panel } from "@/components/ui";
 import { useBilling } from "@/lib/billing-context";
-import { isPlan, type Plan } from "@/lib/billing";
+import { BILLING_NOT_CONFIGURED_CODE, BillingError, isPlan, type Plan } from "@/lib/billing";
 import { formatMoney } from "@/lib/money";
 
 /** Rows per page. The contract caps at 100 and defaults to 25. */
@@ -55,6 +55,23 @@ export function PlansScreen() {
   if (plans.isPending) return <LoadingState label="Loading plans…" />;
 
   if (plans.isError) {
+    // "Not configured" is a deployment fact, not a failure, and it must not
+    // wear the failure's clothes. The launch stack deploys no billing, so the
+    // forwarder answers a billing route with a 503 carrying
+    // `BILLING_NOT_CONFIGURED_CODE` rather than dialing an address; a retry
+    // cannot fix that, and offering one would ask somebody to try again
+    // forever. The code is the discriminator, not the status: a 503 with any
+    // other code is billing down and gets the retry below.
+    const err = plans.error;
+    if (err instanceof BillingError && err.code === BILLING_NOT_CONFIGURED_CODE) {
+      return (
+        <Callout title="Billing is not configured on this deployment." tone="note">
+          This parlor runs without the billing service, so there is no plan
+          catalogue to show here.
+        </Callout>
+      );
+    }
+
     return (
       <ErrorState
         detail="The service did not answer. This is usually temporary."

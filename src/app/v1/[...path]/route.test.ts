@@ -38,7 +38,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 const ROUTE_MODULE = "src/app/v1/[...path]/route.ts";
 /**
@@ -156,6 +156,62 @@ describe("the service addresses are server-only", () => {
       expect(haystack).not.toContain("localhost:8080");
       expect(haystack).not.toContain("localhost:3000");
     });
+  });
+});
+
+/**
+ * A missing `IDENTITY_URL` in production fails loudly and by name.
+ *
+ * The forwarder is built at module scope, so `identityUrl()` runs the moment
+ * this module is imported — which means the behavior under test is an import
+ * that throws, and the throw is the whole of the claim. The failure it
+ * prevents is a container that boots, answers every health check, and cannot
+ * sign a single person in: the old code returned `http://localhost:8080` here,
+ * which inside that container is parlor itself, and the symptom was a 502
+ * three layers from the cause with nothing naming the variable.
+ *
+ * `vi.resetModules()` is what makes the test possible: the module caches
+ * after its first import, and a cached module does not re-run its module
+ * scope. The reset forces a fresh evaluation under the environment the test
+ * sets, and the `finally` restores both the environment and the cache so the
+ * rest of this file sees the world it saw before.
+ */
+describe("a missing IDENTITY_URL", () => {
+  it("throws naming the variable in production, rather than dialing localhost", async () => {
+    const nodeEnv = process.env.NODE_ENV;
+    const identityUrl = process.env.IDENTITY_URL;
+    process.env.NODE_ENV = "production";
+    delete process.env.IDENTITY_URL;
+    try {
+      vi.resetModules();
+      await expect(import("@/app/v1/[...path]/route")).rejects.toThrow(/IDENTITY_URL/);
+    } finally {
+      process.env.NODE_ENV = nodeEnv;
+      if (identityUrl === undefined) delete process.env.IDENTITY_URL;
+      else process.env.IDENTITY_URL = identityUrl;
+      vi.resetModules();
+    }
+  });
+
+  it("still falls back to the compose default outside production, so npm run dev works", async () => {
+    // The control for the test above: the gate is `NODE_ENV`, not the unset
+    // variable alone. A developer running `npm run dev` with no environment
+    // gets the compose stack's address, which is the only reason the default
+    // exists — and a test that failed here too would be proving the dev flow
+    // broken, which is the opposite of the packet.
+    const nodeEnv = process.env.NODE_ENV;
+    const identityUrl = process.env.IDENTITY_URL;
+    process.env.NODE_ENV = "development";
+    delete process.env.IDENTITY_URL;
+    try {
+      vi.resetModules();
+      await expect(import("@/app/v1/[...path]/route")).resolves.toBeDefined();
+    } finally {
+      process.env.NODE_ENV = nodeEnv;
+      if (identityUrl === undefined) delete process.env.IDENTITY_URL;
+      else process.env.IDENTITY_URL = identityUrl;
+      vi.resetModules();
+    }
   });
 });
 
