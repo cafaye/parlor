@@ -277,7 +277,7 @@ export const FORWARDED_RESPONSE_HEADERS = ["content-type", "x-trace-id", "retry-
 type SegmentKind = "uuid" | "slug" | "token" | "provider";
 
 /** A route in the table: a method, a path shape, and where it goes. */
-type Route = {
+export type Route = {
   method: "GET" | "POST" | "PATCH" | "DELETE";
   /** Segments after `/v1`. A `:name` is a wildcard of the given kind. */
   path: string[];
@@ -320,6 +320,14 @@ type Route = {
  * asks this table about each URL, so a route added to a client and not to this
  * table is a red suite rather than a 404 nobody sees.
  *
+ * EXPORTED, and the reason is the OpenAPI document. `openapi/v1.yaml` is a
+ * transcription of this table — every path and method there is one entry here
+ * — and `src/lib/openapi-document.test.ts` keeps the two in agreement in both
+ * directions: a table entry with no operation in the document is a red suite,
+ * and an operation in the document with no table entry is a red suite. A
+ * document that can silently drift from this table is worse than none, because
+ * it looks authoritative.
+ *
  * The identity surfaces deliberately absent: `/v1/introspections`,
  * `DELETE /v1/mfa`, the disable, which is a destructive security action with
  * no screen behind it yet, `/v1/accounts/{id}/api-keys` and its delete,
@@ -341,7 +349,7 @@ type Route = {
  * `DELETE /v1/mfa` — which remains a destructive security action with no
  * screen behind it. See `REPORT-parlor-mfa-challenge-01.md`.
  */
-const ROUTES: readonly Route[] = [
+export const ROUTES: readonly Route[] = [
   // --- identity: the session and user routes ------------------------------
   //
   // `PATCH /v1/me` sets or clears the caller's display name, and the two are

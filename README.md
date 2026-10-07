@@ -50,13 +50,35 @@ would your product still build? It has to be.
 | Billing client | `src/lib/billing.ts` | Typed client for billing's five endpoints, with its own error type. |
 | Session state | `src/lib/auth.tsx` | React Query cache keyed by token + auth context. |
 | Token store | `src/lib/token-store.ts` | `localStorage` persistence, injectable. |
-| The forwarder | `src/lib/upstream.ts` | The BFF's allow-list: one fixed destination per service, twenty-four routes, and the only code that names a service address at run time. |
+| The forwarder | `src/lib/upstream.ts` | The BFF's allow-list: one fixed destination per service, thirty-five routes, and the only code that names a service address at run time. |
+| The HTTP contract | `openapi/v1.yaml` | The routing surface as an OpenAPI 3.1 document: every path and method the table allows, which upstream owns it. A transcription, kept in agreement with the table by `src/lib/openapi-document.test.ts` in both directions. |
 | Liveness | `/healthz` | `{"status":"ok"}` — process is up. No dependency checks, on purpose. |
 | Readiness | `/readyz` | `{"status":"ok","deps":[{"name":"identity","ok":true}]}` — a real sweep: identity's own `/readyz` with a short timeout, billing only when `BILLING_URL` is set. Any failure is a 503. |
 | Theme tokens | `src/styles/tokens.css` | The cafaye design system: two ramps, a semantic layer, and a measured focus ring. Contrast-checked in `src/styles/tokens.test.ts`. |
 | Primitives | `src/components/ui/` | Button, Input, Select, Field, Callout, ConfirmDialog, Spinner, Surface, TextLink/CardLink, Panel, and the state components. One import path: `@/components/ui`. |
 | Design system guide | [`docs/design-system.md`](docs/design-system.md) | Which component to reach for, what the variants mean, and the four decisions that were measured rather than chosen. |
 | Tests | `src/**/*.test.{ts,tsx}` | vitest + `@testing-library/react`. |
+
+## The HTTP surface has a contract
+
+`openapi/v1.yaml` is an OpenAPI 3.1 document describing the `/v1/*` routing
+surface: every path and method the forwarder's allow-list permits, which
+upstream owns each route, and the parameters the forwarder passes through. It
+is a transcription of `ROUTES` in `src/lib/upstream.ts`, and
+`src/lib/openapi-document.test.ts` keeps the two in agreement in **both**
+directions — a table entry with no operation in the document is a red suite,
+and an operation in the document with no table entry is a red suite.
+
+The document describes the routing contract and deliberately leaves the rest
+to the upstreams: request and response bodies are identity's and billing's
+contracts, the exact success status is the `2XX` wildcard (the forwarder
+passes it through), and `/healthz` and `/readyz` are absent on purpose — a probe
+is infrastructure, not contract, which is the courier/muse practice and what
+keeps core's `openapi.paths-are-versioned` rule satisfiable. The document's
+header states all of this, and records the three gaps core's harness reports
+(`openapi.idempotency-key` on identity's POSTs, `openapi.page-envelope` on
+the two billing listings, and `openapi.errors-are-problems` on the social
+start leg's 302) rather than papering over them.
 
 ## Talking to identity
 

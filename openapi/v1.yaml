@@ -1,0 +1,1084 @@
+# parlor's HTTP surface, v1.
+#
+# ---------------------------------------------------------------------------
+# WHAT THIS DOCUMENT IS
+# ---------------------------------------------------------------------------
+# A transcription of the allow-list in `src/lib/upstream.ts` — the one table
+# that decides every `/v1/*` request this app forwards and where it goes. The
+# two are held in agreement by `src/lib/openapi-document.test.ts`, which fails
+# when a table entry has no matching path+method here AND when this document
+# names a path+method the table does not allow. A document that can silently
+# drift from the table is worse than no document, because it looks
+# authoritative.
+#
+# parlor is a same-origin BFF in front of identity and billing. The browser
+# calls `/v1/*` on parlor's own origin; `src/app/v1/[...path]/route.ts` answers
+# and `src/lib/upstream.ts` forwards to whichever service owns the path. This
+# document describes that routing contract: every path, every method, which
+# upstream owns the route, and the parameters parlor's forwarder accepts.
+#
+# ---------------------------------------------------------------------------
+# WHAT THIS DOCUMENT DELIBERATELY DOES NOT DESCRIBE, AND WHY
+# ---------------------------------------------------------------------------
+# **The request and response bodies are not described.** They are identity's
+# and billing's contracts, described in their own OpenAPI documents. A
+# relative `$ref` across repositories does not resolve — this repository
+# cannot read `../identity/openapi/v1.yaml` at runtime or at lint time — and
+# copying their schemas here would be a second copy that drifts. So each
+# operation says what the routing is and points at the upstream for the
+# payload. A written honest partial is the intended shape of this document;
+# a schema that lies about the payload would be worse than none.
+#
+# **The exact success status code is not declared.** Success responses are
+# the `2XX` wildcard because which success status the upstream answers (200,
+# 201, 202, 204) is the upstream's contract. The forwarder passes the
+# status through unchanged, so a client keyed on 2xx is correct for every
+# route here.
+#
+# **No `servers` block.** parlor is same-origin: the browser calls this app's
+# own origin and the app forwards server-side. The origin is a deployment
+# fact, not a contract fact, and a document that named one would be a
+# document that lies about every other deployment.
+#
+# **No `security` scheme is declared, and that is a decision rather than an
+# omission.** parlor authenticates nothing. It forwards the caller's
+# `Authorization` header and cookies to identity, which is the platform's
+# only issuer and verifies them upstream. A security scheme in this document
+# would be a scheme parlor does not implement — the courier-05 mistake. The
+# operations that this app's clients call anonymously (the password-reset and
+# email-verification pairs) are named in their own descriptions.
+#
+# ---------------------------------------------------------------------------
+# THE PROBES ARE NOT HERE, AND THAT IS THE FLEET'S PRACTICE
+# ---------------------------------------------------------------------------
+# `/healthz` and `/readyz` are not in this document and are not going to be.
+# They run before auth, routing and the rest of the platform exist, and no
+# customer codes against them. This is courier's practice (its document
+# header says the same thing) and muse's, and it is what keeps core's
+# `openapi.paths-are-versioned` rule satisfiable: the probes are
+# infrastructure, not contract, and an SDK generated from a document must
+# not gain a health-check method. core's DECISIONS.md records the open
+# question (the harness FAILs that rule on exactly these two paths in
+# identity, darkroom and pantry) and recommends the rule be relaxed; until
+# it is, the fleet's answer is to leave the probes out and say so here.
+#
+# ---------------------------------------------------------------------------
+# THE FORWARDER'S OWN ANSWERS
+# ---------------------------------------------------------------------------
+# Five error responses are parlor's own, minted by `src/lib/upstream.ts`
+# before or instead of any upstream contact, and they are the only error
+# responses declared per operation:
+#
+#   502 upstream_unavailable — the upstream could not be reached. Declared on
+#      every operation: any upstream can be down.
+#   413 payload_too_large — the request body is over parlor's 4 KiB ceiling.
+#      Declared on the routes that carry a body (POST and PATCH).
+#   503 billing_not_configured — `BILLING_URL` is unset, which is the launch
+#      stack's shape, not a misconfiguration. Declared on billing's routes.
+#
+# Every other error a client sees is the upstream's, passed through
+# unchanged: the forwarder relays the upstream's status, body and
+# `content-type`, so identity's and billing's `application/problem+json`
+# answers reach the browser as they left the upstream. Which statuses those
+# are is the upstream's contract. parlor's own 404 (no such route) and 405
+# (method not allowed) are properties of the allow-list itself — they answer
+# paths and verbs the table does not carry — and are not per-operation
+# responses.
+#
+# ---------------------------------------------------------------------------
+# THE ENVELOPE, AND THE ONE CONDITIONAL FIELD
+# ---------------------------------------------------------------------------
+# parlor's own error answers are `application/problem+json` (RFC 9457) with
+# core's cafaye extensions, in the envelope `components.schemas.Problem`
+# declares. `trace_id` is required by that schema, and the forwarder's
+# `problem()` in `src/lib/upstream.ts` includes it: the id of the trace the
+# request is being served in, which the Node target opens per request
+# (`src/start.ts` wraps every handler in `traceRequest`), plus a matching
+# `X-Trace-Id` response header, per core's convention that the two always
+# agree.
+#
+# THE CONDITION, stated rather than hidden: when telemetry is disabled
+# (`OTEL_SDK_DISABLED=true`, or a per-signal exporter set to `none`) there is
+# no trace to quote and `trace_id` is absent. That is the OpenTelemetry
+# SDK's own no-op path, not a parlor choice, and it is the one case where an
+# answer does not validate against the schema below. Support starts from
+# the trace id whenever there is one; when there is none there is no trace
+# to correlate, which is the no-op path's entire content.
+#
+# ---------------------------------------------------------------------------
+# THE THREE GAPS CORE'S HARNESS REPORTS ON THIS DOCUMENT
+# ---------------------------------------------------------------------------
+# Measured, not assumed — `../core/harness/bin/cafaye-contract --core ../core
+# .` reports each of these by name, and they are recorded here so the next
+# reader does not rediscover them:
+#
+# 1. `openapi.idempotency-key` on the thirteen identity POSTs. parlor
+#    forwards `Idempotency-Key` on every route (it is on the forwarder's
+#    request-header allow-list), but identity does not implement the header
+#    on any of its POSTs — its own document records that as a known gap,
+#    and `POST /v1/session` is deliberately not safely retryable (a
+#    retried login mints a second session). Declaring the header here would
+#    tell a client its retry is safe when it is not, which is the lie
+#    identity's known-gaps note warns about. The one POST that does accept
+#    it — billing's `POST /v1/customers` — declares it, with the 409.
+# 2. `openapi.page-envelope` on `GET /v1/plans` and `GET /v1/customers`.
+#    Both declare cursor pagination (the query parameters are parlor's
+#    forwarding allow-list), and the success body's `{data, page}` envelope
+#    is billing's contract. Declaring it here would be a second copy that
+#    drifts; the harness reports the two operations for not declaring it,
+#    and that is the honest answer.
+# 3. `openapi.errors-are-problems` on the social start leg's 302. That
+#    operation's success IS a redirect (a 302 with a `Location` and the
+#    `__Host-oauth-state` cookie), not a problem document, so it cannot
+#    carry `application/problem+json` without lying. identity's document
+#    carries the same finding for the same route.
+#
+# The fleet's own upstreams set the precedent: identity's harness run
+# reports 32 violations and billing's reports 1, each recorded in the
+# document rather than papered over.
+#
+# ---------------------------------------------------------------------------
+# VERSION
+# ---------------------------------------------------------------------------
+# `/v1` on every path, `info.version` 1.0.0. The two move together per
+# core's sync rule: a breaking change bumps the prefix and this version in
+# the same commit. This document is new at 1.0.0.
+openapi: 3.1.0
+info:
+  title: parlor
+  version: 1.0.0
+  description: >-
+    The cafaye web app's same-origin HTTP surface: every `/v1/*` operation
+    parlor's browser clients call, forwarded to identity or billing. This
+    document describes the routing contract — paths, methods, upstream
+    ownership, and the parameters the forwarder accepts. The request and
+    response payloads are the upstreams' contracts, described in their own
+    OpenAPI documents.
+paths:
+  # -------------------------------------------------------------------------
+  # identity: the session and user routes
+  # -------------------------------------------------------------------------
+  /v1/users:
+    post:
+      tags: [identity]
+      summary: Create an account.
+      description: >-
+        Forwards to identity's `POST /v1/users`. The request body (an email
+        and a password) and the response are identity's contract. This app's
+        register screen calls this route and then requests email verification
+        separately, because the account exists from the moment this call
+        returns.
+      requestBody:
+        $ref: '#/components/requestBodies/UpstreamJsonObject'
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+        "413":
+          $ref: '#/components/responses/PayloadTooLarge'
+  /v1/session:
+    post:
+      tags: [identity]
+      summary: Sign in.
+      description: >-
+        Forwards to identity's `POST /v1/session`. The request body (email
+        and password, or a password-reset confirmation) and the response —
+        a session token, or a 202 carrying an MFA challenge — are
+        identity's contract. A login is not safely retryable: a retried
+        request mints a second session, which is why this route does not
+        declare `Idempotency-Key`.
+      requestBody:
+        $ref: '#/components/requestBodies/UpstreamJsonObject'
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+        "413":
+          $ref: '#/components/responses/PayloadTooLarge'
+    delete:
+      tags: [identity]
+      summary: Sign out.
+      description: >-
+        Forwards to identity's `DELETE /v1/session`. Ends the caller's
+        session. The success response carries no body.
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccessNoContent'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+  /v1/me:
+    get:
+      tags: [identity]
+      summary: Read the signed-in user.
+      description: >-
+        Forwards to identity's `GET /v1/me`. The response body is identity's
+        contract.
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+    patch:
+      tags: [identity]
+      summary: Set or clear the caller's display name.
+      description: >-
+        Forwards to identity's `PATCH /v1/me`. The request body and the
+        response are identity's contract. An omitted `display_name` and an
+        empty string decode the same way upstream, so there is no "leave
+        unchanged" to forward.
+      requestBody:
+        $ref: '#/components/requestBodies/UpstreamJsonObject'
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+        "413":
+          $ref: '#/components/responses/PayloadTooLarge'
+    delete:
+      tags: [identity]
+      summary: Delete the caller's account.
+      description: >-
+        Forwards to identity's `DELETE /v1/me`. Ends the caller's account.
+        The success response carries no body; a 409 names the team accounts
+        the caller solely owns.
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccessNoContent'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+  /v1/sessions:
+    get:
+      tags: [identity]
+      summary: List the caller's live sessions.
+      description: >-
+        Forwards to identity's `GET /v1/sessions`. The response body is
+        identity's contract and never carries a token.
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+  /v1/sessions/{sessionId}:
+    delete:
+      tags: [identity]
+      summary: Revoke one of the caller's sessions.
+      description: >-
+        Forwards to identity's `DELETE /v1/sessions/{sessionId}`. The
+        success response carries no body. A refusal is a single 404 for all
+        four ways of not owning the id, which is the service's own
+        anti-probing stance.
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          description: The session's uuid. A segment that is not a uuid is
+            not a route this app has ever held.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccessNoContent'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+  # -------------------------------------------------------------------------
+  # identity: the tenancy surface
+  # -------------------------------------------------------------------------
+  /v1/accounts:
+    get:
+      tags: [identity]
+      summary: List the caller's accounts.
+      description: >-
+        Forwards to identity's `GET /v1/accounts`. The response body is
+        identity's contract.
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+    post:
+      tags: [identity]
+      summary: Create an account.
+      description: >-
+        Forwards to identity's `POST /v1/accounts`. The request body and the
+        response are identity's contract.
+      requestBody:
+        $ref: '#/components/requestBodies/UpstreamJsonObject'
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+        "413":
+          $ref: '#/components/responses/PayloadTooLarge'
+  /v1/accounts/{accountId}:
+    get:
+      tags: [identity]
+      summary: Read one account.
+      description: >-
+        Forwards to identity's `GET /v1/accounts/{accountId}`. The response
+        body is identity's contract.
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          description: The account's uuid. A segment that is not a uuid is
+            not a route this app has ever held.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+    patch:
+      tags: [identity]
+      summary: Rename an account.
+      description: >-
+        Forwards to identity's `PATCH /v1/accounts/{accountId}`. The request
+        body and the response are identity's contract.
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          description: The account's uuid.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        $ref: '#/components/requestBodies/UpstreamJsonObject'
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+        "413":
+          $ref: '#/components/responses/PayloadTooLarge'
+    delete:
+      tags: [identity]
+      summary: Delete an account.
+      description: >-
+        Forwards to identity's `DELETE /v1/accounts/{accountId}`. The success
+        response carries no body.
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          description: The account's uuid.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccessNoContent'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+  /v1/accounts/{accountId}/members:
+    get:
+      tags: [identity]
+      summary: List an account's members.
+      description: >-
+        Forwards to identity's `GET /v1/accounts/{accountId}/members`. The
+        response body is identity's contract.
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          description: The account's uuid.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+  /v1/accounts/{accountId}/invitations:
+    post:
+      tags: [identity]
+      summary: Invite a member to an account.
+      description: >-
+        Forwards to identity's `POST /v1/accounts/{accountId}/invitations`.
+        The request body and the response are identity's contract.
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          description: The account's uuid.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        $ref: '#/components/requestBodies/UpstreamJsonObject'
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+        "413":
+          $ref: '#/components/responses/PayloadTooLarge'
+  /v1/accounts/{accountId}/members/{userId}:
+    patch:
+      tags: [identity]
+      summary: Change a member's role.
+      description: >-
+        Forwards to identity's
+        `PATCH /v1/accounts/{accountId}/members/{userId}`. The request body and
+        the response are identity's contract.
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          description: The account's uuid.
+          schema:
+            type: string
+            format: uuid
+        - name: userId
+          in: path
+          required: true
+          description: The member's uuid.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        $ref: '#/components/requestBodies/UpstreamJsonObject'
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+        "413":
+          $ref: '#/components/responses/PayloadTooLarge'
+    delete:
+      tags: [identity]
+      summary: Remove a member from an account.
+      description: >-
+        Forwards to identity's
+        `DELETE /v1/accounts/{accountId}/members/{userId}`. The success
+        response carries no body.
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          description: The account's uuid.
+          schema:
+            type: string
+            format: uuid
+        - name: userId
+          in: path
+          required: true
+          description: The member's uuid.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccessNoContent'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+  /v1/invitations/accept:
+    post:
+      tags: [identity]
+      summary: Accept an account invitation.
+      description: >-
+        Forwards to identity's `POST /v1/invitations/accept`. The invitation
+        token in the request body is the credential. The request body and
+        the response are identity's contract.
+      requestBody:
+        $ref: '#/components/requestBodies/UpstreamJsonObject'
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+        "413":
+          $ref: '#/components/responses/PayloadTooLarge'
+  # -------------------------------------------------------------------------
+  # identity: social login
+  #
+  # The two legs of one flow. The start leg's success IS a redirect; the
+  # callback's is a JSON body. Neither carries a credential this app's
+  # clients present.
+  # -------------------------------------------------------------------------
+  /v1/auth/oauth/{provider}:
+    get:
+      tags: [identity]
+      summary: Begin a social sign-in.
+      description: >-
+        Forwards to identity's `GET /v1/auth/oauth/{provider}`. The success
+        response is a 302 to the provider's authorization endpoint, with the
+        `__Host-oauth-state` cookie that the callback leg compares against.
+        The forwarder declares this route `browserRedirect` so the
+        `Location` is handed to the browser; every other route's 302 would
+        be an upstream move this table never approved.
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          description: >-
+            A configured provider. A name this deployment has no credentials
+            for and a name that does not exist are both 404, because telling
+            them apart is a way to enumerate a deployment's configuration.
+          schema:
+            type: string
+      responses:
+        "302":
+          description: >-
+            The provider's authorization endpoint. `Location` carries the
+            provider's URL and the state identity minted for it.
+          headers:
+            Location:
+              description: The provider's authorization endpoint.
+              schema:
+                type: string
+                format: uri
+            Set-Cookie:
+              description: >-
+                The `__Host-oauth-state` cookie, `Secure`, `Path=/`, no
+                `Domain`, `HttpOnly`, `SameSite=Lax`. Valid for ten minutes.
+              schema:
+                type: string
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+  /v1/auth/oauth/{provider}/callback:
+    get:
+      tags: [identity]
+      summary: Complete a social sign-in.
+      description: >-
+        Forwards to identity's `GET /v1/auth/oauth/{provider}/callback`. The
+        query string carries the provider's answer; the response body is
+        identity's contract and is one of three shapes — a minted session, a
+        linked account, or an MFA challenge — which the callback screen
+        distinguishes. The authorization code is one-shot, so this route is
+        reached exactly once per flow.
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          description: The provider the flow started with.
+          schema:
+            type: string
+        - name: code
+          in: query
+          required: false
+          description: The authorization code the provider issued.
+          schema:
+            type: string
+        - name: state
+          in: query
+          required: false
+          description: The state the start leg minted, echoed back by the provider.
+          schema:
+            type: string
+        - name: error
+          in: query
+          required: false
+          description: >-
+            How a person who declined at the provider is told so, rather
+            than being answered as an invalid request.
+          schema:
+            type: string
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+  # -------------------------------------------------------------------------
+  # identity: recovery and verification
+  #
+  # The two POST pairs are anonymous: this app's clients present no
+  # credential on them, because the token in the reset link IS the
+  # credential and a session token alongside it would be a second one for
+  # no reason.
+  # -------------------------------------------------------------------------
+  /v1/password-resets:
+    post:
+      tags: [identity]
+      summary: Request a password reset.
+      description: >-
+        Forwards to identity's `POST /v1/password-resets`. Anonymous. The
+        answer is a constant 202 for a registered address, an unregistered
+        one, and one inside the cooldown, so this route is not an
+        account-existence oracle. The request body and the response are
+        identity's contract.
+      requestBody:
+        $ref: '#/components/requestBodies/UpstreamJsonObject'
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+        "413":
+          $ref: '#/components/responses/PayloadTooLarge'
+  /v1/password-resets/confirm:
+    post:
+      tags: [identity]
+      summary: Redeem a password reset.
+      description: >-
+        Forwards to identity's `POST /v1/password-resets/confirm`.
+        Anonymous. The reset token in the request body is the credential. A
+        token that never existed, expired, or was spent is one 404, because
+        naming "expired" tells a prober that the token they held had once
+        been good. The request body and the response are identity's
+        contract.
+      requestBody:
+        $ref: '#/components/requestBodies/UpstreamJsonObject'
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+        "413":
+          $ref: '#/components/responses/PayloadTooLarge'
+  /v1/email-verifications:
+    post:
+      tags: [identity]
+      summary: Request email verification.
+      description: >-
+        Forwards to identity's `POST /v1/email-verifications`. Anonymous.
+        The request body and the response are identity's contract. An
+        address that is already verified answers 409, which identity declares
+        deliberately so a client does not send somebody to an inbox nothing
+        will arrive in.
+      requestBody:
+        $ref: '#/components/requestBodies/UpstreamJsonObject'
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+        "413":
+          $ref: '#/components/responses/PayloadTooLarge'
+  /v1/email-verifications/confirm:
+    post:
+      tags: [identity]
+      summary: Redeem an email verification.
+      description: >-
+        Forwards to identity's `POST /v1/email-verifications/confirm`.
+        Anonymous. The verification token in the request body is the
+        credential. A short or truncated token is a 404, not a 422. The
+        request body and the response are identity's contract.
+      requestBody:
+        $ref: '#/components/requestBodies/UpstreamJsonObject'
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+        "413":
+          $ref: '#/components/responses/PayloadTooLarge'
+  /v1/email-verification:
+    get:
+      tags: [identity]
+      summary: Read the caller's verification state.
+      description: >-
+        Forwards to identity's `GET /v1/email-verification`. Unlike the two
+        POSTs above, this route is NOT anonymous: it resolves a session
+        through the caller's token and answers for the caller's own address.
+        The response body is identity's contract.
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+  # -------------------------------------------------------------------------
+  # identity: the second-factor surface
+  #
+  # The four management routes are driven by the settings screen. The login
+  # challenge is not a management route but is declared here for the same
+  # reason: this app's clients can perform it and the login screen drives
+  # it. The disable (`DELETE /v1/mfa`) is deliberately absent from the
+  # table — a destructive security action with no screen behind it.
+  # -------------------------------------------------------------------------
+  /v1/mfa:
+    get:
+      tags: [identity]
+      summary: Read the caller's second-factor state.
+      description: >-
+        Forwards to identity's `GET /v1/mfa`. The response body is
+        identity's contract.
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+  /v1/mfa/enrollments:
+    post:
+      tags: [identity]
+      summary: Start a second-factor enrollment.
+      description: >-
+        Forwards to identity's `POST /v1/mfa/enrollments`. The request body
+        and the response are identity's contract.
+      requestBody:
+        $ref: '#/components/requestBodies/UpstreamJsonObject'
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+        "413":
+          $ref: '#/components/responses/PayloadTooLarge'
+  /v1/mfa/enrollments/{enrollmentId}/confirm:
+    post:
+      tags: [identity]
+      summary: Confirm a second-factor enrollment.
+      description: >-
+        Forwards to identity's
+        `POST /v1/mfa/enrollments/{enrollmentId}/confirm`. Another user's,
+        an expired one's and an already-confirmed one's are all 404, so the
+        id is not a way to learn which enrollments exist. The request body
+        and the response are identity's contract.
+      parameters:
+        - name: enrollmentId
+          in: path
+          required: true
+          description: The enrollment's uuid. A segment that is not a uuid
+            is not a route this app has ever held.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        $ref: '#/components/requestBodies/UpstreamJsonObject'
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+        "413":
+          $ref: '#/components/responses/PayloadTooLarge'
+  /v1/mfa/recovery-codes:
+    post:
+      tags: [identity]
+      summary: Mint second-factor recovery codes.
+      description: >-
+        Forwards to identity's `POST /v1/mfa/recovery-codes`. The request
+        body and the response are identity's contract.
+      requestBody:
+        $ref: '#/components/requestBodies/UpstreamJsonObject'
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+        "413":
+          $ref: '#/components/responses/PayloadTooLarge'
+  /v1/session/mfa:
+    post:
+      tags: [identity]
+      summary: Redeem a second-factor login challenge.
+      description: >-
+        Forwards to identity's `POST /v1/session/mfa`. The challenge in the
+        body IS the credential — no token crosses — and the answer is the
+        session. A locked second factor answers 423 with `Retry-After` in
+        whole seconds, which the forwarder relays so the login screen can
+        say how long to wait rather than "try again". The request body and
+        the response are identity's contract.
+      requestBody:
+        $ref: '#/components/requestBodies/UpstreamJsonObject'
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+        "413":
+          $ref: '#/components/responses/PayloadTooLarge'
+  # -------------------------------------------------------------------------
+  # billing
+  #
+  # The launch stack deploys no billing, so `BILLING_URL` may be empty; the
+  # forwarder answers these routes with a distinct 503 rather than dialing
+  # anything, and the screens branch on that code.
+  # -------------------------------------------------------------------------
+  /v1/plans:
+    get:
+      tags: [billing]
+      summary: List plans.
+      description: >-
+        Forwards to billing's `GET /v1/plans`. Cursor-paginated; the query
+        parameters below are parlor's forwarding allow-list, and the
+        `{data, page}` envelope is billing's contract. The response body is
+        billing's contract.
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          description: An opaque cursor from a previous page.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Page size.
+          schema:
+            type: integer
+        - name: order
+          in: query
+          required: false
+          description: Sort order.
+          schema:
+            type: string
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+        "503":
+          $ref: '#/components/responses/BillingNotConfigured'
+  /v1/plans/{slug}:
+    get:
+      tags: [billing]
+      summary: Read one plan.
+      description: >-
+        Forwards to billing's `GET /v1/plans/{slug}`. The response body is
+        billing's contract.
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          description: The plan's public handle.
+          schema:
+            type: string
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+        "503":
+          $ref: '#/components/responses/BillingNotConfigured'
+  /v1/customers:
+    get:
+      tags: [billing]
+      summary: List customers.
+      description: >-
+        Forwards to billing's `GET /v1/customers`. This is the whole
+        platform's list — the service scopes it by nothing — so it is not
+        behind account tenancy. Cursor-paginated; the query parameters below
+        are parlor's forwarding allow-list, and the `{data, page}` envelope
+        is billing's contract. The response body is billing's contract.
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          description: An opaque cursor from a previous page.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Page size.
+          schema:
+            type: integer
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+        "503":
+          $ref: '#/components/responses/BillingNotConfigured'
+    post:
+      tags: [billing]
+      summary: Create a customer.
+      description: >-
+        Forwards to billing's `POST /v1/customers`. The one POST in this
+        document that accepts `Idempotency-Key`: billing implements the
+        header, and replaying a key with a different body is a 409. The
+        request body and the response are billing's contract.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: >-
+            Chosen by the client. The same key with the same body replays
+            the original response; the same key with a different body is a
+            409. Forwarded to billing, which enforces it.
+          schema:
+            type: string
+      requestBody:
+        $ref: '#/components/requestBodies/UpstreamJsonObject'
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "409":
+          $ref: '#/components/responses/IdempotencyConflict'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+        "413":
+          $ref: '#/components/responses/PayloadTooLarge'
+  /v1/customers/{id}:
+    get:
+      tags: [billing]
+      summary: Read one customer.
+      description: >-
+        Forwards to billing's `GET /v1/customers/{id}`. The response body is
+        billing's contract. `processor_customer_id` is always null in v0, so
+        no row implies a card is on file.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The customer's uuid. A segment that is not a uuid is
+            not a route this app has ever held.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+        "503":
+          $ref: '#/components/responses/BillingNotConfigured'
+components:
+  schemas:
+    # core's error envelope (RFC 9457 with the cafaye extensions), as
+    # docs/openapi-conventions.md defines it. `errors[]` appears only on a
+    # 422. parlor's own answers carry `type`, `title`, `status`, `code` and
+    # `trace_id`; the upstreams' pass through with the same envelope.
+    Problem:
+      type: object
+      required: [type, title, status, code, trace_id]
+      properties:
+        type:
+          type: string
+          description: 'Stable URI: `https://errors.cafaye.com/<code>`.'
+          format: uri
+        title:
+          type: string
+          description: A fixed summary for the code. May be reworded without
+            a version bump.
+        status:
+          type: integer
+        detail:
+          type: string
+          description: Specific to this occurrence. Not parsed by clients.
+        instance:
+          type: string
+          description: The path the caller asked for.
+        code:
+          type: string
+          description: The last segment of `type`, in snake_case.
+        trace_id:
+          type: string
+          description: >-
+            Matches the `X-Trace-Id` response header. Always present when
+            the request is being served inside a trace; see this document's
+            header for the one condition under which it is absent.
+        errors:
+          type: array
+          description: Present only on a 422.
+          items:
+            type: object
+            required: [field, code]
+            additionalProperties: false
+            properties:
+              field:
+                type: string
+              code:
+                type: string
+  requestBodies:
+    # The request body is the upstream's contract. This component says the
+    # only thing that is true of every route here: the body is a JSON object
+    # the forwarder passes through unchanged. Which fields it carries is
+    # the upstream's document's business.
+    UpstreamJsonObject:
+      description: >-
+        The request body is the upstream's contract, described in the
+        upstream's OpenAPI document. parlor's forwarder passes the bytes
+        through unchanged after applying its 4 KiB ceiling.
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            description: >-
+              A JSON object whose fields are the upstream's contract.
+  responses:
+    # The upstream's success response. The exact status code and the body
+    # are the upstream's contract; the forwarder passes both through
+    # unchanged.
+    UpstreamSuccess:
+      description: >-
+        The upstream's success response. Which success status the upstream
+        answers, and the body's schema, are the upstream's contract,
+        described in the upstream's OpenAPI document.
+      content:
+        application/json:
+          schema:
+            type: object
+            description: >-
+              A JSON object whose fields are the upstream's contract.
+    # The upstream's success response for the routes that answer 204: the
+    # four DELETEs. No body, no content type.
+    UpstreamSuccessNoContent:
+      description: >-
+        The upstream's success response, which carries no body (204 No
+        Content). The status passes through unchanged.
+    # parlor's own answers, in the envelope above.
+    UpstreamUnavailable:
+      description: >-
+        The upstream could not be reached. parlor answers 502 with a fixed
+        body; the cause is logged with the trace id and never rendered,
+        because a fetch error message is the fleet's internal topology.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://errors.cafaye.com/upstream_unavailable
+            title: The service is not reachable.
+            status: 502
+            detail: The upstream could not be reached. Quote the trace id when reporting this.
+            code: upstream_unavailable
+            trace_id: 0af7651916cd43dd8448eb211c80319c
+    PayloadTooLarge:
+      description: >-
+        The request body is over parlor's 4 KiB ceiling, which mirrors the
+        service's own `maxRequestBody`. The refusal happens before the body
+        is read, so a forwarder that buffered a megabyte and then complained
+        has already spent the memory it was trying to save.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://errors.cafaye.com/payload_too_large
+            title: The request body is too large.
+            status: 413
+            detail: The request body is over the ceiling. Quote the trace id when reporting this.
+            code: payload_too_large
+            trace_id: 0af7651916cd43dd8448eb211c80319c
+    BillingNotConfigured:
+      description: >-
+        `BILLING_URL` is not set, which is the launch stack's shape rather
+        than a misconfiguration: the launch deploys no billing. The screens
+        branch on this code and say "not configured".
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://errors.cafaye.com/billing_not_configured
+            title: Billing is not configured.
+            status: 503
+            detail: This deployment has no billing service. Quote the trace id when reporting this.
+            code: billing_not_configured
+            trace_id: 0af7651916cd43dd8448eb211c80319c
+    IdempotencyConflict:
+      description: >-
+        An `Idempotency-Key` was replayed with a different request body.
+        Declared on the one route whose upstream enforces the header.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://errors.cafaye.com/idempotency_key_reused
+            title: The idempotency key was reused.
+            status: 409
+            detail: That key was already used for a different request body.
+            code: idempotency_key_reused
+            trace_id: 0af7651916cd43dd8448eb211c80319c

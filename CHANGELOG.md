@@ -8,6 +8,37 @@ All notable changes to parlor are recorded here. The format follows
 
 ### Added
 
+- **An OpenAPI document for the `/v1/*` routing surface, and the manifest
+  entry that names it** (`worker/parlor-w86-http-surface`).
+  `openapi/v1.yaml` is an OpenAPI 3.1 transcription of the forwarder's
+  allow-list: every path and method `ROUTES` in `src/lib/upstream.ts` permits,
+  which upstream owns each route, and the parameters the forwarder passes
+  through. `src/lib/openapi-document.test.ts` keeps the document and the table
+  in agreement in both directions — a table entry with no operation in the
+  document is a red suite, and an operation in the document with no table
+  entry is a red suite; both directions were proved red before green. The
+  document describes the routing contract and deliberately leaves the rest to
+  the upstreams: request and response bodies are theirs, the exact success
+  status is the `2XX` wildcard the forwarder passes through, and
+  `/healthz`/`/readyz` are absent on purpose (a probe is infrastructure, not
+  contract — the courier/muse practice). Its header records the three gaps
+  core's harness reports rather than papering over them:
+  `openapi.idempotency-key` on identity's thirteen POSTs (identity does not
+  implement the header, and declaring it would tell a client its retry is safe
+  when it is not), `openapi.page-envelope` on the two billing listings (the
+  `{data, page}` envelope is billing's contract), and
+  `openapi.errors-are-problems` on the social start leg's 302 (a redirect is
+  not a problem document). `cafaye.yml` now declares `exposes.api:
+  openapi/v1.yaml`; the old omission block — 27 lines arguing that parlor can
+  declare neither `api` nor `events` — was written before the BFF route landed
+  and is replaced by what is now true. `events` stays omitted: parlor
+  publishes and consumes none. The `dependencies` comment that said the
+  browser calls identity directly is corrected: the BFF is the caller now.
+  Measured against core's harness: the `openapi.not-declared` warning (the
+  form `openapi.no-document` takes when a document is on disk but undeclared)
+  is gone, and the run reports the 16 violations the document's header
+  records, no others.
+
 - **The second-factor section of `/settings`** (`worker/parlor-w31-mfaenroll`).
   identity's MFA management surface — `GET /v1/mfa`, `POST /v1/mfa/enrollments`,
   `POST /v1/mfa/enrollments/{enrollmentId}/confirm`, `POST

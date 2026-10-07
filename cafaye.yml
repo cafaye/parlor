@@ -85,44 +85,36 @@ language: typescript
 # over with a dependency that does not exist.
 core: ^0.2.0
 
-# `exposes` is OMITTED, and that is a finding rather than an oversight.
+# `exposes.api` IS DECLARED, and the document it names is a transcription of
+# the forwarder's allow-list.
 #
-# parlor serves HTTP traffic — it is a TanStack Start app on Cloudflare Workers,
-# with /healthz and /readyz as route handlers — and the manifest schema's own
-# description says a service that serves traffic must declare at least one of
-# `api`/`events`. parlor can declare neither, honestly:
+# parlor serves a versioned HTTP surface: `src/app/v1/[...path]/route.ts`
+# answers every `/v1/*` request the browser makes, on parlor's own origin, and
+# `src/lib/upstream.ts` forwards to whichever service owns the path. That
+# route landed 2026-10-02 (`a061815`) and 2026-10-04 (`a2ebeb3`); the block
+# that stood here before said the browser calls identity directly, which has
+# not been true since.
 #
-#   - `events`: it publishes none and subscribes to none. It is a browser client
-#     of identity and billing, not a participant in the bus. Naming a type here
-#     would be a claim no code makes, and `event.unknown-published` is right to
-#     reject one.
-#   - `api`: this repository ships no OpenAPI document. Writing one now would be
-#     inventing an artifact, not describing this app, and it would not even be
-#     green to hand over: core's `openapi.paths-are-versioned` requires every
-#     path to carry a `/vN` prefix, and the health surfaces this platform
-#     mandates are deliberately unversioned. That collision is a real finding
-#     about the platform and it belongs to its own packet, not to a manifest
-#     rewrite.
+# `openapi/v1.yaml` describes that routing contract — every path, every
+# method, which upstream owns it — and `src/lib/openapi-document.test.ts`
+# keeps the document and the table in agreement in both directions. The
+# document's own header states what it deliberately leaves to the upstreams:
+# request and response bodies, the exact success status, and the health
+# probes (infrastructure, not contract — the courier/muse practice, and what
+# keeps core's `openapi.paths-are-versioned` rule satisfiable).
 #
-# So the absence is stated here rather than filled with something that satisfies
-# a checker. Core's harness has the matching warning for exactly this case
-# (`openapi.no-document`), it is a warning rather than a rule by design, and
-# `exposes.api` is a one-line change the day a document exists.
-#
-# The cost, stated: while this stands, a client generated from this manifest gets
-# no HTTP surface for parlor, and nothing checks the app's routes against a
-# contract. That is a smaller thing than a document that lies.
-
-# parlor publishes no events and consumes none, per core's manifest conventions.
-# `consumes` and `exposes.events` are omitted rather than left as empty lists:
-# an empty list asserts "we checked and there are none", and the reason there are
-# none is a fact about the code, not a convention default.
+# `events` stays omitted, and that half of the old block is still correct:
+# parlor publishes none and consumes none. It is a browser client of identity
+# and billing, not a participant in the bus, and an empty list would assert
+# "we checked and there are none" — right to omit rather than fill.
+exposes:
+  api: openapi/v1.yaml
 
 dependencies:
-  # The browser calls identity directly from `src/lib/identity.ts` and
-  # `src/lib/auth.tsx` — sign in, sign out, register, accounts, invitations all
-  # go through it, and the session state in auth.tsx is derived from it. The app
-  # has no meaning without it.
+  # The BFF is the caller now: the browser calls parlor's own `/v1/*` and
+  # `src/lib/upstream.ts` forwards to identity, so `src/lib/identity.ts` and
+  # `src/lib/auth.tsx` reach identity through the forwarder rather than from
+  # the browser. The app has no meaning without it.
   - name: identity
     required: true
   # Billing is a separate client (`src/lib/billing.ts`) behind two screens, and
