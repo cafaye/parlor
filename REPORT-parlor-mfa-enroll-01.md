@@ -566,3 +566,23 @@ The build warnings (Vite config loader, font resolution, the route-test file
 that is not a route) are pre-existing on this tree and are not gate findings;
 they are reproduced above because a verbatim paste is the point of this
 section.
+
+## 6. The re-verification this attempt ran
+
+The manager's resume note flagged this report's "gate green" claim as
+unverified — the previous session stalled before it could be checked. This
+attempt re-ran the gate on the final tree (2026-10-07, `mise exec --
+./bin/prime`, exit 0). The tallies are identical to §5's run — 895 passed
+(37 files), 47 checks declared / 47 passed, 52 breakages declared / 52
+proven — and the run differs from §5's only in timestamps and durations.
+
+One change was made to the tree in this attempt, and it is comment-only:
+`src/lib/upstream.ts`'s header still said "the twenty-one identity routes" and
+its refused-route list still named "the MFA routes" as refused. Both were
+stale by the four management routes this packet added. The count was REMOVED
+rather than bumped to twenty-five, because the same paragraph argues the rule
+itself — "A number that cannot be re-derived from a file is a number that
+rots, and this is the one place in the codebase that must not rot quietly" —
+and the list now names what is actually still refused: the LOGIN challenge
+(`POST /v1/session/mfa`) and the disable (`DELETE /v1/mfa`). No code, test,
+or gate input changed; the gate above is the final tree's.
