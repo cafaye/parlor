@@ -42,20 +42,31 @@ by editing a generated file.
 
 ## Reaching the service
 
-The chart installs no Ingress until a values commit says so:
-`ingress.enabled` is `false`, and with it false `helm template` emits
-no Ingress at all — a chart that suddenly routes traffic is a
-defect. The services the fleet exposes (gateway, parlor) turn it
-on in their values commit:
+The chart installs no Ingress until a values commit says so, and
+**parlor's values commit says so**: `ingress.enabled` is `true` in
+`values.yaml`, with `helm template` rendering the Ingress below. With
+`enabled` false the same template emits no Ingress at all — a chart
+that suddenly routes traffic is a defect — and with `enabled` true
+and an empty `host` the template `fail`s, because an Ingress with no
+host is a silent misroute. Both red controls are asserted in
+`src/lib/chart.test.ts`.
+
+parlor's host is **`app.cafaye.com`** — the host the fleet's own
+fixtures name (`billing/test/fixtures/stripe/checkout.session.completed*.json`
+carries `https://app.cafaye.com/welcome`):
 
     ingress:
       enabled: true
-      host: gateway.example.com
+      host: app.cafaye.com
+      clusterIssuer: letsencrypt-prod
+      tls: true
 
-`className` is traefik, k3s's default (DEPLOYMENT.md:28). Set
-`clusterIssuer` to a cert-manager ClusterIssuer — created once per
-cluster by the substrate, not by the chart — and `tls: true` writes
-the `spec.tls` block and cert-manager provisions the certificate.
+`className` is traefik, k3s's default (DEPLOYMENT.md:28). The
+ClusterIssuer is created once per cluster by the substrate (kit's
+install, step 7), not by the chart — the chart only NAMES it, the
+same "names the secret and never contains a credential" discipline
+the imagePullSecrets block uses. `tls: true` writes the `spec.tls`
+block and cert-manager provisions the certificate into `parlor-tls`.
 Without an issuer there is no TLS: a secret nothing writes.
 
 ## Readiness
