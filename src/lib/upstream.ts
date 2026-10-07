@@ -54,12 +54,13 @@
  *
  *   2. FORWARD ONLY THE PATHS THAT ARE NEEDED, AND REJECT THE REST. The table
  *      below holds every operation `src/lib/identity.ts` and `src/lib/billing.ts`
- *      can perform and nothing else, so the twenty-one identity routes in it are
+ *      can perform and nothing else, so the identity routes in it are
  *      a transcription with a test that reads it back ("the table and the clients
  *      agree" in `upstream.test.ts`). Everything identity serves that is not
- *      there — token introspection, the MFA routes, API keys, OIDC clients,
- *      email changes, `/v1/probe/{id}` — is refused before an address is
- *      contacted. A route being reachable from the internet is a decision
+ *      there — token introspection, the LOGIN challenge (`POST
+ *      /v1/session/mfa`), the MFA disable (`DELETE /v1/mfa`), API keys, OIDC
+ *      clients, email changes, `/v1/probe/{id}` — is refused before an address
+ *      is contacted. A route being reachable from the internet is a decision
  *      somebody makes, not a side effect of a client existing.
  *
  *      This paragraph used to carry counts ("thirty routes, twenty-two
