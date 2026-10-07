@@ -69,7 +69,10 @@ function servedRoutePaths(): string[] {
  * saved line, and the test below is what stops the hand-written list from
  * drifting away from the discovered one.
  */
-const ROUTE_MODULES: Record<string, () => Promise<{ GET: () => Response }>> = {
+// `Response | Promise<Response>` because the two health surfaces differ:
+// `/healthz` is unconditional and synchronous, `/readyz` awaits its sweep.
+// The tests below `await` the result either way, which is correct for both.
+const ROUTE_MODULES: Record<string, () => Promise<{ GET: () => Response | Promise<Response> }>> = {
   "/healthz": () => import("../healthz/route"),
   "/readyz": () => import("./route"),
 };
