@@ -860,6 +860,7 @@ describe("the sessions panel", () => {
         logout: vi.fn(() => Promise.resolve()),
         listSessions: vi.fn(() => Promise.resolve({ sessions: [aSession()] })),
         revokeSession: vi.fn(() => Promise.reject(anIdentityError(404, "not_found"))),
+        mfaStatus: mfaDisabled(),
       }),
     );
 
@@ -886,6 +887,7 @@ describe("the sessions panel", () => {
         logout: vi.fn(() => Promise.resolve()),
         listSessions: vi.fn(() => Promise.resolve({ sessions: [aSession()] })),
         revokeSession,
+        mfaStatus: mfaDisabled(),
       }),
     );
 
