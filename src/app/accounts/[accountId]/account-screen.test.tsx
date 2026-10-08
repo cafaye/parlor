@@ -128,6 +128,41 @@ describe("an account you can see", () => {
     await screen.findByRole("heading", { level: 1 });
     expect(identity.getAccount).toHaveBeenCalledWith(TOKEN, ACCOUNT_ID);
   });
+
+  it("reads the creation date as a date, not as the wire value", async () => {
+    // The service sends `2026-09-01T10:00:00Z` and the screenshot that motivated
+    // this packet showed that string verbatim on the page. A person reads a
+    // date; the machine value stays on the `<time>` element, asserted below.
+    // Locale-agnostic on purpose: any rendering that still carries the year is
+    // a date, and the raw ISO string is what must be gone.
+    signIn();
+    renderWithProviders(<AccountScreen accountId={ACCOUNT_ID} />, { identity: asCaller() });
+
+    const panel = await screen.findByRole("region", { name: "Account" });
+    expect(panel).not.toHaveTextContent("2026-09-01T10:00:00Z");
+    expect(panel).toHaveTextContent("2026");
+  });
+
+  it("keeps the machine-readable instant on the time element", async () => {
+    signIn();
+    renderWithProviders(<AccountScreen accountId={ACCOUNT_ID} />, { identity: asCaller() });
+
+    const panel = await screen.findByRole("region", { name: "Account" });
+    const created = panel.querySelector('time[dateTime="2026-09-01T10:00:00Z"]');
+    expect(created).not.toBeNull();
+    expect(created?.textContent).toMatch(/2026/);
+    expect(created?.textContent).not.toContain("2026-09-01T10:00:00Z");
+  });
+
+  it("renders an unparseable timestamp as it arrived rather than an empty date", async () => {
+    signIn();
+    renderWithProviders(<AccountScreen accountId={ACCOUNT_ID} />, {
+      identity: asCaller({ account: { created_at: "not-a-date", updated_at: "not-a-date" } }),
+    });
+
+    const panel = await screen.findByRole("region", { name: "Account" });
+    expect(panel).toHaveTextContent("not-a-date");
+  });
 });
 
 describe("an account you cannot see", () => {

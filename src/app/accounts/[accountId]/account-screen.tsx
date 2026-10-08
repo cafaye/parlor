@@ -152,7 +152,20 @@ function Loaded({ account, accountId }: { account: AccountDetail; accountId: str
  * to update and two places for a person to look — and it makes
  * `getByText("Acme Corp")` ambiguous in a test, which is the same problem in a
  * smaller costume.
+ *
+ * The two timestamps read as dates, not as wire values: the service sends
+ * `2026-09-02T11:00:00Z` and a person reads "Sep 2, 2026". The machine value
+ * stays on the `<time>` element, so the readable sentence costs nothing
+ * assistive tech or a test could have used.
  */
+function formatInstant(value: string): string {
+  const parsed = new Date(value).getTime();
+  if (Number.isNaN(parsed)) return value;
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(
+    new Date(parsed),
+  );
+}
+
 function AccountFacts({ account }: { account: AccountDetail }) {
   return (
     <Panel headingId="account-facts" title="Account">
@@ -169,8 +182,14 @@ function AccountFacts({ account }: { account: AccountDetail }) {
               </>
             ),
           },
-          { term: "Created", value: <time dateTime={account.created_at}>{account.created_at}</time> },
-          { term: "Updated", value: <time dateTime={account.updated_at}>{account.updated_at}</time> },
+          {
+            term: "Created",
+            value: <time dateTime={account.created_at}>{formatInstant(account.created_at)}</time>,
+          },
+          {
+            term: "Updated",
+            value: <time dateTime={account.updated_at}>{formatInstant(account.updated_at)}</time>,
+          },
         ]}
       />
     </Panel>
