@@ -75,9 +75,14 @@ describe("Surface", () => {
   it("has a default padding, because ten call sites re-decided it", () => {
     renderWithRouter(<Surface>Content</Surface>);
 
-    // The token, not a literal. `p-pane` resolves to `--pane`; asserting the
-    // literal number here would be asserting a decision that tokens.css owns.
-    expect(screen.getByText("Content").className).toContain("p-pane");
+    // The token, not a literal: `--pane` lives outside Tailwind v4's
+    // `--spacing-*` namespace, so no `p-pane` utility is ever emitted and
+    // asserting that class string proved nothing. The arbitrary value keeps
+    // `--pane` as the source of truth; asserting a literal number here would
+    // be asserting a decision that tokens.css owns.
+    const classes = screen.getByText("Content").className;
+    expect(classes).toContain("p-[var(--pane)]");
+    expect(new Set(classes.split(/\s+/))).not.toContain("p-pane");
   });
 
   it("has no shadow, because a sheet is separated by its edge", () => {
