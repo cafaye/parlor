@@ -64,7 +64,11 @@ const BORDERS = {
 } as const;
 
 const PADDINGS = {
-  pane: "p-pane",
+  // `--pane` is declared in `@theme` outside the `--spacing-*` namespace, so
+  // Tailwind v4 emits no `p-pane` utility for it (verified: no `.p-pane` rule
+  // in the built stylesheet). The arbitrary value keeps `--pane` as the
+  // source of truth while resolving to a utility Tailwind does emit.
+  pane: "p-[var(--pane)]",
   tight: "px-4 py-3",
   none: "",
 } as const;
