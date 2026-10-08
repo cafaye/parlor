@@ -310,3 +310,41 @@ describe("ConfirmDialog keyboard reachability", () => {
     expect(screen.getAllByRole("button")).toHaveLength(2);
   });
 });
+
+describe("shadcn structure adoption", () => {
+  /**
+   * shadcn marks every primitive root with `data-slot`, so a consumer can hook
+   * generated styles without reaching into class names. Ours carry the same
+   * hooks on the same elements — asserted as attributes, not classes, because
+   * the hook is the contract and the classes are the theme's.
+   */
+  it("Button marks its root as the button slot", () => {
+    render(<Button>Save</Button>);
+
+    expect(screen.getByRole("button", { name: "Save" })).toHaveAttribute(
+      "data-slot",
+      "button",
+    );
+  });
+
+  it("Input marks its root as the input slot", () => {
+    render(<Input aria-label="Email" />);
+
+    expect(screen.getByRole("textbox", { name: "Email" })).toHaveAttribute(
+      "data-slot",
+      "input",
+    );
+  });
+
+  it("Field marks the group and the label as their slots", () => {
+    render(
+      <Field id="email" label="Email">
+        <Input />
+      </Field>,
+    );
+
+    const input = screen.getByRole("textbox", { name: "Email" });
+    expect(input.closest('[data-slot="field"]')).not.toBeNull();
+    expect(document.querySelector('label[data-slot="label"]')).toHaveTextContent("Email");
+  });
+});

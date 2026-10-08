@@ -1,4 +1,4 @@
-import { configure, fireEvent, screen, waitFor } from "@testing-library/react";
+import { configure, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import RegisterPage from "./page";
@@ -55,6 +55,26 @@ describe("register page", () => {
     renderWithProviders(<RegisterPage />, { identity: stubIdentity() });
 
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Create your account");
+  });
+
+  it("carries the product eyebrow above the heading, reusing the route's own label", () => {
+    // Same header block as `/login` — the two auth screens read as one
+    // product. The eyebrow adds no copy: "parlor" is already on the page.
+    renderWithProviders(<RegisterPage />, { identity: stubIdentity() });
+
+    const main = screen.getByRole("main");
+    const eyebrow = within(main).getByText("parlor");
+    expect(eyebrow.tagName).toBe("P");
+    expect(eyebrow.compareDocumentPosition(within(main).getByRole("heading", { level: 1 }))).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  it("places the registration form on the raised card", () => {
+    renderWithProviders(<RegisterPage />, { identity: stubIdentity() });
+
+    const form = screen.getByLabelText("Email").closest("form");
+    expect(form?.closest(".bg-surface-raised")).not.toBeNull();
   });
 
   it("asks for an email address", () => {

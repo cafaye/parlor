@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import LoginPage from "./page";
@@ -58,6 +58,31 @@ describe("login page", () => {
     renderWithProviders(loginPage(), { identity: stubIdentity() });
 
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(/sign in/i);
+  });
+
+  it("carries the product eyebrow above the heading, reusing the route's own label", () => {
+    // The header block is eyebrow + heading + supporting line, and the eyebrow
+    // adds no copy: "parlor" is the product name already on the page (the
+    // shell brand, the route's own title). A paragraph, not a heading, so the
+    // page keeps exactly one h1.
+    renderWithProviders(loginPage(), { identity: stubIdentity() });
+
+    const main = screen.getByRole("main");
+    const eyebrow = within(main).getByText("parlor");
+    expect(eyebrow.tagName).toBe("P");
+    expect(eyebrow.compareDocumentPosition(within(main).getByRole("heading", { level: 1 }))).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  it("places the sign-in form on the raised card", () => {
+    // The card is the system's raised surface, not a bespoke div: asserted as
+    // the wiring check the focus-ring one is — it fails if the form ever sits
+    // on the bare page ground again.
+    renderWithProviders(loginPage(), { identity: stubIdentity() });
+
+    const form = screen.getByLabelText("Email").closest("form");
+    expect(form?.closest(".bg-surface-raised")).not.toBeNull();
   });
 
   it("marks the email field for autofill", () => {
