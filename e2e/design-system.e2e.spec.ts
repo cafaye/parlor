@@ -637,7 +637,12 @@ test("the halo survives dark mode and widens under reduced motion", async ({ pag
     `reduced-motion keyboard focus must paint the 3px halo, got "${reduced.width}"`,
   ).toBe("3px");
 
-  // And pointer focus under reduced motion still paints nothing.
+  // And pointer focus under reduced motion still paints nothing — from a clean
+  // state, like the first test. The Tab walk above left keyboard focus on the
+  // button, and a click that never moves focus never re-evaluates
+  // `:focus-visible`, so without this navigation the click below would still
+  // be wearing the keyboard's modality rather than the pointer's.
+  await page.goto("/login");
   await submit.click();
   const clicked = await ringState(submit);
   expect(clicked.focused, "the click must leave focus on the button").toBe(true);

@@ -74,7 +74,7 @@ const CREDENTIALS = { email: "kaka@example.com", password: "correct horse" };
  * a live service.
  */
 const PAIR = { timestamp: 1759843200, signature: "minted-signature" };
-const REGISTRATION = { ...CREDENTIALS, ...PAIR };
+const REGISTRATION = { ...CREDENTIALS, ...PAIR, website: "" };
 
 /**
  * Awaits a call that must fail and hands back the `IdentityError`.

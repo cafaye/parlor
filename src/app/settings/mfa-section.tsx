@@ -115,17 +115,28 @@ type MfaState =
 export function MfaSection() {
   const status = useMfaStatus();
 
-  if (status.isPending) return <LoadingState label="Loading your second factor…" />;
+  // The landmark stands in every state — loading, failed, or answered — so
+  // the region a person navigates by never vanishes on a slow or refused
+  // request. `SessionsPanel` wraps its own loading and error the same way;
+  // the copy and the controls below are unchanged, only the wrapper.
+  if (status.isPending)
+    return (
+      <Panel headingId="mfa" title="Second factor">
+        <LoadingState label="Loading your second factor…" />
+      </Panel>
+    );
 
   if (status.isError) {
     return (
-      <ErrorState
-        detail="The service did not answer. This is usually temporary."
-        onRetry={() => {
-          void status.refetch();
-        }}
-        title={STATUS_FAILED}
-      />
+      <Panel headingId="mfa" title="Second factor">
+        <ErrorState
+          detail="The service did not answer. This is usually temporary."
+          onRetry={() => {
+            void status.refetch();
+          }}
+          title={STATUS_FAILED}
+        />
+      </Panel>
     );
   }
 

@@ -100,12 +100,20 @@ export type SignupTimestamp = { timestamp: number; signature: string };
 /**
  * The body of `POST /v1/users`.
  *
- * The credentials plus the minted pair. Identity verifies the pair after the
- * honeypot check and before any row is created, and every rejection — forged,
- * instant, expired, future, or simply absent — is the same generic 422, so a
- * registration that does not carry one cannot succeed against a live service.
+ * The credentials plus the minted pair plus the request-only honeypot.
+ * Identity verifies the pair after the honeypot check and before any row is
+ * created, and every rejection — forged, instant, expired, future, or simply
+ * absent — is the same generic 422, so a registration that does not carry one
+ * cannot succeed against a live service.
+ *
+ * `website` is the honeypot field: the register form renders it empty, a
+ * person never fills it, and a non-empty value is refused with the same
+ * generic 422 before any row is created. It is request-only — no response in
+ * this file carries it — and deliberately absent from the OpenAPI document, a
+ * honeypot that is documented is one the next bot skips. It is REQUIRED here
+ * rather than optional so no caller can send a body the form never would.
  */
-export type Registration = Credentials & SignupTimestamp;
+export type Registration = Credentials & SignupTimestamp & { website: string };
 
 /**
  * The authenticated user, as `GET /v1/me` and `PATCH /v1/me` answer it.

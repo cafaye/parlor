@@ -551,6 +551,25 @@ services:
       # asserts. 30 keeps a real bound with headroom for the funnel; identity's
       # own suite remains the place the limiter itself is proved.
       RATE_LIMIT_RECOVERY: "30"
+      # THE SIGNUP RATE LIMIT — RAISED FOR THE HARNESS, AND COUNTED, NOT GUESSED.
+      #
+      # identity's default is `RATE_LIMIT_SIGNUP=10` per minute per (client IP,
+      # route), and the limiter answers 429 by REPLACING the handler's response
+      # (identity/internal/httpapi/ratelimit.go) — after the handler has run, so
+      # a refused registration still creates the row and still reads in the
+      # browser as the generic "Something went wrong" rather than as a taken
+      # address. Every browser request in this tier reaches identity through
+      # parlor's forwarder, i.e. from ONE source address, so the whole suite
+      # shares one budget on `POST /v1/users`: 2 (design-system) + 2
+      # (email-verification) + 1 (password-reset) + 2 (session) + 3
+      # (settings-invitations) + 1 (social) = 11 per full run, all inside about
+      # a minute. Measured in m133: the manager's 2026-10-08 run kept the
+      # default and the last two registrations — settings-invitations' invite
+      # setup and social's link setup — rendered the generic failure while the
+      # accounts they named were created and sign-inable afterwards. 30 keeps a
+      # real bound with headroom for the funnel; identity's own suite remains
+      # the place the limiter itself is proved.
+      RATE_LIMIT_SIGNUP: "30"
     # -------------------------------------------------------------------
       # SOCIAL LOGIN — the fake provider, and the seven overrides that make the
       # round trip testable at all

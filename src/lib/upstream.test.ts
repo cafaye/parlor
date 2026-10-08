@@ -1007,6 +1007,7 @@ describe("the table and the clients agree", () => {
       password: "correct horse",
       timestamp: 1759843200,
       signature: "minted-signature",
+      website: "",
     });
     await client.login({ email: "kaka@example.com", password: "correct horse" });
     // The second-factor login leg, walked through the same door. It resolves

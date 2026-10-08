@@ -91,6 +91,18 @@ export function RegisterForm() {
   const { client, register, pending } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  /**
+   * The honeypot: request-only, always empty for a person.
+   *
+   * Rendered by the hidden input below and sent on every registration, so the
+   * wire body carries `website: ""` next to the signed pair. State rather than
+   * a constant so the trap is live: a bot that fills every field sends a
+   * non-empty value, and identity refuses exactly that with a generic 422
+   * before any row is created. No label, `hidden`, `tabIndex={-1}` and
+   * `aria-hidden`: a person never sees it, never tabs to it, and is never
+   * offered it.
+   */
+  const [website, setWebsite] = useState("");
   const [state, setState] = useState<FormState>({ kind: "idle" });
   /**
    * True while a submit is held minting or ageing the proof, before `register`
@@ -176,6 +188,9 @@ export function RegisterForm() {
         password,
         timestamp: held.pair.timestamp,
         signature: held.pair.signature,
+        // The honeypot, as the person left it: empty. A non-empty value is a
+        // bot's, and the service refuses it before any row is created.
+        website,
       });
       setPassword("");
       // The account exists. Everything below is about a second, separable fact,
@@ -315,6 +330,24 @@ export function RegisterForm() {
           value={password}
         />
       </Field>
+
+      {/*
+        The honeypot. A text input in the DOM so a bot filling every field
+        fills it, and unreachable to a person three ways: `hidden` takes it
+        out of layout, `tabIndex={-1}` out of the tab order, `aria-hidden`
+        out of the accessibility tree — with no label, so no screen reader
+        offers it either. `autoComplete="off"` so no manager writes into it.
+      */}
+      <input
+        aria-hidden="true"
+        autoComplete="off"
+        hidden
+        name="website"
+        onChange={(event) => setWebsite(event.target.value)}
+        tabIndex={-1}
+        type="text"
+        value={website}
+      />
 
       <Button
         aria-busy={pending || waiting}

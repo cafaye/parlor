@@ -6,6 +6,25 @@ All notable changes to parlor are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **Register now sends the `website` honeypot, the Second factor section keeps
+  its landmark, and pointer focus paints no ring** (P-07, against the
+  `parlor-e2e` full-stack run of 2026-10-08: 26 passed, 5 failed). The
+  register wire body carries `website: ""` next to the signed
+  `{timestamp, signature}` pair (`Registration` requires it; the form renders
+  a hidden, unreachable, unlabeled trap and sends its value as-is, so a bot
+  filling it is refused by identity before any row is created). The Second
+  factor panel wraps its loading and error states, so `region "Second
+  factor"` stands in every state. Pointer focus resolves
+  `outline-width: 0` via an explicit `:focus:not(:focus-visible)` rule
+  (Chrome reports 3px with style none otherwise), and the reduced-motion
+  pointer branch re-navigates first so the click genuinely moves focus. The
+  E2E stack raises `RATE_LIMIT_SIGNUP` 10 → 30 with the suite's counted load
+  (11 registrations per run sharing one source address; the limiter replaces
+  the response after the row is created, which is what the two late-run
+  register failures were).
+
 ### Added
 
 - **A push to master now publishes both deploy artifacts** (`worker/parlor-w97-publish`).

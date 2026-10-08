@@ -1028,8 +1028,11 @@ describe("the second factor section", () => {
     // than a bare alert.
     renderMfa({ mfaStatus: vi.fn(() => Promise.reject(anIdentityError(404, "not_found"))) });
 
-    expect(await screen.findByRole("region", { name: "Second factor" })).toBeInTheDocument();
-    expect(screen.getByRole("alert")).toHaveTextContent(/could not load your second-factor status/i);
+    // The failure first: the region below is also present while loading, so
+    // the alert is what proves this render is the error state and not the
+    // loading one.
+    expect(await screen.findByRole("alert")).toHaveTextContent(/could not load your second-factor status/i);
+    expect(screen.getByRole("region", { name: "Second factor" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
   });
 

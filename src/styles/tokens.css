@@ -326,6 +326,27 @@
     outline-offset: 2px;
   }
 
+  /*
+   * POINTER FOCUS PAINTS NOTHING, AND THAT HAS TO BE SAID OUT LOUD.
+   *
+   * Measured in Chrome: a focused button computes `outline-width: 3px` with
+   * `outline-style: none` even when no author rule paints anything — the
+   * width the browser suite reads as "the unconditional ring is back". The
+   * style already says nothing is painted; the width needs the same answer
+   * explicitly, so this zeroes it on exactly the focus the base rule does
+   * not cover.
+   *
+   * LONGHANDS, never the `outline: none` shorthand: the shorthand resets the
+   * width to `medium`, which resolves back to the same 3px this rule exists
+   * to remove. Keyboard focus is untouched — `:not(:focus-visible)` excludes
+   * it, so the 2px halo above still applies there, including under the
+   * reduced-motion widening below.
+   */
+  .focus-ring:focus:not(:focus-visible) {
+    outline-style: none;
+    outline-width: 0;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .focus-ring:focus-visible {
       outline-width: 3px;

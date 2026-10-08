@@ -133,6 +133,7 @@ describe("register page", () => {
           ...CREDENTIALS,
           timestamp: 1759843200,
           signature: "minted-signature",
+          website: "",
         }),
       );
     });
@@ -283,6 +284,7 @@ describe("register page", () => {
           ...CREDENTIALS,
           timestamp: 1759843200,
           signature: "minted-signature",
+          website: "",
         }),
       );
       expect(sleep).toHaveBeenCalledWith(SIGNUP_PROOF_MIN_AGE_MS);
@@ -316,6 +318,7 @@ describe("register page", () => {
           ...CREDENTIALS,
           timestamp: 1759850400,
           signature: "renewed-signature",
+          website: "",
         }),
       );
       expect(identity.mintSignupTimestamp).toHaveBeenCalledTimes(2);

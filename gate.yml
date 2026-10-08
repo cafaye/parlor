@@ -712,9 +712,23 @@ gate:
     # the h1, form/confirmation control on the raised card). All 8 were
     # shown red before green; the narrow run is 76 passed on the four
     # files. The manager reconciles to exact at merge.
+    #
+    # IT IS 1006 BY THE NEXT ACCOUNT. 990 -> 997 is a +7 in the signup,
+    # settings-semantic and focus packet (P-07): 1 wire test in
+    # `src/lib/identity.test.ts` (the register body carries `website: ""`
+    # with the signed pair) plus 3 in `src/app/register/page.test.tsx`
+    # (the empty honeypot is sent, the trap is invisible and unreachable,
+    # a filled trap is sent as-is) plus 2 in
+    # `src/app/settings/page.test.tsx` (the Second factor landmark stands
+    # while loading and on error) plus 1 in `src/styles/tokens.test.ts`
+    # (pointer focus resolves no outline width). 6 of the 7 were shown red
+    # before green. AND 997 -> 1006 is a +9 the floor had not caught up
+    # with: HEAD already ran 999 while the floor still read 990, so the
+    # floor is reconciled to the exact full-suite count in the same commit.
+    # The manager reconciles to exact at merge.
     - id: suite
       match: '^[ ]*Tests[ ]+([0-9]+)[ ]+passed(?![ ]*\|)'
-      minimum: 990
+      minimum: 1006
     # The tally `tests/validate-ci.sh` prints, which is the second half of this
     # gate: the checks that the tree still has the shape CI assumes — one
     # runtime pin, `npm ci` and not `npm install`, the gate command, the
