@@ -426,6 +426,24 @@ describe("the allow-list", () => {
     expect(hops[0].method).toBe("POST");
   });
 
+  it("forwards the signup timestamp mint", async () => {
+    // The mint the register screen carries: `POST /v1/signup-timestamp` is
+    // public and unauthenticated exactly as `POST /v1/users` is, and until it
+    // was declared here a registration could mint no pair — so identity
+    // refused every submission with a 422 and the screen could only say
+    // something went wrong.
+    const { forward, hops } = forwarder();
+
+    const response = await forward(new Request("https://parlor.test/v1/signup-timestamp", {
+      method: "POST",
+    }), ["signup-timestamp"]);
+
+    expect(response.status).toBe(200);
+    expect(hops).toHaveLength(1);
+    expect(hops[0].url).toBe(`${IDENTITY_URL}/v1/signup-timestamp`);
+    expect(hops[0].method).toBe("POST");
+  });
+
   it("hands the lockout window back to the browser on a 423", async () => {
     // The 423's `Retry-After` is the one fact a person needs from a locked
     // second factor — the wait, not a bare "try again" — so it crosses back
@@ -983,7 +1001,13 @@ describe("the table and the clients agree", () => {
       transport: ({ url, method }) => checked(url, method),
     });
 
-    await client.register({ email: "kaka@example.com", password: "correct horse" });
+    await client.mintSignupTimestamp();
+    await client.register({
+      email: "kaka@example.com",
+      password: "correct horse",
+      timestamp: 1759843200,
+      signature: "minted-signature",
+    });
     await client.login({ email: "kaka@example.com", password: "correct horse" });
     // The second-factor login leg, walked through the same door. It resolves
     // on `{}` like the management routes do — `send` reads the body and finds

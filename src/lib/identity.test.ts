@@ -66,6 +66,17 @@ const problem = (
 const CREDENTIALS = { email: "kaka@example.com", password: "correct horse" };
 
 /**
+ * A minted signup timestamp pair, as `POST /v1/signup-timestamp` answers it.
+ *
+ * Identity verifies the pair on `POST /v1/users` — a forged, instant or
+ * expired pair is refused with the same generic 422 as any other validation
+ * failure — so a registration that does not carry one cannot succeed against
+ * a live service.
+ */
+const PAIR = { timestamp: 1759843200, signature: "minted-signature" };
+const REGISTRATION = { ...CREDENTIALS, ...PAIR };
+
+/**
  * Awaits a call that must fail and hands back the `IdentityError`.
  *
  * Better than `.catch(error => error as IdentityError)`, which types as
@@ -123,24 +134,24 @@ describe("base url", () => {
 });
 
 describe("register", () => {
-  it("posts the credentials to /v1/users as JSON", async () => {
+  it("posts the credentials and the signed timestamp pair to /v1/users as JSON", async () => {
     const { transport, calls } = stubTransport(() => json(201, { id: "usr_1", email: CREDENTIALS.email }));
     const client = createIdentityClient({ baseUrl, transport });
 
-    await client.register(CREDENTIALS);
+    await client.register(REGISTRATION);
 
     expect(calls).toHaveLength(1);
     expect(calls[0].url).toBe("https://identity.test/v1/users");
     expect(calls[0].method).toBe("POST");
     expect(calls[0].headers["Content-Type"]).toBe("application/json");
-    expect(JSON.parse(calls[0].body ?? "null")).toEqual(CREDENTIALS);
+    expect(JSON.parse(calls[0].body ?? "null")).toEqual(REGISTRATION);
   });
 
   it("sends no bearer token when registering", async () => {
     const { transport, calls } = stubTransport(() => json(201, { id: "usr_1", email: CREDENTIALS.email }));
     const client = createIdentityClient({ baseUrl, transport });
 
-    await client.register(CREDENTIALS);
+    await client.register(REGISTRATION);
 
     expect(calls[0].headers.Authorization).toBeUndefined();
   });
@@ -149,7 +160,7 @@ describe("register", () => {
     const { transport } = stubTransport(() => json(201, { id: "usr_1", email: "kaka@example.com" }));
     const client = createIdentityClient({ baseUrl, transport });
 
-    await expect(client.register(CREDENTIALS)).resolves.toEqual({
+    await expect(client.register(REGISTRATION)).resolves.toEqual({
       id: "usr_1",
       email: "kaka@example.com",
     });
@@ -166,7 +177,7 @@ describe("register", () => {
     );
     const client = createIdentityClient({ baseUrl, transport });
 
-    const error = await client.register(CREDENTIALS).catch((thrown: unknown) => thrown);
+    const error = await client.register(REGISTRATION).catch((thrown: unknown) => thrown);
 
     expect(error).toBeInstanceOf(IdentityError);
     const identityError = error as IdentityError;
@@ -187,11 +198,42 @@ describe("register", () => {
     const client = createIdentityClient({ baseUrl, transport });
 
     const error = (await client
-      .register(CREDENTIALS)
+      .register(REGISTRATION)
       .catch((thrown: unknown) => thrown)) as IdentityError;
 
     expect(error.code).toBe("conflict");
     expect(error.fieldErrors).toEqual([]);
+  });
+});
+
+describe("mintSignupTimestamp", () => {
+  it("posts to /v1/signup-timestamp with no body", async () => {
+    const { transport, calls } = stubTransport(() => json(200, PAIR));
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await client.mintSignupTimestamp();
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toBe("https://identity.test/v1/signup-timestamp");
+    expect(calls[0].method).toBe("POST");
+    expect(calls[0].body).toBeNull();
+    expect(calls[0].headers["Content-Type"]).toBeUndefined();
+  });
+
+  it("sends no bearer token when minting", async () => {
+    const { transport, calls } = stubTransport(() => json(200, PAIR));
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await client.mintSignupTimestamp();
+
+    expect(calls[0].headers.Authorization).toBeUndefined();
+  });
+
+  it("returns the minted pair on 200", async () => {
+    const { transport } = stubTransport(() => json(200, PAIR));
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await expect(client.mintSignupTimestamp()).resolves.toEqual(PAIR);
   });
 });
 
@@ -671,7 +713,7 @@ describe("error envelope parsing", () => {
     const client = createIdentityClient({ baseUrl, transport });
 
     const error = (await client
-      .register(CREDENTIALS)
+      .register(REGISTRATION)
       .catch((thrown: unknown) => thrown)) as IdentityError;
 
     expect(error.traceId).toBe("hdr_9");
@@ -688,7 +730,7 @@ describe("error envelope parsing", () => {
     const client = createIdentityClient({ baseUrl, transport });
 
     const error = (await client
-      .register(CREDENTIALS)
+      .register(REGISTRATION)
       .catch((thrown: unknown) => thrown)) as IdentityError;
 
     expect(error.message).toBe("email is not a deliverable address");
@@ -711,7 +753,7 @@ describe("error envelope parsing", () => {
     const client = createIdentityClient({ baseUrl, transport });
 
     const error = (await client
-      .register(CREDENTIALS)
+      .register(REGISTRATION)
       .catch((thrown: unknown) => thrown)) as IdentityError;
 
     expect(error.code).toBe("validation_failed");

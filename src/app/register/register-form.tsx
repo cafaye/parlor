@@ -44,7 +44,7 @@
  */
 
 import { Link } from "@tanstack/react-router";
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { Button, Callout, Field, FieldSummary, Input } from "@/components/ui";
 import { useAuth } from "@/lib/auth";
@@ -53,8 +53,8 @@ import {
   IdentityError,
   MIN_PASSWORD_LENGTH,
   fieldErrorMessage,
-  type Credentials,
   type FieldError,
+  type SignupTimestamp,
 } from "@/lib/identity";
 
 /**
@@ -97,6 +97,33 @@ export function RegisterForm() {
   // would still say `false` there. A ref is set synchronously, so this is the
   // only guard that actually closes the window.
   const inFlight = useRef(false);
+  /**
+   * The signed signup timestamp pair `POST /v1/users` requires, minted when
+   * the screen renders.
+   *
+   * Minted here rather than at submit because identity refuses a pair younger
+   * than two seconds as bot-like — a person needs seconds to fill a form and
+   * a bot submits instantly — so a mint-then-submit in one breath would always
+   * be refused. A submission without a pair is not attempted at all: identity
+   * would refuse it with a 422 before creating any row, so sending it anyway
+   * spends a request to learn nothing.
+   */
+  const [pair, setPair] = useState<SignupTimestamp | null>(null);
+  useEffect(() => {
+    let live = true;
+    void client
+      .mintSignupTimestamp()
+      .then((minted) => {
+        if (live) setPair(minted);
+      })
+      .catch(() => {
+        // Nothing to render yet: the failure is reported at submit, where the
+        // screen already has a sentence for "something went wrong".
+      });
+    return () => {
+      live = false;
+    };
+  }, [client]);
 
   const fields = state.kind === "local" || state.kind === "failed" ? state.fields : [];
   const errorFor = (field: string) => {
@@ -116,10 +143,18 @@ export function RegisterForm() {
     }
 
     inFlight.current = true;
-    const credentials: Credentials = { email: email.trim(), password };
     setState({ kind: "idle" });
     try {
-      const created = await register(credentials);
+      // The render-time mint, or a fresh one if the form rendered before it
+      // resolved. Either way the pair travels on the registration itself —
+      // identity verifies it before any row is created.
+      const proof = pair ?? (await client.mintSignupTimestamp());
+      const created = await register({
+        email: email.trim(),
+        password,
+        timestamp: proof.timestamp,
+        signature: proof.signature,
+      });
       setPassword("");
       // The account exists. Everything below is about a second, separable fact,
       // and none of its failures may un-say the first one.

@@ -177,6 +177,22 @@ paths:
           $ref: '#/components/responses/UpstreamUnavailable'
         "413":
           $ref: '#/components/responses/PayloadTooLarge'
+  /v1/signup-timestamp:
+    post:
+      tags: [identity]
+      summary: Mint a signed timestamp for the signup form.
+      description: >-
+        Forwards to identity's `POST /v1/signup-timestamp`. Takes no body and
+        no credential — public and unauthenticated, exactly as registration is —
+        and answers the `{timestamp, signature}` pair the register screen
+        carries on `POST /v1/users`. The payload is identity's contract.
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+        "413":
+          $ref: '#/components/responses/PayloadTooLarge'
   /v1/session:
     post:
       tags: [identity]

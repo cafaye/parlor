@@ -60,7 +60,22 @@ describe("register page", () => {
   });
 
   describe("with a valid address", () => {
-    it("sends the credentials to the service", async () => {
+    it("mints a signed signup timestamp when the screen renders", async () => {
+      // Identity requires the `{timestamp, signature}` pair `POST
+      // /v1/signup-timestamp` mints on every `POST /v1/users` — a missing,
+      // forged, instant or expired pair is refused with a generic 422 before
+      // any row is created. The pair is minted here, on render, rather than at
+      // submit: a pair younger than two seconds is refused as bot-like, and a
+      // mint-then-submit in one breath would always be one.
+      const identity = stubIdentity({
+        register: vi.fn(() => Promise.resolve({ id: "usr_1", email: CREDENTIALS.email })),
+      });
+      renderWithProviders(<RegisterPage />, { identity });
+
+      await waitFor(() => expect(identity.mintSignupTimestamp).toHaveBeenCalled());
+    });
+
+    it("sends the credentials and the minted pair to the service", async () => {
       const identity = stubIdentity({
         register: vi.fn(() => Promise.resolve({ id: "usr_1", email: CREDENTIALS.email })),
       });
@@ -69,7 +84,13 @@ describe("register page", () => {
       fillIn(CREDENTIALS);
       submit();
 
-      await waitFor(() => expect(identity.register).toHaveBeenCalledWith(CREDENTIALS));
+      await waitFor(() =>
+        expect(identity.register).toHaveBeenCalledWith({
+          ...CREDENTIALS,
+          timestamp: 1759843200,
+          signature: "minted-signature",
+        }),
+      );
     });
 
     it("confirms the account was created", async () => {
@@ -549,6 +570,26 @@ describe("register page", () => {
       const alert = await screen.findByRole("alert");
       expect(alert).toHaveTextContent(/went wrong/i);
       expect(alert).not.toHaveTextContent(/10\.0\.0\.4/);
+    });
+  });
+
+  describe("when the timestamp cannot be minted", () => {
+    it("reports a generic failure without attempting a registration", async () => {
+      // No pair means no registration worth attempting: identity would refuse
+      // the submission with a 422 before creating any row, so sending it anyway
+      // spends a request to learn nothing.
+      const identity = stubIdentity({
+        mintSignupTimestamp: vi.fn(() => Promise.reject(new TypeError("Failed to fetch"))),
+        register: vi.fn(() => Promise.resolve({ id: "usr_1", email: CREDENTIALS.email })),
+      });
+      renderWithProviders(<RegisterPage />, { identity });
+
+      fillIn(CREDENTIALS);
+      submit();
+
+      const alert = await screen.findByRole("alert");
+      expect(alert).toHaveTextContent(/went wrong/i);
+      expect(identity.register).not.toHaveBeenCalled();
     });
   });
 });

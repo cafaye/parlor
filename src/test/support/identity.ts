@@ -15,6 +15,7 @@ import { IdentityError, type IdentityClient, type User } from "@/lib/identity";
  * `undefined` — a form that calls `me()` because of a bug should say so.
  */
 export type StubIdentity = IdentityClient & {
+  mintSignupTimestamp: MockedFunction<IdentityClient["mintSignupTimestamp"]>;
   register: MockedFunction<IdentityClient["register"]>;
   login: MockedFunction<IdentityClient["login"]>;
   logout: MockedFunction<IdentityClient["logout"]>;
@@ -62,6 +63,13 @@ const unscripted = (method: string) =>
 
 export function stubIdentity(overrides: Partial<IdentityClient> = {}): StubIdentity {
   return {
+    // The signup timestamp mint resolves by default: the register screen mints
+    // on render, and a test that does not care about the pair should not have
+    // to script it. The values are a fixed fixture, never a live credential.
+    mintSignupTimestamp: vi.fn(
+      overrides.mintSignupTimestamp ??
+        (() => Promise.resolve({ timestamp: 1759843200, signature: "minted-signature" })),
+    ),
     register: vi.fn(overrides.register ?? unscripted("register")),
     login: vi.fn(overrides.login ?? unscripted("login")),
     logout: vi.fn(overrides.logout ?? unscripted("logout")),

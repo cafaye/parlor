@@ -363,6 +363,14 @@ export const ROUTES: readonly Route[] = [
   // for all four ways of not owning the id, which is the service's own
   // anti-probing stance and is not this file's to narrow or widen.
   { method: "POST", path: ["users"], upstream: "identity" },
+  // `POST /v1/signup-timestamp` mints the signed pair the register screen
+  // carries on `POST /v1/users`. Public and unauthenticated, exactly as
+  // registration is: a browser arriving at the form holds nothing but the
+  // address it was sent to. It takes no body and no credential, and it is in
+  // the table for the same reason every other entry is — the client can
+  // perform it (`mintSignupTimestamp` in `src/lib/identity.ts`) and the
+  // register screen drives it.
+  { method: "POST", path: ["signup-timestamp"], upstream: "identity" },
   { method: "POST", path: ["session"], upstream: "identity" },
   { method: "DELETE", path: ["session"], upstream: "identity" },
   { method: "GET", path: ["me"], upstream: "identity" },
