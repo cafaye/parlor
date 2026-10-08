@@ -1733,7 +1733,14 @@ self_test() {
   # planted key never began a line, the check correctly did not see it, and the
   # control reported a check that could not fail. A control that plants into the
   # end of a line plants nothing.
-  for proof in \
+  # The breakage list lives inside `proof_at` so it expands in the CALLER's
+  # shell: the worker's sandbox inside a worker (where it is eval'd), the main
+  # one in the materialize loop below (which reads only names). Expanding it
+  # once up front would bake one sandbox into every case. One list, expanded
+  # where it runs, never carried as text across shells.
+  proof_at() {
+    local n=0 proof
+    for proof in \
     "rm-workflow|rm -f '$SANDBOX/.github/workflows/ci.yml'" \
     "dead-uses-path|sed_i 's|\.github/workflows/ci\.reusable|workflows/ci.reusable|' '$SANDBOX/.github/workflows/ci.yml'" \
     "language-bun|sed_i 's|language: node|language: bun|' '$SANDBOX/.github/workflows/ci.yml'" \
@@ -1791,11 +1798,25 @@ self_test() {
     "the-lockfile-does-not-know-the-tarball|node -e 'const fs=require(\"fs\"),p=require(\"path\"),c=require(\"crypto\");const f=process.argv[1];const root=p.dirname(f);const l=JSON.parse(fs.readFileSync(f,\"utf8\"));const rel=\"vendor/thing-1.0.0.tgz\";fs.mkdirSync(p.join(root,\"vendor\"),{recursive:true});fs.writeFileSync(p.join(root,rel),\"a tarball\");l.packages[\"node_modules/thing\"]={version:\"1.0.0\",resolved:\"file:\"+rel,integrity:\"sha512-AAAA\"+c.createHash(\"sha512\").update(\"different bytes\").digest(\"base64\")};fs.writeFileSync(f,JSON.stringify(l,null,2)+\"\\n\")' '$SANDBOX/package-lock.json'" \
     "a-tally-helper-that-is-not-a-function|node -e 'const fs=require(\"fs\");const f=process.argv[1];const s=fs.readFileSync(f,\"utf8\");const m=/\\nexit 0\\n$/;if(!m.test(s))throw new Error(\"this script no longer ends in a bare exit 0\");fs.writeFileSync(f,s.replace(m,\"\\nskip \\\"a tally helper that is not a function\\\"\\nexit 0\\n\"))' '$SANDBOX/tests/validate-ci.sh'"
   do
-    # Materialize the breakage list into one file per case, so the workers
-    # below can claim cases by index. The list itself is unchanged: one
-    # throwaway copy per breakage, seeded from the pristine tree, each
-    # asserted to send the gate red.
-    printf '%s' "$proof" >"$SELFTEST_WORK/case-$total_cases"
+    if [ "$n" = "$1" ]; then printf '%s' "$proof"; return 0; fi
+    n=$((n + 1))
+  done
+    return 1
+  }
+
+  # Materialize the declared cases so the workers below can claim them by
+  # index. Only NAMES are written here: each worker re-derives its own
+  # breakage text through `proof_at`, which expands `$SANDBOX` in the
+  # WORKER's shell. Expanding the list here instead would bake the MAIN
+  # sandbox into every breakage (the list is double-quoted, so its single
+  # quotes protect nothing), and every worker would then mutate the main copy
+  # while seeding its own. That is not a worry: the first parallel run died
+  # exactly that way, with two cases' `rm`s accumulating in one tree until a
+  # `sed` on an already-deleted file killed a worker under `set -e`.
+  total_cases=0
+  while proof=$(proof_at "$total_cases"); do
+    name=${proof%%|*}
+    printf '%s' "$name" >"$SELFTEST_WORK/case-$total_cases"
     total_cases=$((total_cases + 1))
   done
 
@@ -1840,8 +1861,20 @@ self_test() {
       mkdir -p "$SELFTEST_WORK/worker-$w"
       i=$start
       while [ "$i" -lt "$end" ]; do
-        proof=$(cat "$SELFTEST_WORK/case-$i")
-        name=${proof%%|*}
+        # First: claim this case's private directory, BEFORE anything expands
+        # `$SANDBOX`. `proof_at` below resolves the breakage text in this
+        # shell, so it must see this case's directory — not the previous
+        # case's, and never the main one the worker inherits.
+        SANDBOX="$SELFTEST_WORK/worker-$w/case-$i"
+        mkdir -p "$SANDBOX"
+        name=$(cat "$SELFTEST_WORK/case-$i")
+        proof=$(proof_at "$i")
+        # The worker expands its own breakage text (see `proof_at`): the name
+        # on file must agree with the text, or the list moved under us.
+        if [ "${proof%%|*}" != "$name" ]; then
+          printf 'self_test: case %s disagrees with the declared list; failing loudly\n' "$i" >&2
+          exit 1
+        fi
         breakage=${proof#*|}
         axis=$(breakage_axis "$name")
         # THE AXIS RULE, moved here with its meaning unchanged from the
@@ -1863,8 +1896,6 @@ self_test() {
           # One throwaway copy per breakage, seeded from the pristine one.
           # A private directory per case, never shared between cases: the
           # worker reuses nothing, and each seed starts from an empty dir.
-          SANDBOX="$SELFTEST_WORK/worker-$w/case-$i"
-          mkdir -p "$SANDBOX"
           seed_sandbox
           # shellcheck disable=SC2086  # the breakage list is deliberately a string
           eval "$breakage"
