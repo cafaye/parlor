@@ -143,7 +143,15 @@ test("every interactive primitive is keyboard-reachable and paints a visible foc
   // the ring is read from the element the walk is genuinely resting on rather
   // than reconstructed afterwards.
   const rings: Array<{ name: string; width: string; style: string; offset: string }> = [];
-  for (let step = 0; step < 8; step++) {
+  // Identity of the elements already visited, by DOM element — NOT by
+  // accessible name. The login page holds two distinct "Create account" links
+  // (header + "No account yet?"), so stopping on a repeated NAME treats the
+  // second legitimate link as a cycle and exits before the login fields.
+  const seenIds = new Set<number>();
+  // Bounded: a full Tab cycle on this page is a handful of controls, and the
+  // revisit break above stops a second lap, so this cap only fires when focus
+  // never cycles (a product defect worth failing on via the assertions below).
+  for (let step = 0; step < 24; step++) {
     await page.keyboard.press("Tab");
     const here = await page.evaluate(() => {
       const active = document.activeElement as HTMLElement | null;
@@ -158,8 +166,17 @@ test("every interactive primitive is keyboard-reachable and paints a visible foc
       const fromAria = active.getAttribute("aria-label")?.trim() ?? "";
       const fromText = active.textContent?.trim() ?? "";
       const name = [fromAria, fromLabel, fromText].find((value) => value.length > 0) ?? "";
+      // Stamp the element itself so a repeated NAME on a different element
+      // (the two "Create account" links) does not read as a focus cycle.
+      const stamped = active as HTMLElement & { __focusWalkId?: number };
+      if (typeof stamped.__focusWalkId !== "number") {
+        const holder = window as unknown as { __focusWalkNextId?: number };
+        holder.__focusWalkNextId = (holder.__focusWalkNextId ?? 0) + 1;
+        stamped.__focusWalkId = holder.__focusWalkNextId;
+      }
       const style = getComputedStyle(active);
       return {
+        id: stamped.__focusWalkId,
         name: `${active.tagName.toLowerCase()}:${name || "(unnamed)"}`,
         width: style.outlineWidth,
         style: style.outlineStyle,
@@ -169,9 +186,10 @@ test("every interactive primitive is keyboard-reachable and paints a visible foc
     // The walk leaves the document and comes back around the header, so BODY
     // is a real step and not a failure — it just has no ring to paint.
     if (here === null) continue;
-    if (order.includes(here.name)) break;
+    if (seenIds.has(here.id)) break;
+    seenIds.add(here.id);
     order.push(here.name);
-    rings.push(here);
+    rings.push({ name: here.name, width: here.width, style: here.style, offset: here.offset });
   }
 
   // Both form controls and the submit, reachable in document order, all named.
