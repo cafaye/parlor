@@ -73,6 +73,12 @@ hidden). Follow-up packet: close the dialog on refusal or move the error
 inside it. Recorded in CHANGELOG; tests assert the copy through the hidden
 subtree so the gap stays visible.
 
+**Closed by P-10** (`REPORT-parlor-m134-base-dialog-p10.md`): refusal/failure
+now closes the dialog and exposes the existing page-level `role="alert"` in
+the visible tree. The three `{ hidden: true }` alert queries are back to the
+normal visible query; the Rename comparison control's hidden query stays (a
+visual-comparison test of a background control, not an error message).
+
 ## Handoff notes for the manager
 
 - Merge, gate (`./bin/prime`), one full browser suite (covers the new e2e

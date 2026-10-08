@@ -693,6 +693,12 @@ function DeleteAccountPanel({ token }: { token: string }) {
       forgetSession();
       void router.push("/register");
     } catch (thrown) {
+      // The dialog closes so the refusal is readable where the person is: the
+      // panel-level alert renders behind an open dialog, which the modal hides
+      // from assistive tech. Focus returns to the Delete control via the
+      // dialog's default restoration; the token survives because the account
+      // still exists.
+      setConfirming(false);
       if (thrown instanceof IdentityError && thrown.status === 409) {
         // The service's own detail names the accounts to transfer or delete
         // first. It is a user-facing sentence, not an internal detail.

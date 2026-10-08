@@ -6,6 +6,27 @@ All notable changes to parlor are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **A refused account delete closes the confirmation and says so in the
+  visible page** (P-10; closes the P-09 known gap above). `ConfirmDialog`
+  made the background inert/`aria-hidden`, so the refusal alert rendered on
+  the screen behind the still-open dialog was unreachable to assistive tech.
+  `DangerZone.destroy`/`leave` in `account-screen.tsx` and
+  `DeleteAccountPanel.destroyAccount` in `settings-screen.tsx` now close the
+  dialog on refusal/failure, exposing the existing page-level `role="alert"`
+  (same copy, same sentences) with no modal blocking it; focus returns to the
+  Delete/Leave control via the dialog's default restoration, the busy guard
+  (`useRef` + `busy`) is unchanged, and the failed request leaves the account
+  and the session token intact. No service contract, copy, deletion-behavior
+  or authorization change. `dialog.tsx`'s semantics comment corrected: Base UI
+  supplies the dialog role and title/description association but prints no
+  `aria-modal`; `ConfirmDialog`'s explicit `aria-modal="true"` (and its test)
+  is where the modal decision lives. No new E2E: the moved error state is a
+  stubbed-refusal path the unit tests cover truthfully, and the existing
+  design-system browser test already proves the open/close inertness around
+  it. Suite floor unchanged at 1008.
+
 ### Changed
 
 - **The destructive confirmation is a Base UI dialog, not a hand-built trap**

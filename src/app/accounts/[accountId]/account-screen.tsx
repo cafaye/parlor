@@ -643,6 +643,11 @@ function DangerZone({ role, accountId }: { role: Role; accountId: string }) {
       // `login-form.tsx`, which is where the same decision is spelled out.
       void router.push("/accounts");
     } catch (thrown) {
+      // The dialog closes so the failure is readable where the person is: the
+      // page-level alert renders behind an open dialog, which the modal hides
+      // from assistive tech. Focus returns to the Leave control via the
+      // dialog's default restoration.
+      setConfirmingLeave(false);
       setError(leaveFailure(thrown));
       inFlight.current = false;
     }
@@ -659,6 +664,9 @@ function DangerZone({ role, accountId }: { role: Role; accountId: string }) {
       // failed must not be reported as a refusal to delete.
       void router.push("/accounts");
     } catch (thrown) {
+      // Same reason as `leave()` above: the refusal must land in the visible
+      // page, not behind the still-open modal.
+      setConfirming(false);
       setError(deleteFailure(thrown));
       inFlight.current = false;
     }

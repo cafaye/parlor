@@ -24,9 +24,11 @@ type StringClassProps<T extends { className?: unknown }> = Omit<T, "className"> 
  * which is Base UI rather than Radix: `Root` owns the open state, `Portal`
  * moves the popup to `<body>`, `Backdrop` dims the page, `Viewport` centers
  * the popup, and `Popup`/`Title`/`Description` carry the accessible dialog
- * semantics (`role="dialog"`, `aria-modal`, the labelled-by/described-by
- * wiring) that the hand-built `<div role="dialog">` in `confirm-dialog.tsx`
- * used to assemble by hand.
+ * semantics (`role="dialog"`, the labelled-by/described-by wiring — but not
+ * `aria-modal`, which the primitives do not print) that the hand-built
+ * `<div role="dialog">` in `confirm-dialog.tsx`
+ * used to assemble by hand. `ConfirmDialog` states `aria-modal="true"`
+ * explicitly on its popup, where the modal decision is made.
  *
  * What Base UI owns here, so this file does not reimplement it: the focus
  * trap (Tab and Shift+Tab stay inside while open), initial and final focus,
