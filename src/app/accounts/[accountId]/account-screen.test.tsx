@@ -780,13 +780,14 @@ describe("deleting an account", () => {
     fireEvent.click(await screen.findByRole("button", { name: /delete/i }));
     fireEvent.click(screen.getByRole("button", { name: "Delete this account" }));
 
-    // The refusal renders on the screen behind the still-open dialog, which
-    // the dialog foundation hides from the accessibility tree — so the query
-    // opts into the hidden subtree. Same role, same copy; the `hidden` flag
-    // names where the alert is, not a weaker claim about it.
-    expect(await screen.findByRole("alert", { hidden: true })).toHaveTextContent(
+    // The refusal must be readable where the person is: the dialog closes and
+    // the page-level alert is exposed in the visible tree — no modal blocks
+    // it. A query that has to opt into the hidden subtree would prove the
+    // alert exists while proving nobody using assistive tech can reach it.
+    expect(await screen.findByRole("alert")).toHaveTextContent(
       /only an owner can delete/i,
     );
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(push).not.toHaveBeenCalled();
   });
 

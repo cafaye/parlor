@@ -1286,12 +1286,13 @@ describe("the delete account panel", () => {
     fireEvent.change(input, { target: { value: "Kaka" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete my account" }));
 
-    // The refusal renders on the screen behind the still-open dialog, which
-    // the dialog foundation hides from the accessibility tree — so the query
-    // opts into the hidden subtree. Same role, same copy.
-    const alert = await screen.findByRole("alert", { hidden: true });
+    // The refusal must be readable where the person is: the dialog closes and
+    // the page-level alert is exposed in the visible tree — no modal blocks
+    // it.
+    const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent(/sole owner of a team account/);
     expect(alert).toHaveTextContent(/Acme/);
+    expect(screen.queryByRole("dialog")).toBeNull();
     // The token survives a refusal: the account still exists, and clearing the
     // credential would strand somebody inside a session they still hold.
     expect(createTokenStore().get()).not.toBeNull();
@@ -1322,9 +1323,11 @@ describe("the delete account panel", () => {
     fireEvent.change(input, { target: { value: "Kaka" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete my account" }));
 
-    // Behind the still-open dialog (see the 409 test above for why `hidden`).
-    const alert = await screen.findByRole("alert", { hidden: true });
+    // The failure closes the dialog and lands in the visible page alert, where
+    // the person can read it and choose what to do next.
+    const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent(/could not delete your account/i);
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(alert).not.toHaveTextContent(/ECONNREFUSED/);
     expect(alert).not.toHaveTextContent(/10\.0\.0\.4/);
   });
