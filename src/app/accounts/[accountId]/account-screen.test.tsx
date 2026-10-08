@@ -838,3 +838,74 @@ describe("deleting an account", () => {
     expect(identity.deleteAccount).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Expressive list-first composition
+// ---------------------------------------------------------------------------
+
+describe("expressive detail composition", () => {
+  it("carries the product eyebrow above the account heading", async () => {
+    // Same header block as the list and the auth screens, so the account
+    // surfaces read as one product. The eyebrow adds no copy: "parlor" is the
+    // product name already on the page (the shell brand). A paragraph, so the
+    // account's name stays the page's only h1.
+    signIn();
+    renderWithProviders(<AccountScreen accountId={ACCOUNT_ID} />, { identity: asCaller() });
+
+    const heading = await screen.findByRole("heading", { level: 1 });
+    const eyebrow = screen.getByText("parlor");
+    expect(eyebrow.tagName).toBe("P");
+    expect(eyebrow.compareDocumentPosition(heading)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it("stacks a member row's actions below the member on narrow screens", async () => {
+    // List-first rows: the member is the primary line and the role/remove
+    // actions sit below it on mobile, right-aligned beside it on desktop.
+    // Asserted on the row's own container — the exact element, reached through
+    // the actions it holds — so an incidental `flex-col` higher up the tree
+    // cannot satisfy it.
+    signIn();
+    const identity = asCaller({
+      role: "owner",
+      members: [aMembership({ user_id: "usr_other", role: "member" })],
+    });
+    renderWithProviders(<AccountScreen accountId={ACCOUNT_ID} />, { identity });
+
+    const panel = await screen.findByRole("region", { name: "Members" });
+    const remove = await within(panel).findByRole("button", { name: /remove/i });
+    const container = remove.parentElement?.parentElement;
+    expect(container?.className.split(" ")).toContain("flex-col");
+  });
+
+  it("stacks the leave row's action below its explanation on narrow screens", async () => {
+    signIn();
+    renderWithProviders(<AccountScreen accountId={ACCOUNT_ID} />, { identity: asCaller({ role: "member" }) });
+
+    const zone = await screen.findByRole("region", { name: "Leaving and deleting" });
+    const leave = await within(zone).findByRole("button", { name: "Leave" });
+    expect(leave.closest("div")?.className.split(" ")).toContain("flex-col");
+  });
+
+  it("stacks the delete row's action below its explanation on narrow screens", async () => {
+    signIn();
+    renderWithProviders(<AccountScreen accountId={ACCOUNT_ID} />, { identity: asCaller({ role: "owner" }) });
+
+    const zone = await screen.findByRole("region", { name: "Leaving and deleting" });
+    const del = await within(zone).findByRole("button", { name: "Delete account" });
+    expect(del.closest("div")?.className.split(" ")).toContain("flex-col");
+  });
+
+  it("keeps every section a named region, so the panels stay landmarks", async () => {
+    // The Panel contract: `role="region"` with a required `headingId`. This
+    // pins the regions the restyle must not unmake — composition may move
+    // things inside a panel, never the panel's own landmark. Green before and
+    // after, by design: it is the guard, not the change.
+    signIn();
+    renderWithProviders(<AccountScreen accountId={ACCOUNT_ID} />, { identity: asCaller({ role: "owner" }) });
+
+    await screen.findByRole("heading", { level: 1 });
+    for (const name of ["Account", "Invite somebody", "Members", "Leaving and deleting"]) {
+      expect(screen.getByRole("region", { name })).toBeInTheDocument();
+    }
+  });
+});

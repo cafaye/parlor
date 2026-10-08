@@ -463,3 +463,40 @@ describe("creating an account", () => {
     expect(screen.getByLabelText("Account name")).toHaveValue("Acme Corp");
   });
 });
+
+describe("expressive list-first composition", () => {
+  const rows = [
+    anAccountListItem({ id: "acc_one", name: "Acme Corp", slug: "acme-corp", role: "owner" }),
+    anAccountListItem({ id: "acc_two", name: "Personal", slug: "personal", role: "member", personal: true }),
+  ];
+
+  it("carries the product eyebrow above the heading, reusing the route's own label", () => {
+    // Same header block as `/login` and `/register` — the account screens read
+    // as one product with the auth screens. The eyebrow adds no copy: "parlor"
+    // is the product name already on the page (the shell brand). A paragraph,
+    // not a heading, so the page keeps exactly one h1.
+    signIn();
+    renderWithProviders(<AccountsPage />, { identity: signedIn([]) });
+
+    const main = screen.getByRole("main");
+    const eyebrow = within(main).getByText("parlor");
+    expect(eyebrow.tagName).toBe("P");
+    expect(eyebrow.compareDocumentPosition(within(main).getByRole("heading", { level: 1 }))).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  it("stacks each row's facts below the name on narrow screens", async () => {
+    // The responsive contract for the list-first rows: the account name is the
+    // primary line and the membership facts sit below it on mobile,
+    // right-aligned beside it on desktop. Asserted as the wiring check the
+    // raised-card one is — the layout hook, not copy — so it fails if a row
+    // ever goes back to incidental wrap, where the facts land wherever the
+    // viewport happens to put them.
+    signIn();
+    renderWithProviders(<AccountsPage />, { identity: signedIn(rows) });
+
+    const row = await screen.findByRole("link", { name: /Acme Corp/ });
+    expect(row.className.split(" ")).toContain("flex-col");
+  });
+});
