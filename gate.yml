@@ -702,9 +702,19 @@ gate:
     # h1, six section headings in existing order, delete-row mobile-stack).
     # 4 of the 7 were shown red before green; the narrow run is 89 passed on
     # the two files. The manager reconciles to exact at merge.
+    #
+    # IT IS 990 BY THE NEXT ACCOUNT. 982 -> 990, a +8 in the recovery and
+    # verify-email packet (P-05): 2 composition tests per screen in
+    # `src/app/forgot-password/page.test.tsx`,
+    # `src/app/reset-password/page.test.tsx`,
+    # `src/app/verify-email/page.test.tsx` and
+    # `src/app/verify-email/confirm/page.test.tsx` (product eyebrow above
+    # the h1, form/confirmation control on the raised card). All 8 were
+    # shown red before green; the narrow run is 76 passed on the four
+    # files. The manager reconciles to exact at merge.
     - id: suite
       match: '^[ ]*Tests[ ]+([0-9]+)[ ]+passed(?![ ]*\|)'
-      minimum: 982
+      minimum: 990
     # The tally `tests/validate-ci.sh` prints, which is the second half of this
     # gate: the checks that the tree still has the shape CI assumes — one
     # runtime pin, `npm ci` and not `npm install`, the gate command, the

@@ -1,3 +1,5 @@
+import { Surface } from "@/components/ui";
+
 import { ResetPasswordForm } from "./reset-password-form";
 
 /**
@@ -32,13 +34,22 @@ export default function ResetPasswordPage({
   return (
     <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center px-6 py-16">
       <div className="flex flex-col gap-6">
-        <div className="flex flex-col gap-1 text-center">
-          <h1 className="text-2xl font-semibold tracking-tight">Choose a new password</h1>
+        {/* The header block: eyebrow, heading, supporting line — above the
+            card, not inside it. Same composition as `/login`, so the
+            token-spending screen reads as one product with the sign-in screen
+            it returns to. The eyebrow adds no copy: "parlor" is already on the
+            page. The heading steps up one rung and no further. */}
+        <div className="flex flex-col gap-2 text-center">
+          <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted">parlor</p>
+          <h1 className="text-3xl font-semibold tracking-tight">Choose a new password</h1>
           <p className="text-sm text-muted">
             This link works once. Choosing a new password signs you out everywhere.
           </p>
         </div>
-        <ResetPasswordForm token={token ?? null} />
+        {/* The card: the form sits on the system's raised surface. */}
+        <Surface className="flex flex-col gap-6">
+          <ResetPasswordForm token={token ?? null} />
+        </Surface>
       </div>
     </main>
   );

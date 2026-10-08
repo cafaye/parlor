@@ -1,3 +1,5 @@
+import { Surface } from "@/components/ui";
+
 import { VerifyEmailConfirmForm } from "./verify-email-confirm-form";
 
 /**
@@ -31,13 +33,22 @@ export default function VerifyEmailConfirmPage({
   return (
     <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center px-6 py-16">
       <div className="flex flex-col gap-6">
-        <div className="flex flex-col gap-1 text-center">
-          <h1 className="text-2xl font-semibold tracking-tight">Verify your email</h1>
+        {/* The header block: eyebrow, heading, supporting line — above the
+            card, not inside it. Same composition as the request screen it
+            pairs with. The eyebrow adds no copy: "parlor" is already on the
+            page. The heading steps up one rung and no further. */}
+        <div className="flex flex-col gap-2 text-center">
+          <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted">parlor</p>
+          <h1 className="text-3xl font-semibold tracking-tight">Verify your email</h1>
           <p className="text-sm text-muted">
             Confirming your address does not change your password or sign you out.
           </p>
         </div>
-        <VerifyEmailConfirmForm token={token ?? null} />
+        {/* The card: the confirmation control sits on the system's raised
+            surface. */}
+        <Surface className="flex flex-col gap-6">
+          <VerifyEmailConfirmForm token={token ?? null} />
+        </Surface>
       </div>
     </main>
   );

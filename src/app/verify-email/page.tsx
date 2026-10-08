@@ -1,5 +1,7 @@
 import { Link } from "@tanstack/react-router";
 
+import { Surface } from "@/components/ui";
+
 import { VerifyEmailForm } from "./verify-email-form";
 
 
@@ -27,13 +29,21 @@ export default function VerifyEmailPage() {
   return (
     <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center px-6 py-16">
       <div className="flex flex-col gap-6">
-        <div className="flex flex-col gap-1 text-center">
-          <h1 className="text-2xl font-semibold tracking-tight">Verify your email</h1>
+        {/* The header block: eyebrow, heading, supporting line — above the
+            card, not inside it. Same composition as the other auth screens.
+            The eyebrow adds no copy: "parlor" is already on the page. The
+            heading steps up one rung and no further. */}
+        <div className="flex flex-col gap-2 text-center">
+          <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted">parlor</p>
+          <h1 className="text-3xl font-semibold tracking-tight">Verify your email</h1>
           <p className="text-sm text-muted">
             Tell us the address on the account and we will send a link to verify it.
           </p>
         </div>
-        <VerifyEmailForm />
+        {/* The card: the form sits on the system's raised surface. */}
+        <Surface className="flex flex-col gap-6">
+          <VerifyEmailForm />
+        </Surface>
         <p className="text-center text-sm text-muted">
           <Link className="underline hover:no-underline" to="/login">
             Back to sign in
