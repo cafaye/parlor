@@ -1345,3 +1345,62 @@ describe("the delete account panel", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Expressive composition, unchanged headings and grouping
+// ---------------------------------------------------------------------------
+
+describe("expressive settings composition", () => {
+  it("carries the product eyebrow above the settings heading", () => {
+    // Same header block as the account screens and the auth screens, so
+    // settings reads as one product with them. The eyebrow adds no copy:
+    // "parlor" is the product name already on the page (the shell brand). A
+    // paragraph, so "Settings" stays the page's only h1.
+    renderSettings();
+
+    const heading = screen.getByRole("heading", { level: 1 });
+    const eyebrow = screen.getByText("parlor");
+    expect(eyebrow.tagName).toBe("P");
+    expect(eyebrow.compareDocumentPosition(heading)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it("keeps every section under its existing heading, in the existing order", async () => {
+    // No regrouping: regrouping is a flow change. The six panels keep their
+    // headings and their reading order — who you are, your address, your
+    // second factor, everywhere you are signed in, this session, and the one
+    // irreversible thing last.
+    renderSettings();
+    await screen.findByText("Not verified");
+
+    // Read through `aria-labelledby`, which is the Panel contract: each
+    // region is labelled by its own heading, so the heading text is the
+    // region's accessible name.
+    const names = screen.getAllByRole("region").map((region) => {
+      const labelledBy = region.getAttribute("aria-labelledby");
+      const heading = labelledBy ? document.getElementById(labelledBy) : null;
+      return heading?.textContent ?? "";
+    });
+    expect(names).toEqual([
+      "Display name",
+      "Email",
+      "Second factor",
+      "Sessions",
+      "Session",
+      "Delete account",
+    ]);
+  });
+
+  it("stacks the delete row's action below its explanation on narrow screens", async () => {
+    // The one irreversible control sits below its explanation on mobile and
+    // right-aligned beside it from `sm` up — the same list-first row shape the
+    // account detail's leave/delete rows took in P-03. Asserted on the row's
+    // own container, so an incidental `flex-col` higher up the tree cannot
+    // satisfy it.
+    renderSettings();
+    await screen.findByText("Not verified");
+
+    const zone = await screen.findByRole("region", { name: "Delete account" });
+    const del = await within(zone).findByRole("button", { name: "Delete account" });
+    expect(del.closest("div")?.className.split(" ")).toContain("flex-col");
+  });
+});
+

@@ -397,3 +397,85 @@ describe("when nobody is signed in", () => {
     expect(identity.acceptInvitation).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Expressive composition, unchanged state copy
+// ---------------------------------------------------------------------------
+
+describe("expressive invitation composition", () => {
+  it("carries the product eyebrow above the invited heading", async () => {
+    // Same header block as the account screens and the auth screens, so the
+    // invitation reads as one product with them. The eyebrow adds no copy:
+    // "parlor" is the product name already on the page (the shell brand). A
+    // paragraph, so the invitation heading stays the page's only h1.
+    signIn();
+    renderWithProviders(<InvitationScreen token={INVITATION} />, { identity: signedIn() });
+
+    const heading = await screen.findByRole("heading", { level: 1 });
+    const eyebrow = screen.getByText("parlor");
+    expect(eyebrow.tagName).toBe("P");
+    expect(eyebrow.compareDocumentPosition(heading)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it("keeps the pending copy byte-identical under the new composition", async () => {
+    // Pending/accepted/expired wording is contract vocabulary, not
+    // decoration: the composition may add the eyebrow and nothing else.
+    signIn();
+    renderWithProviders(<InvitationScreen token={INVITATION} />, { identity: signedIn() });
+
+    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent(
+      "You have been invited",
+    );
+    expect(screen.getByRole("button", { name: "Accept invitation" })).toBeInTheDocument();
+    expect(
+      screen.getByText("We cannot show you which account this is until you accept it."),
+    ).toBeInTheDocument();
+  });
+
+  it("carries the product eyebrow above the accepted heading, with its copy unchanged", async () => {
+    signIn();
+    const identity = signedIn({
+      acceptInvitation: vi.fn(() => Promise.resolve(aMembership({ account_id: ACCOUNT_ID }))),
+    });
+    renderWithProviders(<InvitationScreen token={INVITATION} />, { identity });
+
+    fireEvent.click(await screen.findByRole("button", { name: /accept/i }));
+
+    // Name-qualified: a bare level-1 lookup resolves immediately to the
+    // still-on-screen pending heading.
+    const heading = await screen.findByRole("heading", { name: "You are in" });
+    expect(heading).toHaveTextContent("You are in");
+    const eyebrow = screen.getByText("parlor");
+    expect(eyebrow.tagName).toBe("P");
+    expect(eyebrow.compareDocumentPosition(heading)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it("keeps the gone and unrecognised headings byte-identical", async () => {
+    // The two token states each keep their exact sentence: the expired-state
+    // copy the E2E tier visits, and the 404 that must never say "expired".
+    signIn();
+    const gone = signedIn({
+      acceptInvitation: vi.fn(() => Promise.reject(failure(410, "gone", "this invitation has expired"))),
+    });
+    const { unmount } = renderWithProviders(<InvitationScreen token={INVITATION} />, {
+      identity: gone,
+    });
+    fireEvent.click(await screen.findByRole("button", { name: /accept/i }));
+    // Name-qualified, like the existing state tests: a bare level-1 lookup
+    // resolves immediately to the still-on-screen pending heading, which
+    // asserts nothing about the state this click reaches.
+    expect(
+      await screen.findByRole("heading", { name: "This invitation can no longer be used" }),
+    ).toHaveTextContent("This invitation can no longer be used");
+    unmount();
+
+    const unknown = signedIn({
+      acceptInvitation: vi.fn(() => Promise.reject(failure(404, "not_found", "no invitation matches that token"))),
+    });
+    renderWithProviders(<InvitationScreen token={INVITATION} />, { identity: unknown });
+    fireEvent.click(await screen.findByRole("button", { name: /accept/i }));
+    expect(await screen.findByRole("heading", { name: "Invitation not recognised" })).toHaveTextContent(
+      "Invitation not recognised",
+    );
+  });
+});
