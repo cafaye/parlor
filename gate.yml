@@ -726,9 +726,16 @@ gate:
     # with: HEAD already ran 999 while the floor still read 990, so the
     # floor is reconciled to the exact full-suite count in the same commit.
     # The manager reconciles to exact at merge.
+    # IT IS 1008 BY THE NEXT ACCOUNT. 1006 -> 1008, a +2 in
+    # `src/components/ui/confirm-dialog.test.tsx`, the modal-inertness pair the
+    # Base UI packet (P-09) adds: while the dialog is open the opener sits
+    # under `aria-hidden`, and after close the mark is gone. Both were shown
+    # red before green (2 failed, 7 passed on the file) against the hand-built
+    # div, which dimmed the page without hiding it. The manager reconciles to
+    # exact at merge.
     - id: suite
       match: '^[ ]*Tests[ ]+([0-9]+)[ ]+passed(?![ ]*\|)'
-      minimum: 1006
+      minimum: 1008
     # The tally `tests/validate-ci.sh` prints, which is the second half of this
     # gate: the checks that the tree still has the shape CI assumes — one
     # runtime pin, `npm ci` and not `npm install`, the gate command, the

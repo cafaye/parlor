@@ -6,6 +6,30 @@ All notable changes to parlor are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **The destructive confirmation is a Base UI dialog, not a hand-built trap**
+  (P-09). `src/components/ui/confirm-dialog.tsx` composed `role="dialog"`,
+  focus trapping, Escape handling and focus restoration by hand (~60 lines of
+  application-owned modal machinery); it now composes the shadcn/ui Base UI
+  primitives in the new `src/components/ui/dialog.tsx` wrapper (`Root`,
+  `Portal`, `Viewport`, `Backdrop`, `Popup`, `Title`, `Description`), keeping
+  every Cafaye token, the `ConfirmDialog` public API, all copy/labels/styling
+  and all call sites. New modal property the div never provided: while open,
+  the page behind is hidden from assistive interaction (`aria-hidden` on
+  outside content) with focus trapped, scroll locked and outside press never
+  dismissing; Escape closes only when not busy. `aria-modal="true"` is stated
+  on the popup (the primitive does not print it). New dependency, exact:
+  `@base-ui/react: 1.8.0` (verified current stable via npm metadata; no
+  Radix, React Aria, second class library, icon package or CLI). Measured:
+  main client chunk 342k → 393k raw (106k → 123k gzip, +17k); `dist/` total
+  4256k → 4440k; `node_modules/@base-ui/react` is 19M on disk. Suite floor
+  1006 → 1008 (the two new modal-inertness tests). Known gap surfaced, not
+  fixed (flows frozen by this packet): a refused delete renders its error
+  alert on the screen *behind* the still-open dialog, which the truthful modal
+  now hides from assistive tech until the dialog closes — the follow-up is to
+  close the dialog on refusal or move the error inside it.
+
 ### Fixed
 
 - **The E2E gateway healthcheck probes the shipped Go image binary** (P-08).
