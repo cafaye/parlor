@@ -100,7 +100,7 @@ test("settings renders its existing sections after a real register and sign-in",
     "Session",
     "Delete account",
   ]) {
-    await expect(page.getByRole("region", { name: section })).toBeVisible();
+    await expect(page.getByRole("region", { name: section, exact: true })).toBeVisible();
   }
 
   // And the Second factor panel is not only standing but ANSWERED: a fresh
