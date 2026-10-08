@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 
+import { Surface } from "@/components/ui";
 import { SocialProviderButtons } from "@/components/social/social-provider-buttons";
 
 import { LoginForm, PASSWORD_CHANGED_PARAM } from "./login-form";
@@ -36,8 +37,14 @@ export default function LoginPage({
   return (
     <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center px-6 py-16">
       <div className="flex flex-col gap-6">
-        <div className="flex flex-col gap-1 text-center">
-          <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
+        {/* The header block: eyebrow, heading, supporting line — above the
+            card, not inside it. The eyebrow adds no copy: "parlor" is the
+            product name already on the page (the shell brand, the route's own
+            title). The heading steps up one rung (text-2xl -> text-3xl) and no
+            further: body and metadata sizes are unchanged. */}
+        <div className="flex flex-col gap-2 text-center">
+          <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted">parlor</p>
+          <h1 className="text-3xl font-semibold tracking-tight">Sign in</h1>
           <p className="text-sm text-muted">
             No account yet?{" "}
             <Link className="underline hover:no-underline" to="/register">
@@ -45,13 +52,17 @@ export default function LoginPage({
             </Link>
           </p>
         </div>
-        {/* The provider way in. Rendered UNCONDITIONALLY and above the form,
-            for the same reason the "forgot your password" link below is: a
-            control that appeared only after something else had happened would be
-            reporting something. This one reports nothing — it is a link to the
-            forwarder, and whether it leads anywhere is the service's answer. */}
-        <SocialProviderButtons />
-        <LoginForm passwordChanged={passwordChanged} />
+        {/* The card: the way in sits on the system's raised surface. Order
+            inside is unchanged — provider buttons, then the form. */}
+        <Surface className="flex flex-col gap-6">
+          {/* The provider way in. Rendered UNCONDITIONALLY and above the form,
+              for the same reason the "forgot your password" link below is: a
+              control that appeared only after something else had happened would be
+              reporting something. This one reports nothing — it is a link to the
+              forwarder, and whether it leads anywhere is the service's answer. */}
+          <SocialProviderButtons />
+          <LoginForm passwordChanged={passwordChanged} />
+        </Surface>
         {/*
           The way in for somebody who signed up, closed the tab, and never
           verified. It is a link rather than a banner on purpose: a banner that

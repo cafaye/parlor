@@ -5,6 +5,25 @@ import { cx } from "@/lib/cx";
 /**
  * The text input.
  *
+ * ---------------------------------------------------------------------------
+ * SHADCN PROVENANCE (structure only, zero dependencies)
+ * ---------------------------------------------------------------------------
+ * Construction follows shadcn/ui `input`: one composed class string on a
+ * native control, invalid state expressed through `aria-invalid:` so the
+ * colour cannot drift from what the accessibility tree reports, and
+ * `data-slot="input"` on the root as the styling hook.
+ *
+ * Token substitutions (shadcn default -> this system):
+ * - `bg-transparent`/`bg-input` -> `bg-surface-raised` (the page ground is
+ *   `bg-surface`; an input on it must be a step up, not invisible on it)
+ * - `border-input` -> `border-border-strong`
+ * - `aria-invalid:border-destructive` -> `aria-invalid:border-critical`
+ * - `placeholder:text-muted-foreground` -> `placeholder:text-muted`
+ * - `focus-visible:ring-*` -> the `focus-ring` utility (see `button.tsx`)
+ *
+ * Deliberately NOT adopted: a fixed `h-9` (height here comes from content, and
+ * pinning it is a density decision this packet does not make).
+ *
  * Two things are worth reading.
  *
  * ---------------------------------------------------------------------------
@@ -40,6 +59,7 @@ export type InputProps = InputHTMLAttributes<HTMLInputElement>;
 export function Input({ className, ...rest }: InputProps) {
   return (
     <input
+      data-slot="input"
       className={cx(
         "focus-ring w-full rounded-md border border-border-strong bg-surface-raised px-3",
         "text-sm text-foreground transition-colors duration-fast motion-reduce:transition-none",

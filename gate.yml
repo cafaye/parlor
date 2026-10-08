@@ -673,17 +673,18 @@ gate:
     #     edited, the chart edited — and restored, matching how the chart
     #     packet proved its own check.
     #
-    # IT IS 961 BY THE NEXT ACCOUNT. 959 -> 961, a +2 in
-    # `src/styles/tokens.test.ts`, the focus-ring modality packet's tests: no
-    # `.focus-ring` rule paints without `:focus-visible`, and the
-    # reduced-motion override keeps the gate with a width-only 3px. Both were
-    # shown red before green against the unconditional rule (2 failed,
-    # 50 passed on the file). Playwright modality assertions land in the
-    # existing `e2e/design-system.e2e.spec.ts` in the same packet and move no
-    # vitest floor.
+    # IT IS 968 BY THE NEXT ACCOUNT. 961 -> 968, a +7 in the shadcn-structure
+    # packet (P-02): 3 `data-slot` hook tests in
+    # `src/components/ui/controls.test.tsx` (button/input/field) plus 2
+    # header-block composition tests per auth screen (`eyebrow + raised card`
+    # on `/login` and `/register`). All 7 were shown red before green (7
+    # failed, 108 passed on the three files). Measured full suite on this tree:
+    # `Tests 977 passed (977)`, 38 files — the floor trails measured because
+    # the pre-P-02 tree already counted 970 against a 961 floor; the manager
+    # reconciles to exact at merge.
     - id: suite
       match: '^[ ]*Tests[ ]+([0-9]+)[ ]+passed(?![ ]*\|)'
-      minimum: 961
+      minimum: 968
     # The tally `tests/validate-ci.sh` prints, which is the second half of this
     # gate: the checks that the tree still has the shape CI assumes — one
     # runtime pin, `npm ci` and not `npm install`, the gate command, the

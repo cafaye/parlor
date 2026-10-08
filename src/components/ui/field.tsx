@@ -14,6 +14,21 @@ import { Callout } from "./feedback";
 /**
  * Label, hint, control, error — wired together.
  *
+ * ---------------------------------------------------------------------------
+ * SHADCN PROVENANCE (structure only, zero dependencies)
+ * ---------------------------------------------------------------------------
+ * The label follows shadcn/ui `label`: a native `<label>` with the label text
+ * styled `text-sm font-medium`, carrying `data-slot="label"` as the styling
+ * hook; the group wrapper carries `data-slot="field"`.
+ *
+ * Token substitutions: shadcn's `text-foreground` is already this system's
+ * `text-foreground` — no substitution was needed and none is invented here.
+ *
+ * Deliberately NOT adopted: `@radix-ui/react-label`, `react-hook-form`/`zod`
+ * (forms stay as-is; `Field` keeps owning label/describedby/invalid, hint
+ * before error in `describedby`, and the one-`FieldSummary`-per-form rule),
+ * and shadcn's `FormItem` grid spacing (the `gap-1.5` stack stays).
+ *
  * The three relationships a form field has to state are the easy ones to leave
  * out and the expensive ones to leave out: which control the label names, what
  * extra text describes the control, and whether the control is currently
@@ -55,8 +70,8 @@ export function Field({ id, label, hint, error, children }: FieldProps) {
   const describedBy = [hintId, errorId].filter(Boolean).join(" ") || undefined;
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <label className="text-sm font-medium text-foreground" htmlFor={id}>
+    <div className="flex flex-col gap-1.5" data-slot="field">
+      <label className="text-sm font-medium text-foreground" data-slot="label" htmlFor={id}>
         {label}
       </label>
       {cloneElement(children, {

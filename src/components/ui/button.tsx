@@ -8,6 +8,26 @@ import { Spinner } from "./spinner";
  * The one button in the system.
  *
  * ---------------------------------------------------------------------------
+ * SHADCN PROVENANCE (structure only, zero dependencies)
+ * ---------------------------------------------------------------------------
+ * Construction follows shadcn/ui `button`: a base string plus a variant map
+ * plus a size map composed by one function (`buttonClasses`, where shadcn has
+ * `buttonVariants`), and `data-slot="button"` on the root as the styling hook.
+ *
+ * Token substitutions (shadcn default -> this system; every value is a token
+ * from `src/styles/tokens.css`, never a literal):
+ * - `bg-primary text-primary-foreground` -> `bg-accent text-on-accent`
+ * - `bg-secondary` -> `bg-surface-raised`
+ * - `bg-destructive` -> `bg-critical`
+ * - `focus-visible:ring-*` -> the `focus-ring` utility (`tokens.css` owns it:
+ *   `outline`, not `box-shadow`, so Windows High Contrast Mode keeps it)
+ *
+ * Deliberately NOT adopted: `class-variance-authority` (variants use the
+ * existing `cx` pattern in `src/lib/cx.ts`), `tailwind-merge`/`clsx`, and
+ * `disabled:pointer-events-none` (this system keeps `disabled:cursor-not-allowed`
+ * so a refused control still shows its state under the pointer).
+ *
+ * ---------------------------------------------------------------------------
  * WHY THERE IS NO `linkBUTTON` VARIANT
  * ---------------------------------------------------------------------------
  * A button that navigates is a link, and a link that submits is a button, and
@@ -116,6 +136,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   return (
     <button
       className={cx(buttonClasses(variant, size), className)}
+      data-slot="button"
       disabled={disabled}
       ref={ref}
       // `button` is the right default: a bare `<button>` inside a `<form>` is a
