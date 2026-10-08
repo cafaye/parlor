@@ -282,22 +282,55 @@ describe("cafaye palette — measured contrast", () => {
    * further down the file still said 2px and got matched instead. A guard that
    * reads the wrong copy of a rule is worse than no guard, because it is
    * believed. That is why this walks the rules rather than matching a string.
+   *
+   * The walk covers the rules that PAINT the ring (the base rule). The
+   * `prefers-reduced-motion` override is excised here because it declares no
+   * paint of its own — it only widens the base rule's outline via the cascade,
+   * inheriting that rule's offset — and its width-only shape is pinned by
+   * "reduced motion widens the ring without changing the visibility
+   * condition" above. Excising by brace-matching rather than by line so a
+   * reformatted media query cannot silently re-enter the walk.
    */
   it("every focus-ring rule keeps a non-zero outline offset", () => {
     const utilities = css.slice(css.indexOf("@layer utilities"));
     expect(utilities, "tokens.css still declares a focus-ring utility").toContain(".focus-ring");
 
-    // Every `.focus-ring { … }` body, brace-matched.
-    const bodies: string[] = [];
-    const re = /\.focus-ring\s*\{/g;
-    for (const match of utilities.matchAll(re)) {
+    let base = utilities;
+    const reducedAt = utilities.indexOf("prefers-reduced-motion");
+    if (reducedAt !== -1) {
+      const mediaStart = utilities.lastIndexOf("@media", reducedAt);
+      expect(mediaStart, "expected the reduced-motion query to open a @media block").toBeGreaterThan(-1);
       let depth = 0;
-      for (let i = utilities.indexOf("{", match.index); i < utilities.length; i++) {
+      let end = -1;
+      for (let i = utilities.indexOf("{", mediaStart); i < utilities.length; i++) {
         if (utilities[i] === "{") depth++;
         if (utilities[i] === "}") {
           depth--;
           if (depth === 0) {
-            bodies.push(utilities.slice(match.index, i + 1));
+            end = i;
+            break;
+          }
+        }
+      }
+      expect(end, "unbalanced braces in the reduced-motion block").toBeGreaterThan(-1);
+      const excised = utilities.slice(mediaStart, end + 1);
+      expect(excised, "the reduced-motion block must still carry a focus-ring rule").toContain(
+        ".focus-ring:focus-visible",
+      );
+      base = utilities.slice(0, mediaStart) + utilities.slice(end + 1);
+    }
+
+    // Every `.focus-ring:focus-visible { … }` body, brace-matched.
+    const bodies: string[] = [];
+    const re = /\.focus-ring:focus-visible\s*\{/g;
+    for (const match of base.matchAll(re)) {
+      let depth = 0;
+      for (let i = base.indexOf("{", match.index); i < base.length; i++) {
+        if (base[i] === "{") depth++;
+        if (base[i] === "}") {
+          depth--;
+          if (depth === 0) {
+            bodies.push(base.slice(match.index, i + 1));
             break;
           }
         }

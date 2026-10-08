@@ -673,9 +673,17 @@ gate:
     #     edited, the chart edited — and restored, matching how the chart
     #     packet proved its own check.
     #
+    # IT IS 961 BY THE NEXT ACCOUNT. 959 -> 961, a +2 in
+    # `src/styles/tokens.test.ts`, the focus-ring modality packet's tests: no
+    # `.focus-ring` rule paints without `:focus-visible`, and the
+    # reduced-motion override keeps the gate with a width-only 3px. Both were
+    # shown red before green against the unconditional rule (2 failed,
+    # 50 passed on the file). Playwright modality assertions land in the
+    # existing `e2e/design-system.e2e.spec.ts` in the same packet and move no
+    # vitest floor.
     - id: suite
       match: '^[ ]*Tests[ ]+([0-9]+)[ ]+passed(?![ ]*\|)'
-      minimum: 959
+      minimum: 961
     # The tally `tests/validate-ci.sh` prints, which is the second half of this
     # gate: the checks that the tree still has the shape CI assumes — one
     # runtime pin, `npm ci` and not `npm install`, the gate command, the

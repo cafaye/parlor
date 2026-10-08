@@ -41,7 +41,7 @@
  * the one `waitForFunction` below is polling a computed style in a real
  * rendering engine, which is the same thing an expect does and not a sleep.
  */
-import { expect, test, type Locator } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 /**
  * A password that satisfies identity's own floor with room to spare.
@@ -527,4 +527,123 @@ test("a busy control keeps its accessible name, in a real browser", async ({ pag
   await expect(page.getByRole("status")).toHaveText(
     `Account created for ${email}. This deployment cannot send email right now, so no verification link was sent.`,
   );
+});
+
+/**
+ * What the browser actually painted for one control's focus ring, read from
+ * the element itself in the same evaluate: whether it holds focus, whether
+ * the platform's `:focus-visible` heuristic matches it, and the computed
+ * outline the `.focus-ring` rule resolves to (or does not).
+ */
+async function ringState(locator: Locator): Promise<{
+  focused: boolean;
+  focusVisible: boolean;
+  width: string;
+  style: string;
+  offset: string;
+}> {
+  return locator.evaluate((node) => {
+    const style = getComputedStyle(node);
+    return {
+      focused: document.activeElement === node,
+      focusVisible: (node as HTMLElement).matches(":focus-visible"),
+      width: style.outlineWidth,
+      style: style.outlineStyle,
+      offset: style.outlineOffset,
+    };
+  });
+}
+
+/**
+ * Tab from the page's autofocused email field until the Sign in button holds
+ * focus, bounded so a control that can never be reached fails here rather
+ * than looping. The walk starts after the email field because the form sets
+ * `autoFocus` on it.
+ */
+async function tabToSignIn(page: Page, submit: Locator): Promise<void> {
+  for (let step = 0; step < 12; step++) {
+    if ((await ringState(submit)).focused) return;
+    await page.keyboard.press("Tab");
+  }
+  throw new Error("Tab never reached the Sign in button");
+}
+
+test("a mouse click focuses without a ring; a Tab press focuses with the halo", async ({
+  page,
+}) => {
+  await page.goto("/login");
+  const submit = page.getByRole("button", { name: "Sign in" });
+
+  // POINTER MODALITY: a real mouse click on a non-text control. A text input
+  // would match `:focus-visible` on focus regardless of modality, so the
+  // submit button is the control this assertion is meaningful on. The empty
+  // form refuses to submit — validation renders inline and steals no focus —
+  // so the page and the focus stay where the click put them.
+  await submit.click();
+  await expect(page).toHaveURL(/\/login$/);
+  const clicked = await ringState(submit);
+  expect(clicked.focused, "the click must leave focus on the button").toBe(true);
+  expect(clicked.focusVisible, "pointer focus must not match :focus-visible").toBe(false);
+  expect(clicked.style, "pointer focus must paint no outline").toBe("none");
+  expect(
+    Number.parseFloat(clicked.width),
+    `pointer focus paints outline-width "${clicked.width}" — the unconditional ring is back`,
+  ).toBe(0);
+
+  // KEYBOARD MODALITY, from a clean state: reload to restore autofocus, then
+  // walk with real Tab presses to the same button.
+  await page.goto("/login");
+  await tabToSignIn(page, submit);
+  const tabbed = await ringState(submit);
+  expect(tabbed.focused, "Tab must reach the Sign in button").toBe(true);
+  expect(tabbed.focusVisible, "keyboard focus must match :focus-visible").toBe(true);
+  expect(tabbed.width, `keyboard focus must paint the 2px halo, got "${tabbed.width}"`).toBe("2px");
+  expect(
+    tabbed.offset,
+    `the halo must stand off the control by 2px, got "${tabbed.offset}"`,
+  ).toBe("2px");
+});
+
+test("the halo survives dark mode and widens under reduced motion", async ({ page }) => {
+  // DARK: the same Tab target under `prefers-color-scheme: dark` emulation.
+  // The ring and the primary fill are the same colour in dark mode, so the
+  // 2px ground-painted gap is the indicator — asserted as painted, not as
+  // declared.
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.goto("/login");
+  const submit = page.getByRole("button", { name: "Sign in" });
+  await tabToSignIn(page, submit);
+  const dark = await ringState(submit);
+  expect(dark.focusVisible, "keyboard focus must match :focus-visible in dark mode").toBe(true);
+  expect(dark.width, `dark keyboard focus must paint the 2px halo, got "${dark.width}"`).toBe(
+    "2px",
+  );
+  expect(dark.offset, `the dark halo must stand off by 2px, got "${dark.offset}"`).toBe("2px");
+
+  // REDUCED MOTION: the same Tab target with reduced-motion emulation. Width
+  // changes (2px → 3px); the `:focus-visible` gate does not. The colour
+  // scheme is restated explicitly rather than relying on the previous
+  // `emulateMedia` call persisting across invocations.
+  await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
+  await page.goto("/login");
+  await tabToSignIn(page, submit);
+  const reduced = await ringState(submit);
+  expect(
+    reduced.focusVisible,
+    "keyboard focus must still match :focus-visible under reduced motion",
+  ).toBe(true);
+  expect(
+    reduced.width,
+    `reduced-motion keyboard focus must paint the 3px halo, got "${reduced.width}"`,
+  ).toBe("3px");
+
+  // And pointer focus under reduced motion still paints nothing.
+  await submit.click();
+  const clicked = await ringState(submit);
+  expect(clicked.focused, "the click must leave focus on the button").toBe(true);
+  expect(clicked.focusVisible, "pointer focus must not match :focus-visible").toBe(false);
+  expect(
+    Number.parseFloat(clicked.width),
+    `pointer focus paints outline-width "${clicked.width}" under reduced motion`,
+  ).toBe(0);
 });
