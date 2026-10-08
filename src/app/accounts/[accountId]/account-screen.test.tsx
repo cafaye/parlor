@@ -780,7 +780,13 @@ describe("deleting an account", () => {
     fireEvent.click(await screen.findByRole("button", { name: /delete/i }));
     fireEvent.click(screen.getByRole("button", { name: "Delete this account" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(/only an owner can delete/i);
+    // The refusal renders on the screen behind the still-open dialog, which
+    // the dialog foundation hides from the accessibility tree — so the query
+    // opts into the hidden subtree. Same role, same copy; the `hidden` flag
+    // names where the alert is, not a weaker claim about it.
+    expect(await screen.findByRole("alert", { hidden: true })).toHaveTextContent(
+      /only an owner can delete/i,
+    );
     expect(push).not.toHaveBeenCalled();
   });
 
@@ -818,7 +824,9 @@ describe("deleting an account", () => {
     // by naming a class — the property is that they are distinguishable, and a
     // future palette is free to change what `destructive` looks like.
     const destructive = screen.getByRole("button", { name: "Delete this account" });
-    const primary = await screen.findByRole("button", { name: "Rename" });
+    // The dialog is open, so the page behind it is hidden from the
+    // accessibility tree and the comparison control is queried with it named.
+    const primary = await screen.findByRole("button", { name: "Rename", hidden: true });
     expect(destructive.className).not.toBe(primary.className);
   });
 

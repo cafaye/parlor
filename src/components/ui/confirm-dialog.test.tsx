@@ -20,7 +20,7 @@
  * about the browser walking the middle of the list. The browser end of the same
  * property is asserted in the e2e spec.
  */
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
@@ -64,45 +64,77 @@ const cancel = () => screen.getByRole("button", { name: "Cancel" });
 const confirm = () => screen.getByRole("button", { name: "Delete this account" });
 
 describe("ConfirmDialog, from the keyboard", () => {
-  it("puts focus on Cancel when it opens, so a held spacebar cannot delete anything", () => {
+  /**
+   * Every focus assertion below awaits, and that is a property of the new
+   * foundation rather than a loosening: Base UI moves focus on the next
+   * animation frame (`enqueueFocus`), so the move has happened by the time a
+   * person could see the dialog but not by the time `render` returns. `waitFor`
+   * is what the house rule allows it for — waiting on something async.
+   */
+  it("puts focus on Cancel when it opens, so a held spacebar cannot delete anything", async () => {
     render(<Harness />);
     openViaKeyboard();
 
-    expect(document.activeElement).toBe(cancel());
+    await waitFor(() => expect(document.activeElement).toBe(cancel()));
   });
 
-  it("closes on Escape and returns focus to the control that opened it", () => {
+  it("closes on Escape and returns focus to the control that opened it", async () => {
     render(<Harness />);
     const opener = openViaKeyboard();
+    await waitFor(() => expect(document.activeElement).toBe(cancel()));
 
     fireEvent.keyDown(document.activeElement as HTMLElement, { key: "Escape" });
 
     expect(screen.queryByRole("dialog")).toBeNull();
     // Closing a dialog and dumping somebody at the top of the document is a
-    // small, common, maddening bug, and it is the reason `restoreTo` is a ref.
-    expect(document.activeElement).toBe(opener);
+    // small, common, maddening bug, and the focus-restore default is what
+    // prevents it. The restore is scheduled, not synchronous, so it is awaited.
+    await waitFor(() => expect(document.activeElement).toBe(opener));
   });
 
-  it("wraps Tab from the last control back to the first", () => {
+  /**
+   * The trap's sentinels. A modal Base UI dialog renders one focus guard
+   * before and one after the popup; the browser's own Tab walks onto a guard
+   * when it leaves the last (or first) control, and the guard sends focus
+   * back inside. Focusing a guard below is that browser step, made explicit —
+   * jsdom does not move focus on Tab, so `fireEvent.keyDown(Tab)` would assert
+   * the browser rather than the trap.
+   */
+  function focusGuards(): { before: HTMLElement; after: HTMLElement } {
+    const found = [...document.querySelectorAll<HTMLElement>("[data-base-ui-focus-guard]")];
+    expect(found).toHaveLength(2);
+    return { before: found[0], after: found[1] };
+  }
+
+  it("wraps Tab from the last control back to the first", async () => {
     render(<Harness />);
     openViaKeyboard();
+    const { after } = focusGuards();
+    // Settle the scheduled initial focus first: a still-pending initial move
+    // would otherwise win the race below and the assertion would pass for the
+    // wrong reason.
+    await waitFor(() => expect(document.activeElement).toBe(cancel()));
 
-    // Tab is pressed while the DESTRUCTIVE button is focused, which is the last
-    // control in document order.
-    confirm().focus();
-    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "Tab" });
+    // Tab is pressed while the DESTRUCTIVE button is focused, which is the
+    // last control in document order — so the browser lands on the after-guard,
+    // which sends focus back to the first control rather than escaping to the
+    // page behind the scrim.
+    after.focus();
 
-    expect(document.activeElement).toBe(cancel());
+    await waitFor(() => expect(document.activeElement).toBe(cancel()));
   });
 
-  it("wraps Shift+Tab from the first control back to the last", () => {
+  it("wraps Shift+Tab from the first control back to the last", async () => {
     render(<Harness />);
     openViaKeyboard();
+    const { before } = focusGuards();
+    await waitFor(() => expect(document.activeElement).toBe(cancel()));
 
-    cancel().focus();
-    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "Tab", shiftKey: true });
+    // Shift+Tab off the first control lands on the before-guard, which sends
+    // focus to the last control.
+    before.focus();
 
-    expect(document.activeElement).toBe(confirm());
+    await waitFor(() => expect(document.activeElement).toBe(confirm()));
   });
 
   it("does not close on Escape while the confirm is in flight", () => {

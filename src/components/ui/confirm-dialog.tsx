@@ -11,7 +11,7 @@
  * about the *idea* and wrong about the *module*, and being wrong about the
  * module cost this template a class of bug the test suite cannot see.
  *
- * `ConfirmDialog` calls `useId`, `useEffect` and `useCallback`. `Callout` calls
+ * `ConfirmDialog` calls `useId`, `useEffect` and `useState`. `Callout` calls
  * no hooks at all. Under the previous framework one file could not be both: a
  * file whose components had to run on a server and a file whose components had
  * to run in a browser were different modules, and this one had members of each.
@@ -27,10 +27,9 @@
  * and it is true. Note what the split is NOT buying in this tree, because the
  * old comment here claimed it and it is not true here: there is no server/client
  * split for `vite build` to enforce, and no RSC configuration anywhere in `src/`,
- * so a hook-free `Callout` reaches `dist/client/assets/ui-BseiPOyp.js` anyway —
- * `login-form.tsx` and `register-form.tsx` render it and both are client
- * components. Marking this file costs nothing and saves nothing; what it buys is
- * an accurate marker.
+ * so a hook-free `Callout` reaches `dist/client/assets` anyway — the forms that
+ * render it are client components. Marking this file costs nothing and saves
+ * nothing; what it buys is an accurate marker.
  *
  * A caller reaching for either this or `Callout` still imports from
  * `@/components/ui`, which is the point of the barrel: the split is invisible at
@@ -44,17 +43,19 @@
  * is empty.
  */
 
-import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
-
-import { cx } from "@/lib/cx";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "./button";
+import {
+  DialogBackdrop,
+  DialogDescription,
+  DialogPopup,
+  DialogPortal,
+  DialogRoot,
+  DialogTitle,
+  DialogViewport,
+} from "./dialog";
 import { Input } from "./input";
-
-/** The controls a focus trap will walk. Order is document order, which is
- *  the order somebody reading the dialog expects to move through. */
-const FOCUSABLE =
-  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export type ConfirmDialogProps = {
   open: boolean;
@@ -74,7 +75,7 @@ export type ConfirmDialogProps = {
   cancelLabel?: string;
   // Property declarations, not method shorthand: a `onConfirm(): void`
   // signature tells TypeScript the member has a `this`, and destructuring it
-  // out of the props — which this component does on line 123 — is then a method
+  // out of the props — which this component does below — is then a method
   // separated from its object under `@typescript-eslint/unbound-method`. The
   // callbacks arrive from a caller's props and are never called on anything, so
   // there is no `this` to lose. See `IdentityClient` for the same decision at
@@ -98,39 +99,36 @@ export type ConfirmDialogProps = {
 /**
  * A modal confirmation for an action that cannot be undone.
  *
- * Built on `<div role="dialog">` rather than the native `<dialog>`, and that is
- * a measured choice rather than a preference. `HTMLDialogElement.showModal()`
- * gives focus trapping, Escape and the top layer for free — and jsdom does not
- * implement it, so every property that makes a native dialog good would be
- * untestable in the tier this repository actually gates on. Hand-building them
- * costs about forty lines and buys assertions on all of them. The consequence
- * is stated here because it is a real trade: the trap below is ours, and ours
- * is a thing that can be wrong.
+ * Built on the Base UI dialog primitives in `./dialog` (the shadcn/ui default
+ * foundation) rather than on the hand-built `<div role="dialog">` this file
+ * used to carry, and the trade being made is the point. `showModal()` was
+ * rejected because jsdom does not implement it, so every property that makes a
+ * native dialog good would have been untestable in the tier this repository
+ * gates on — and the hand-built trap bought testability at the price of owning
+ * the trap. Base UI moves that ownership: the focus trap, Escape handling,
+ * initial and final focus, and hiding the page behind the dialog from
+ * assistive interaction are library behavior now, asserted here by what the
+ * screen does rather than by trap internals.
  *
- * ---------------------------------------------------------------------------
- * A NOTE ON THE FOCUS LIST, SINCE THE OBVIOUS ONE IS WRONG
- * ---------------------------------------------------------------------------
- * The usual way to build the focusable list filters on `offsetParent !== null`,
- * which is how you skip `display: none`. It is wrong here twice over. The
- * dialog is `position: fixed`, and a fixed element's `offsetParent` is `null`
- * in a real browser — so the filter empties the list and the trap silently
- * stops working on the very element it exists for. And it is wrong under
- * jsdom, where `offsetParent` is `null` unconditionally, which is how the
- * first version of this passed a test while doing nothing.
+ * Four decisions that are not obvious:
  *
- * Hence no filter at all. The only focusable things in this dialog are the two
- * buttons, and `FOCUSABLE` already excludes disabled ones.
- *
- * Three decisions that are not obvious:
- *
- *   - **Focus lands on Cancel.** The safe default for a destructive action is
- *     the one that does nothing. Landing on the destructive button means the
- *     spacebar a person is already holding down destroys something.
+ *   - **Focus lands on Cancel, including when `requireTyping` is present.**
+ *     The safe default for a destructive action is the one that does nothing.
+ *     Landing on the destructive button means the spacebar a person is already
+ *     holding down destroys something — and the type-to-confirm input sits
+ *     earlier in document order, so the default "first tabbable" focus would
+ *     land there instead. `initialFocus` names Cancel explicitly.
  *   - **The scrim does not close it.** Escape and Cancel do. A confirmation
  *     that dismisses on an accidental click outside is not a confirmation of
- *     anything — it is a second way to be wrong.
- *   - **Focus goes back where it came from.** Closing a dialog and dumping
- *     somebody at the top of the document is a small, common, maddening bug.
+ *     anything — it is a second way to be wrong. `disablePointerDismissal`
+ *     means an outside press never even reaches `onOpenChange`.
+ *   - **A busy confirm cannot be dismissed at all.** Escape arrives as a close
+ *     request through `onOpenChange`, and while `busy` the request is ignored:
+ *     the delete it announced is still in progress.
+ *   - **Focus goes back where it came from.** Base UI restores focus to the
+ *     previously focused element on close by default; closing a dialog and
+ *     dumping somebody at the top of the document is a small, common,
+ *     maddening bug, and the default is what prevents it.
  */
 export function ConfirmDialog({
   open,
@@ -143,12 +141,9 @@ export function ConfirmDialog({
   busy = false,
   requireTyping,
 }: ConfirmDialogProps) {
-  const titleId = useId();
-  const descriptionId = useId();
-  const panel = useRef<HTMLDivElement>(null);
-  const restoreTo = useRef<HTMLElement | null>(null);
-  // A ref, not state: a re-render must not be able to steal the cancel button
-  // back from somebody who has already tabbed to the confirm button.
+  // The cancel button, named as the dialog's initial focus. A ref, not state:
+  // a re-render must not be able to steal focus back from somebody who has
+  // already tabbed to the confirm button.
   const cancel = useRef<HTMLButtonElement>(null);
   // The typed value for a `requireTyping` confirm. Reset on open so a dialog
   // reopened after a cancel starts empty rather than pre-filled with the
@@ -157,121 +152,77 @@ export function ConfirmDialog({
   const typedId = useId();
 
   useEffect(() => {
-    if (!open) return;
-    restoreTo.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    cancel.current?.focus();
-    setTyped("");
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    // Unmounting restores focus. Without this, a dialog closed by a navigation
-    // leaves focus on a node that no longer exists and the next Tab starts at
-    // the top of the document.
-    return () => {
-      restoreTo.current?.focus();
-      restoreTo.current = null;
-    };
-  }, [open]);
-
-  const onKeyDown = useCallback(
-    (event: KeyboardEvent<HTMLDivElement>) => {
-      if (event.key === "Escape") {
-        // A busy confirm is mid-flight; Escape must not be able to make the
-        // dialog disappear while the delete it announced is still in progress.
-        if (busy) return;
-        event.stopPropagation();
-        onCancel();
-        return;
-      }
-      if (event.key !== "Tab") return;
-
-      const nodes = [...(panel.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])];
-      if (nodes.length === 0) return;
-
-      const first = nodes[0];
-      const last = nodes[nodes.length - 1];
-      const active = document.activeElement;
-
-      if (event.shiftKey && (active === first || !panel.current?.contains(active))) {
-        event.preventDefault();
-        last.focus();
-      } else if (
-        !event.shiftKey &&
-        (active === last || !panel.current?.contains(active))
-      ) {
-        event.preventDefault();
-        first.focus();
-      }
-    },
-    [busy, onCancel],
-  );
-
-  if (!open) return null;
+    if (open) setTyped("");
+  }, [open ]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      {/* Present for the tap-to-dismiss instinct and for the dimming; not a
-          dismiss target, on purpose. It is a sibling of the panel rather than
-          its parent so a click inside the dialog cannot bubble into it. */}
-      <div
-        aria-hidden="true"
-        className="absolute inset-0 bg-foreground/40"
-        data-testid="confirm-scrim"
-      />
-      <div
-        aria-describedby={descriptionId}
-        aria-labelledby={titleId}
-        aria-modal="true"
-        className={cx(
-          "relative w-full max-w-md rounded-lg border border-border bg-overlay p-5",
-          "shadow-dialog",
-        )}
-        onKeyDown={onKeyDown}
-        ref={panel}
-        role="dialog"
-      >
-        <h2 className="text-lg font-medium" id={titleId}>
-          {title}
-        </h2>
-        <p className="mt-2 text-sm text-muted" id={descriptionId}>
-          {description}
-        </p>
-        {/*
-          The type-to-confirm input, rendered only when `requireTyping` is set.
-          The expected value is shown so the person knows what to type, and the
-          confirm stays disabled until the input matches it exactly. The input
-          is part of the focus trap automatically — `FOCUSABLE` selects
-          `input:not([disabled])`.
-        */}
-        {requireTyping !== undefined ? (
-          <div className="mt-4 flex flex-col gap-2">
-            <label className="text-sm font-medium" htmlFor={typedId}>
-              Type <span className="font-semibold">{requireTyping}</span> to confirm
-            </label>
-            <Input
-              autoComplete="off"
-              id={typedId}
-              onChange={(event) => setTyped(event.target.value)}
-              value={typed}
-            />
-          </div>
-        ) : null}
-        <div className="mt-5 flex flex-wrap justify-end gap-2">
-          <Button disabled={busy} onClick={onCancel} ref={cancel} variant="secondary">
-            {cancelLabel}
-          </Button>
-          <Button
-            aria-busy={busy}
-            disabled={busy || (requireTyping !== undefined && typed !== requireTyping)}
-            onClick={onConfirm}
-            variant="destructive"
-          >
-            {confirmLabel}
-          </Button>
-        </div>
-      </div>
-    </div>
+    <DialogRoot
+      open={open}
+      onOpenChange={(next, eventDetails) => {
+        if (next) return;
+        // A busy confirm is mid-flight; no dismissal may make the dialog
+        // disappear while the delete it announced is still in progress.
+        if (busy) return;
+        // The scrim never dismisses, so the only close request that reaches
+        // here is Escape (or an imperative close, which this dialog never
+        // issues). Anything else is ignored: this dialog closes through its
+        // own Cancel and confirm buttons, which call the callbacks directly.
+        if (eventDetails.reason === "escape-key") onCancel();
+      }}
+      disablePointerDismissal
+    >
+      <DialogPortal>
+        <DialogViewport>
+          {/* Present for the tap-to-dismiss instinct and for the dimming; not a
+              dismiss target, on purpose — `disablePointerDismissal` above is
+              what makes that true rather than a missing handler. */}
+          <DialogBackdrop data-testid="confirm-scrim" />
+          {/*
+            `aria-modal` is stated explicitly rather than left to the
+            primitive: Base UI hides the page behind the dialog with
+            `aria-hidden` on outside content and traps focus inside, which IS
+            modal behavior, but it does not print the attribute — so the
+            assertion that this dialog announces itself as modal names it here,
+            where the modality is decided, rather than in the wrapper.
+          */}
+          <DialogPopup aria-modal="true" initialFocus={cancel}>
+            <DialogTitle>{title}</DialogTitle>
+            <DialogDescription>{description}</DialogDescription>
+            {/*
+              The type-to-confirm input, rendered only when `requireTyping` is set.
+              The expected value is shown so the person knows what to type, and the
+              confirm stays disabled until the input matches it exactly. The input
+              is part of the focus trap automatically — it is inside the popup.
+            */}
+            {requireTyping !== undefined ? (
+              <div className="mt-4 flex flex-col gap-2">
+                <label className="text-sm font-medium" htmlFor={typedId}>
+                  Type <span className="font-semibold">{requireTyping}</span> to confirm
+                </label>
+                <Input
+                  autoComplete="off"
+                  id={typedId}
+                  onChange={(event) => setTyped(event.target.value)}
+                  value={typed}
+                />
+              </div>
+            ) : null}
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <Button disabled={busy} onClick={onCancel} ref={cancel} variant="secondary">
+                {cancelLabel}
+              </Button>
+              <Button
+                aria-busy={busy}
+                disabled={busy || (requireTyping !== undefined && typed !== requireTyping)}
+                onClick={onConfirm}
+                variant="destructive"
+              >
+                {confirmLabel}
+              </Button>
+            </div>
+          </DialogPopup>
+        </DialogViewport>
+      </DialogPortal>
+    </DialogRoot>
   );
 }
-

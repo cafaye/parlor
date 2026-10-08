@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { Callout, ConfirmDialog, Spinner } from "@/components/ui";
@@ -137,12 +137,16 @@ describe("ConfirmDialog", () => {
   /**
    * The reason this component exists rather than a `window.confirm`. Both
    * buttons are real, focusable controls with stable names, and focus lands
-   * on the one that does nothing.
+   * on the one that does nothing. The move is scheduled on the next animation
+   * frame by the dialog foundation, so it is awaited rather than asserted
+   * synchronously — same behavior, async mechanics.
    */
-  it("puts focus on Cancel, not on the destructive action", () => {
+  it("puts focus on Cancel, not on the destructive action", async () => {
     openDialog();
 
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Cancel" })),
+    );
   });
 
   it("confirms through a button with the action's own name, never a generic one", () => {
@@ -163,30 +167,34 @@ describe("ConfirmDialog", () => {
     expect(props.onCancel).toHaveBeenCalledTimes(2);
   });
 
-  it("keeps Tab inside the dialog, so focus cannot wander onto the page behind", () => {
+  it("keeps Tab inside the dialog, so focus cannot wander onto the page behind", async () => {
     openDialog();
 
-    const dialog = screen.getByRole("dialog");
     const confirm = screen.getByRole("button", { name: "Delete this account" });
     const cancel = screen.getByRole("button", { name: "Cancel" });
+    const guards = [...document.querySelectorAll<HTMLElement>("[data-base-ui-focus-guard]")];
+    expect(guards).toHaveLength(2);
+    const [before, after] = guards;
 
-    // Only the two BOUNDARIES are the component's job; the movement in between
+    // Only the two BOUNDARIES are the trap's job; the movement in between
     // is the browser's, and jsdom does not implement it. So each case parks
-    // focus on an edge explicitly and presses Tab, which is exactly the
-    // situation the handler exists to catch. Asserting "Tab from Cancel goes
-    // to Delete" would be asserting the browser, not this file.
-    expect(document.activeElement).toBe(cancel);
+    // focus the way the browser would — on the guard past the edge — which is
+    // exactly the situation the trap exists to catch. Asserting "Tab from
+    // Cancel goes to Delete" would be asserting the browser, not this file.
+    //
+    // Every move below is awaited: the foundation schedules focus changes on
+    // the next animation frame.
+    await waitFor(() => expect(document.activeElement).toBe(cancel));
 
-    // Forward off the last control wraps to the first, rather than escaping to
-    // the page behind the scrim.
-    confirm.focus();
-    fireEvent.keyDown(dialog, { key: "Tab" });
-    expect(document.activeElement).toBe(cancel);
+    // Forward off the last control reaches the after-guard, which wraps to
+    // the first control rather than escaping to the page behind the scrim.
+    after.focus();
+    await waitFor(() => expect(document.activeElement).toBe(cancel));
 
-    // Backward off the first wraps to the last.
-    cancel.focus();
-    fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });
-    expect(document.activeElement).toBe(confirm);
+    // Backward off the first control reaches the before-guard, which wraps to
+    // the last.
+    before.focus();
+    await waitFor(() => expect(document.activeElement).toBe(confirm));
   });
 
   /**
@@ -200,27 +208,31 @@ describe("ConfirmDialog", () => {
    * "focus does not escape" is only a meaningful claim when there is
    * somewhere else for focus to go.
    */
-  it("does not let Tab reach a control that sits after the dialog in the document", () => {
+  it("does not let Tab reach a control that sits after the dialog in the document", async () => {
     const after = document.createElement("button");
     after.textContent = "Behind the dialog";
     document.body.appendChild(after);
 
     try {
       openDialog();
-      const dialog = screen.getByRole("dialog");
-      const confirm = screen.getByRole("button", { name: "Delete this account" });
+      const cancel = screen.getByRole("button", { name: "Cancel" });
+      // Settle the scheduled initial focus first (see the wrap tests above).
+      await waitFor(() => expect(document.activeElement).toBe(cancel));
+      const afterGuard = [...document.querySelectorAll<HTMLElement>("[data-base-ui-focus-guard]")].at(-1);
+      expect(afterGuard).toBeDefined();
 
-      confirm.focus();
-      fireEvent.keyDown(dialog, { key: "Tab" });
+      // The browser Tabs past the last control onto the after-guard; the trap
+      // wraps to the first control rather than reaching the button behind.
+      afterGuard?.focus();
 
+      await waitFor(() => expect(document.activeElement).toBe(cancel));
       expect(document.activeElement).not.toBe(after);
-      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Cancel" }));
     } finally {
       after.remove();
     }
   });
 
-  it("gives focus back to whatever had it, so closing does not dump somebody at the top of the page", () => {
+  it("gives focus back to whatever had it, so closing does not dump somebody at the top of the page", async () => {
     const trigger = document.createElement("button");
     trigger.textContent = "Delete account";
     document.body.appendChild(trigger);
@@ -236,7 +248,9 @@ describe("ConfirmDialog", () => {
         onCancel={vi.fn()}
       />,
     );
-    expect(document.activeElement).not.toBe(trigger);
+    // The dialog takes focus when it opens; the move is scheduled, so the
+    // absence from the trigger is awaited rather than asserted synchronously.
+    await waitFor(() => expect(document.activeElement).not.toBe(trigger));
 
     rerender(
       <ConfirmDialog
@@ -248,7 +262,8 @@ describe("ConfirmDialog", () => {
         onCancel={vi.fn()}
       />,
     );
-    expect(document.activeElement).toBe(trigger);
+    // The restore is scheduled too.
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
     trigger.remove();
   });
 

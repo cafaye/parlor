@@ -460,11 +460,36 @@ test("the account's destructive actions are confirmed, and the dialog is keyboar
   // Focus lands on Cancel, so a held-down spacebar cannot delete anything.
   await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
 
+  // The page behind the dialog is hidden from assistive interaction while it
+  // is open — the modal property the previous hand-built div never provided.
+  // Read as DOM attributes, because that is what the dialog foundation sets.
+  const hiddenWhileOpen = await page.evaluate(
+    () => document.querySelectorAll("body > [aria-hidden='true']").length,
+  );
+  expect(hiddenWhileOpen).toBeGreaterThan(0);
+
+  // A real Tab in a real browser: forward from Cancel reaches the destructive
+  // action, one more Tab wraps back to Cancel instead of escaping to the page
+  // behind, and Shift+Tab from Cancel reaches the destructive action from the
+  // other edge.
+  await page.keyboard.press("Tab");
+  await expect(dialog.getByRole("button", { name: "Delete this account" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(dialog.getByRole("button", { name: "Delete this account" })).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
+
   // Escape closes without acting, and returns focus to the control that opened
   // the dialog — the two properties a `window.confirm` gets for free and a
   // hand-built dialog has to earn.
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
+  const hiddenAfterClose = await page.evaluate(
+    () => document.querySelectorAll("body > [aria-hidden='true']").length,
+  );
+  expect(hiddenAfterClose).toBe(0);
   await expect(danger.getByRole("button", { name: "Delete account" })).toBeFocused();
 
   // And the account is still there, which is the property the confirmation

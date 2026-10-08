@@ -24,7 +24,11 @@
  * THESE ARE OURS, AND THAT IS THE POINT
  * ---------------------------------------------------------------------------
  * The Button, Input, Field, Select and the state components were hand-rolled
- * for the auth screens and are now a designed system. This file used to
+ * for the auth screens and are now a designed system. The one exception is
+ * `dialog.tsx`: the destructive `ConfirmDialog` is composed from Base UI's
+ * dialog primitives (the shadcn/ui default foundation), because modal focus
+ * trapping, Escape handling and focus restoration are library behavior there
+ * rather than application-owned trap code. Its tokens are still this system's. This file used to
  * describe itself as a staging post for a shadcn/ui install; it is not one, and
  * that description was the wrong shape for the first thing a product developer
  * reads.
@@ -45,6 +49,15 @@ export {
 } from "./button";
 export { Field, FieldSummary, type FieldProps } from "./field";
 export { ConfirmDialog, type ConfirmDialogProps } from "./confirm-dialog";
+export {
+  DialogBackdrop,
+  DialogDescription,
+  DialogPopup,
+  DialogPortal,
+  DialogRoot,
+  DialogTitle,
+  DialogViewport,
+} from "./dialog";
 export { Callout, type CalloutTone } from "./feedback";
 export { Input, type InputProps } from "./input";
 export {
