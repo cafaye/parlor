@@ -102,6 +102,18 @@ test("settings renders its existing sections after a real register and sign-in",
   ]) {
     await expect(page.getByRole("region", { name: section })).toBeVisible();
   }
+
+  // And the Second factor panel is not only standing but ANSWERED: a fresh
+  // account has no second factor, so identity's status route — mounted only
+  // when the stack supplies MFA_ENCRYPTION_KEY — answers `{"enabled": false}`
+  // and the panel renders the disabled state. Without the key the routes are
+  // unmounted, the status read fails, and this panel renders its failure
+  // sentence instead: a landmark alone would prove nothing about the surface.
+  const second = page.getByRole("region", { name: "Second factor" });
+  await expect(second.getByText("Not enabled")).toBeVisible();
+  await expect(
+    second.getByRole("button", { name: "Set up a second factor" }),
+  ).toBeVisible();
 });
 
 test("an unknown invitation token reaches the route's own sentinel", async ({ page }) => {

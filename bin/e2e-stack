@@ -681,6 +681,7 @@ preflight() {
 
   ensure_oidc_signing_key
   ensure_signup_signing_key
+  ensure_mfa_encryption_key
 }
 
 # ---------------------------------------------------------------------------
@@ -788,6 +789,65 @@ ensure_signup_signing_key() {
     die "openssl produced an empty signup timestamp key."
   fi
   export SIGNUP_SIGNING_KEY="$generated"
+}
+
+# ---------------------------------------------------------------------------
+# The MFA encryption key, and why it is generated rather than committed
+# ---------------------------------------------------------------------------
+# identity treats MFA_ENCRYPTION_KEY as a SUPPORTED absent state: unset means
+# the MFA management routes (`GET /v1/mfa`, the enrollment and recovery-code
+# routes, `DELETE /v1/mfa`) are never mounted, and the settings screen's
+# Second factor panel can only ever render its failure state. The stack ran
+# that way — the identity container logs
+# `MFA_ENCRYPTION_KEY is not configured; the MFA management routes are not
+# mounted` — so the end-to-end tier proved a landmark and never the surface,
+# while the settings screen on a real deployment answers the status route.
+#
+# So a key is generated here, per run, for the same two reasons the signup key
+# above is rather than committed:
+#
+#   * A committed encryption key is a key in a repository. This tier needs no
+#     stable key at all — no sealed TOTP secret outlives `down -v` — so it
+#     generates one and keeps the compose default empty.
+#   * Nothing caches the key across runs. A secret sealed under a previous
+#     run's key is unreadable to the next one, so a key that changes per run
+#     costs nothing and a key that never changes would be a key sitting in git
+#     for no benefit.
+#
+# Exporting rather than writing a file is what `e2e/docker-compose.yml` reads:
+# the document interpolates `${MFA_ENCRYPTION_KEY:-}`, so the value reaches the
+# container through the environment and never through a file, an argument, a
+# log line or the repository. An operator who wants a fixed key exports one
+# and this function leaves it alone — after checking its shape, because a
+# preset key that identity would refuse at boot is a failure this harness can
+# name before any container starts. The shape is base64url without padding of
+# exactly 32 bytes, which is 43 characters; the mint command is the one
+# identity's own README documents for every secret of this shape:
+#
+#   openssl rand -base64 32 | tr '+/' '-_' | tr -d '='
+#
+# NOTHING HERE PRINTS THE KEY. The length operator and the case pattern below
+# read it without echoing it, and the die messages name the variable and the
+# mint command, never the value.
+ensure_mfa_encryption_key() {
+  if [ -n "${MFA_ENCRYPTION_KEY:-}" ]; then
+    case "$MFA_ENCRYPTION_KEY" in
+      [A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-])
+        if [ "${#MFA_ENCRYPTION_KEY}" -eq 43 ]; then
+          return 0
+        fi
+        ;;
+    esac
+    die "MFA_ENCRYPTION_KEY is set but is not base64url of 32 bytes (43 characters, no padding). Unset it and let this harness generate one, or mint one with: openssl rand -base64 32 | tr '+/' '-_' | tr -d '='"
+  fi
+  need openssl "openssl generates identity's MFA encryption key at bring-up."
+  local generated
+  generated=$(openssl rand -base64 32 2>/dev/null | tr '+/' '-_' | tr -d '=\n') \
+    || die "openssl could not generate an MFA encryption key."
+  if [ -z "$generated" ]; then
+    die "openssl produced an empty MFA encryption key."
+  fi
+  export MFA_ENCRYPTION_KEY="$generated"
 }
 
 # --- the host port a service publishes --------------------------------------

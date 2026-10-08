@@ -534,6 +534,30 @@ services:
       # the fail-loud direction, and the reason the default is empty rather
       # than absent.
       SIGNUP_SIGNING_KEY: "${SIGNUP_SIGNING_KEY:-}"
+      # THE MFA ENCRYPTION KEY — EPHEMERAL, FROM THE HARNESS, NEVER COMMITTED.
+      #
+      # identity treats MFA_ENCRYPTION_KEY as a SUPPORTED absent state: unset
+      # means the MFA management routes (`GET /v1/mfa`, the enrollment and
+      # recovery-code routes, `DELETE /v1/mfa`) are never mounted, and the
+      # settings screen's Second factor panel can only ever render its failure
+      # state. This stack ran that way — the identity container logs
+      # `MFA_ENCRYPTION_KEY is not configured; the MFA management routes are
+      # not mounted` — so the tier proved a landmark and never the surface,
+      # while the settings screen on a real deployment answers the status
+      # route with `{"enabled": false}` for a fresh account.
+      #
+      # WHY `${MFA_ENCRYPTION_KEY:-}` WITH AN EMPTY DEFAULT, for the same
+      # reason as the signup key above: a committed encryption key is a key
+      # in a repository, and this tier needs no stable key at all — no sealed
+      # TOTP secret outlives `down -v`. So `bin/e2e-stack` generates 32
+      # random bytes per run (`ensure_mfa_encryption_key`, the same shape as
+      # `ensure_signup_signing_key`) and hands them here through the
+      # environment. An operator who wants a fixed key exports
+      # MFA_ENCRYPTION_KEY and the harness leaves it alone after checking its
+      # shape. A bare `docker compose up` without the harness renders this
+      # empty and identity boots with the routes unmounted — the supported
+      # absent state, and the reason the default is empty rather than absent.
+      MFA_ENCRYPTION_KEY: "${MFA_ENCRYPTION_KEY:-}"
       # THE RECOVERY RATE LIMIT — RAISED FOR THE HARNESS, AND COUNTED, NOT GUESSED.
       #
       # identity's default is `RATE_LIMIT_RECOVERY=5` per minute per (client IP,
