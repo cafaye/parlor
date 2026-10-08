@@ -571,24 +571,24 @@ async function tabToSignIn(page: Page, submit: Locator): Promise<void> {
 test("a mouse click focuses without a ring; a Tab press focuses with the halo", async ({
   page,
 }) => {
-  await page.goto("/login");
-  const submit = page.getByRole("button", { name: "Sign in" });
-
   // POINTER MODALITY: a real mouse click on a non-text control. A text input
   // would match `:focus-visible` on focus regardless of modality, so the
   // submit button is the control this assertion is meaningful on. The empty
   // form refuses to submit — validation renders inline and steals no focus —
-  // so the page and the focus stay where the click put them.
+  // so the page and the focus stay where the click put them. From a clean
+  // page, so the click starts in the pointer's modality rather than one a
+  // previous Tab walk left behind.
+  await page.goto("/login");
+  const submit = page.getByRole("button", { name: "Sign in" });
   await submit.click();
   await expect(page).toHaveURL(/\/login$/);
   const clicked = await ringState(submit);
   expect(clicked.focused, "the click must leave focus on the button").toBe(true);
   expect(clicked.focusVisible, "pointer focus must not match :focus-visible").toBe(false);
+  // The painted state, not the width: Chrome computes `outline-width: 3px`
+  // with `outline-style: none` here, and a width with a `none` style paints
+  // nothing. Asserting the width would be asserting a false positive.
   expect(clicked.style, "pointer focus must paint no outline").toBe("none");
-  expect(
-    Number.parseFloat(clicked.width),
-    `pointer focus paints outline-width "${clicked.width}" — the unconditional ring is back`,
-  ).toBe(0);
 
   // KEYBOARD MODALITY, from a clean state: reload to restore autofocus, then
   // walk with real Tab presses to the same button.
@@ -641,14 +641,15 @@ test("the halo survives dark mode and widens under reduced motion", async ({ pag
   // state, like the first test. The Tab walk above left keyboard focus on the
   // button, and a click that never moves focus never re-evaluates
   // `:focus-visible`, so without this navigation the click below would still
-  // be wearing the keyboard's modality rather than the pointer's.
+  // be wearing the keyboard's modality rather than the pointer's. Painted
+  // state again, never the width: the computed 3px with style none is the
+  // false positive this branch used to assert against.
   await page.goto("/login");
   await submit.click();
   const clicked = await ringState(submit);
   expect(clicked.focused, "the click must leave focus on the button").toBe(true);
   expect(clicked.focusVisible, "pointer focus must not match :focus-visible").toBe(false);
-  expect(
-    Number.parseFloat(clicked.width),
-    `pointer focus paints outline-width "${clicked.width}" under reduced motion`,
-  ).toBe(0);
+  expect(clicked.style, "pointer focus must paint no outline under reduced motion").toBe(
+    "none",
+  );
 });

@@ -379,26 +379,48 @@ describe("cafaye palette — measured contrast", () => {
     }
   });
 
-  it("pointer focus resolves no outline width", () => {
-    // Measured in Chrome: a focused button computes `outline-width: 3px`
-    // with `outline-style: none` even when NO author rule paints — the width
-    // the end-to-end tier reads as "the unconditional ring is back". The
-    // `:focus:not(:focus-visible)` rule below zeroes it explicitly, so the
-    // pointer branch of the browser suite reads what the style already says.
-    // Longhands only: the `outline: none` shorthand resets the width to
-    // `medium`, which resolves back to the same 3px.
+  /**
+   * Pointer focus paints nothing BY ABSENCE: no `.focus-ring` rule addresses
+   * it, so a mouse click matches no author rule at all.
+   *
+   * Measured in Chrome after a real mouse click on a focused button:
+   * `focused: true`, `:focus-visible: false`, `outline-width: 3px`,
+   * `outline-style: none`. A computed width with a `none` style paints
+   * nothing, so the width alone is a false positive — and a
+   * `.focus-ring:focus:not(:focus-visible)` rule zeroing it was tried and
+   * removed, because it changed no painted pixel and taught the next reader
+   * the width needed silencing. What the browser suite asserts is the
+   * painted state (`:focus-visible` false, `outline-style` none), and what
+   * this asserts is the structural reason: every `.focus-ring` selector is
+   * gated by `:focus-visible` AND none carves pointer focus back out with
+   * `:not(:focus-visible)`. The first half is pinned by "no focus-ring rule
+   * paints without :focus-visible" above (which a `:not(...)` selector
+   * satisfies by substring); this pins the second half, so the override
+   * cannot be reintroduced unnoticed.
+   */
+  it("no focus-ring rule addresses pointer focus", () => {
     const utilities = css.slice(css.indexOf("@layer utilities"));
-    const rule = utilities.match(/\.focus-ring:focus:not\(:focus-visible\)\s*\{([^}]*)\}/);
-    expect(rule, "expected a .focus-ring:focus:not(:focus-visible) zeroing rule").not.toBeNull();
-    const body = rule![1];
+    expect(utilities, "tokens.css still declares a focus-ring utility").toContain(".focus-ring");
 
-    const width = body.match(/outline-width:\s*([^;]+);/);
-    expect(width, `the pointer-focus rule declares no outline-width:\n${body}`).not.toBeNull();
-    expect(Number.parseFloat(width![1])).toBe(0);
-    expect(
-      /(^|[{;\s])outline\s*:/.test(body),
-      `the pointer-focus rule must not use the outline shorthand:\n${body}`,
-    ).toBe(false);
+    // Comments are stripped first: this file explains the absence in prose
+    // that names the very selector the walk forbids, and a walk over the
+    // raw text would read the explanation as a rule.
+    const bare = utilities.replace(/\/\*[\s\S]*?\*\//g, "");
+    const selectors: string[] = [];
+    const re = /\.focus-ring([^{]*)\{/g;
+    for (const match of bare.matchAll(re)) {
+      selectors.push(match[1].trim());
+    }
+
+    expect(selectors.length, "expected at least one .focus-ring rule").toBeGreaterThan(0);
+    for (const selector of selectors) {
+      expect(
+        selector,
+        `a .focus-ring rule carves pointer focus back out (selector suffix is "${selector}") — ` +
+          `pointer focus matches an author rule again, and the painted-state ` +
+          `assertions in the browser suite are what would have to notice`,
+      ).not.toContain(":not(:focus-visible)");
+    }
   });
 
   /**
