@@ -20,7 +20,6 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as VerifyEmailRouteImport } from './routes/verify-email'
 import { Route as AccountsIndexRouteImport } from './routes/accounts/index'
 import { Route as AccountsAccountIdRouteImport } from './routes/accounts/$accountId'
-import { Route as BillingPlansRouteImport } from './routes/billing/plans'
 import { Route as InvitationsTokenRouteImport } from './routes/invitations/$token'
 import { Route as V1SplatRouteImport } from './routes/v1/$'
 import { Route as VerifyEmailIndexRouteImport } from './routes/verify-email.index'
@@ -82,11 +81,6 @@ const AccountsAccountIdRoute = AccountsAccountIdRouteImport.update({
   path: '/accounts/$accountId',
   getParentRoute: () => rootRouteImport,
 } as any)
-const BillingPlansRoute = BillingPlansRouteImport.update({
-  id: '/billing/plans',
-  path: '/billing/plans',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const InvitationsTokenRoute = InvitationsTokenRouteImport.update({
   id: '/invitations/$token',
   path: '/invitations/$token',
@@ -125,7 +119,6 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRoute
   '/verify-email': typeof VerifyEmailRouteWithChildren
   '/accounts/$accountId': typeof AccountsAccountIdRoute
-  '/billing/plans': typeof BillingPlansRoute
   '/invitations/$token': typeof InvitationsTokenRoute
   '/v1/$': typeof V1SplatRoute
   '/verify-email/confirm': typeof VerifyEmailConfirmRoute
@@ -143,7 +136,6 @@ export interface FileRoutesByTo {
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
   '/accounts/$accountId': typeof AccountsAccountIdRoute
-  '/billing/plans': typeof BillingPlansRoute
   '/invitations/$token': typeof InvitationsTokenRoute
   '/v1/$': typeof V1SplatRoute
   '/verify-email/confirm': typeof VerifyEmailConfirmRoute
@@ -163,7 +155,6 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRoute
   '/verify-email': typeof VerifyEmailRouteWithChildren
   '/accounts/$accountId': typeof AccountsAccountIdRoute
-  '/billing/plans': typeof BillingPlansRoute
   '/invitations/$token': typeof InvitationsTokenRoute
   '/v1/$': typeof V1SplatRoute
   '/verify-email/confirm': typeof VerifyEmailConfirmRoute
@@ -184,7 +175,6 @@ export interface FileRouteTypes {
     | '/settings'
     | '/verify-email'
     | '/accounts/$accountId'
-    | '/billing/plans'
     | '/invitations/$token'
     | '/v1/$'
     | '/verify-email/confirm'
@@ -202,7 +192,6 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/settings'
     | '/accounts/$accountId'
-    | '/billing/plans'
     | '/invitations/$token'
     | '/v1/$'
     | '/verify-email/confirm'
@@ -221,7 +210,6 @@ export interface FileRouteTypes {
     | '/settings'
     | '/verify-email'
     | '/accounts/$accountId'
-    | '/billing/plans'
     | '/invitations/$token'
     | '/v1/$'
     | '/verify-email/confirm'
@@ -241,7 +229,6 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRoute
   VerifyEmailRoute: typeof VerifyEmailRouteWithChildren
   AccountsAccountIdRoute: typeof AccountsAccountIdRoute
-  BillingPlansRoute: typeof BillingPlansRoute
   InvitationsTokenRoute: typeof InvitationsTokenRoute
   V1SplatRoute: typeof V1SplatRoute
   AccountsIndexRoute: typeof AccountsIndexRoute
@@ -327,13 +314,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AccountsAccountIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/billing/plans': {
-      id: '/billing/plans'
-      path: '/billing/plans'
-      fullPath: '/billing/plans'
-      preLoaderRoute: typeof BillingPlansRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/invitations/$token': {
       id: '/invitations/$token'
       path: '/invitations/$token'
@@ -397,7 +377,6 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRoute: SettingsRoute,
   VerifyEmailRoute: VerifyEmailRouteWithChildren,
   AccountsAccountIdRoute: AccountsAccountIdRoute,
-  BillingPlansRoute: BillingPlansRoute,
   InvitationsTokenRoute: InvitationsTokenRoute,
   V1SplatRoute: V1SplatRoute,
   AccountsIndexRoute: AccountsIndexRoute,

@@ -26,16 +26,16 @@ describe("landing page", () => {
     expect(screen.getByText(/you own the code/i)).toBeInTheDocument();
   });
 
-  it("links to the health surface", () => {
+  it("does not link to the health probes, which are platform surface", () => {
     renderWithRouter(<Home />);
 
-    // A prefix match, not an exact one. The card is a single link whose
-    // accessible name is its title run together with its description, and
-    // testing-library builds that name by concatenating text nodes — so the
-    // queryable name is "HealthThe liveness…", with no separator. A real
-    // screen reader joins the two block-level children with a space; the test
-    // just has to not insist on the shape.
-    expect(screen.getByRole("link", { name: /^Health/ })).toHaveAttribute("href", "/healthz");
+    // `/healthz` and `/readyz` are served — supervisors and the rollout gate
+    // call them — but they answer JSON for probes, not a screen for people.
+    // Linking either from here sent a customer to a not-found page, so the
+    // directory no longer names them. Their handlers and their tests stay.
+    const hrefs = Array.from(document.querySelectorAll("a")).map((a) => a.getAttribute("href") ?? "");
+
+    expect(hrefs.filter((href) => /healthz|readyz/i.test(href))).toEqual([]);
   });
 
   it("links to every section this build has", () => {
@@ -44,9 +44,19 @@ describe("landing page", () => {
     const nav = screen.getByRole("navigation", { name: "Sections" });
     const hrefs = Array.from(nav.querySelectorAll("a")).map((a) => a.getAttribute("href"));
 
-    expect(hrefs).toEqual(
-      expect.arrayContaining(["/accounts", "/billing/plans", "/healthz"]),
-    );
+    expect(hrefs).toEqual(["/accounts"]);
+  });
+
+  it("links nowhere near billing, which is frozen for launch", () => {
+    // There is no plan catalogue in this build: billing is out of launch
+    // scope, so a plans entry would advertise a screen that says billing is
+    // not configured. The billing service contract is untouched — only the
+    // customer entry point is gone.
+    renderWithRouter(<Home />);
+
+    const hrefs = Array.from(document.querySelectorAll("a")).map((a) => a.getAttribute("href") ?? "");
+
+    expect(hrefs.filter((href) => /billing/i.test(href))).toEqual([]);
   });
 
   it("links nowhere near the customer list, which is not shippable unscoped", () => {

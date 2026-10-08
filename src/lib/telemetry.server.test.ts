@@ -511,7 +511,6 @@ describe("the route template table", () => {
     ["/", "/"],
     ["/login", "/login"],
     ["/healthz", "/healthz"],
-    ["/billing/plans", "/billing/plans"],
     ["/accounts/8f2c1e40-1111-2222-3333-444455556666", "/accounts/{accountId}"],
     ["/invitations/tok_abc123", "/invitations/{token}"],
     ["/v1/session", "/v1/{path}"],

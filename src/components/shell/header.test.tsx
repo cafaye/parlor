@@ -195,13 +195,12 @@ describe("shell header", () => {
 });
 
 describe("navigation", () => {
-  it("offers the plans catalogue, which needs no account", () => {
-    // billing's plan catalogue is the one screen that needs no session, so
-    // hiding it behind sign-in would hide the only thing a prospective customer
-    // can look at.
+  it("offers no plans catalogue, because billing is frozen for launch", () => {
+    // Billing is out of launch scope and the plans route is gone, so a Plans
+    // entry would advertise a screen that says billing is not configured.
     renderWithProviders(<ShellHeader />, { identity: stubIdentity() });
 
-    expect(screen.getByRole("link", { name: "Plans" })).toHaveAttribute("href", "/billing/plans");
+    expect(screen.queryByRole("link", { name: "Plans" })).toBeNull();
   });
 
   it("offers the accounts list once there is a session", async () => {

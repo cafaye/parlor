@@ -263,8 +263,8 @@ function hasUseClient(source: string): boolean {
  * The first version of this enumerated React's exported hooks and passed,
  * and was wrong about both of the files it waved through.
  * `components/shell/header.tsx` declares `"use client"` and calls no React hook
- * at all — it calls `useAuth()`. `app/billing/plans/plans-screen.tsx` calls
- * `useBilling()` and `useInfiniteQuery()`. All three are hooks by every
+ * at all — it calls `useAuth()`. `app/accounts/accounts-screen.tsx` calls
+ * `useAccounts()` and `useCreateAccount()`. All three are hooks by every
  * definition that matters, all three make the file a Client Component, and an
  * enumeration of React's exports can see none of them, because a hook is not
  * something React ships; it is a naming convention the codebase follows.
