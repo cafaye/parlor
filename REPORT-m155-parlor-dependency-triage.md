@@ -65,7 +65,7 @@ developer-machine surface only. Production traffic never touches sharp.
 **Verdict: not a launch blocker.** No shipped production dependency is
 affected; no customer data path involves the vulnerable code.
 
-## 4. Fix decision: minimal compatible remediation exists — do it as a follow-up commit
+## 4. Fix decision: minimal compatible remediation APPLIED and verified
 
 - A compatible fix exists: **sharp 0.35.5** is a patch release over installed
   0.35.4 (`npm view` confirms 0.35.5 published; only `-rc` tags sit between).
@@ -75,19 +75,31 @@ affected; no customer data path involves the vulnerable code.
   and even the newest miniflare (`5.20261006.0-alpha`, checked via
   `npm view`) still pins `sharp: 0.35.4`. Upstream has not flowed the patch
   through yet.
-- Correct minimal move: add `"sharp": "0.35.5"` to the existing
-  `"overrides"` block in `package.json` (which already overrides
-  `source-map-js`, so the mechanism is established in this tree), then
-  `npm ci`, re-run scoped `npm audit --json`, `npm run typecheck`, and the
-  narrow affected tests. No new library, no version-range churn, no UI change.
-- Successor's first move (if not done in this run): make that one-line edit,
-  verify `node -e` reports sharp 0.35.5, confirm audit drops to 0 high, run
-  typecheck + a narrow test slice, commit separately from this report.
-- Bounded next action if the override breaks the miniflare pin at install:
-  revert the override, keep this report as the triage record, and file the
-  blocker as "waiting on miniflare to bump sharp past 0.35.4" with a weekly
-  `npm view miniflare/... dependencies.sharp` check. Risk of waiting is
-  accepted per §3 (dev-only, local attack surface).
+- Fix applied (separate commit after this report): `"sharp": "0.35.5"` added
+  to the existing `"overrides"` block in `package.json` (which already
+  overrides `source-map-js`, so the mechanism is established in this tree).
+  Lockfile re-resolved with `npm install --package-lock-only` (resolve only,
+  no drift), then clean `npm ci`. No new library, no range churn, no UI change.
+- Verification (all measured post-fix):
+  - `npm ci` → exit **0**, "found 0 vulnerabilities".
+  - `node -e` on `node_modules/sharp/package.json` → **0.35.5**.
+  - `timeout 120 npm audit --json` → exit **0**,
+    0 high / 0 critical / 0 moderate / 0 total.
+  - `npm run typecheck` → exit **0**.
+  - `npx vitest run src/lib/upstream.test.ts` → 98 passed (narrow slice;
+    no test imports sharp/miniflare — nothing in `src/` references either —
+    so this is a tree-health smoke check, not an affected-module test.
+    Full suite and Docker deliberately not run, per brief).
+- Successor action: remove the override once miniflare pins sharp ≥0.35.5
+  (check with `npm view miniflare@<latest> dependencies.sharp`); until then
+  the one-line pin holds. Revert path is just deleting the line.
+- Lockfile scope note: besides the sharp 0.35.4→0.35.5 entries (27 platform
+  packages) and sharp's own libvips 1.3.3→1.3.4 (10 entries), re-resolution
+  re-nested tailwind's `@emnapi/*`/`@napi-rs/*`/`@tybys/*` under
+  `oxide-wasm32-wasi/node_modules` at the exact versions that package
+  declares (`^1.11.1` etc.). The old tree had hoisted 1.10.0-style copies
+  that did not satisfy those ranges — the new tree is strictly more correct,
+  no unrelated wanted-bump. Verified programmatically against both lockfiles.
 
 ## 5. Exact outputs / exit codes recorded
 
@@ -102,7 +114,8 @@ affected; no customer data path involves the vulnerable code.
 
 ## 6. Statement
 
-No unresolved high issue is called fixed: as of this commit, sharp@0.35.4
-(GHSA-wq5f-xc86-pv6w) is still installed. It is classified dev-only and not a
-launch blocker, with the bounded override remediation queued as the immediate
-follow-up.
+As of the fix commit, sharp is at 0.35.5 and `npm audit --json` reports zero
+vulnerabilities (exit 0) — the one real high finding is resolved, and the
+three propagation entries cleared with it. Nothing unresolved is called fixed:
+had the override failed to install, this report would have kept the
+"still installed" verdict and the wait-on-upstream action instead.
