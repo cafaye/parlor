@@ -19,6 +19,12 @@ import type { SignupTimestamp } from "./identity";
  * server verifies after this client sends), so waiting on it is conservative
  * in the right direction, and renewing on it needs only a margin for the two
  * flights in between.
+ *
+ * Elapsed time is read from the MONOTONIC clock (`performance.now`), never
+ * the wall clock (`Date.now`): a wall-clock step — NTP, daylight saving, a
+ * user-adjusted system clock — must not shorten the hold or age a pair out
+ * early. The live clock is exported so the register screen and its tests share
+ * the one seam: the screen stamps and waits on it, and tests script it.
  */
 
 /**
@@ -49,9 +55,19 @@ export type ProofClock = {
 };
 
 const liveClock: ProofClock = {
-  now: () => Date.now(),
+  now: () => performance.now(),
   sleep: (ms: number) => new Promise((resolve) => setTimeout(resolve, ms)),
 };
+
+/**
+ * The clock the register screen stamps and waits on.
+ *
+ * Exported rather than hidden behind the default parameter so the screen's
+ * render mint (`mintedAt`) and its submit hold (`ensureSignupProof`) read the
+ * same source, and so tests can script elapsed time instead of paying the
+ * real 2.5-second hold on every submit.
+ */
+export const signupProofClock: ProofClock = liveClock;
 
 /**
  * Returns a pair that is safe to send: aged past the floor, renewed past the
@@ -65,7 +81,7 @@ const liveClock: ProofClock = {
 export async function ensureSignupProof(
   cached: CachedSignupProof | null,
   mint: () => Promise<SignupTimestamp>,
-  clock: ProofClock = liveClock,
+  clock: ProofClock = signupProofClock,
 ): Promise<CachedSignupProof> {
   let current = cached;
   if (current === null || clock.now() - current.mintedAt >= SIGNUP_PROOF_RENEW_AFTER_MS) {

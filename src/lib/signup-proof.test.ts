@@ -4,6 +4,7 @@ import {
   SIGNUP_PROOF_MIN_AGE_MS,
   SIGNUP_PROOF_RENEW_AFTER_MS,
   ensureSignupProof,
+  signupProofClock,
   type CachedSignupProof,
   type ProofClock,
 } from "./signup-proof";
@@ -93,5 +94,19 @@ describe("ensureSignupProof", () => {
     await expect(ensureSignupProof(null, mint, scriptedClock(1_000_000))).rejects.toThrow(
       "Failed to fetch",
     );
+  });
+
+  it("reads elapsed time from the monotonic clock, never the wall clock", () => {
+    // A wall-clock step (NTP, daylight saving, a user-adjusted system clock)
+    // must not shorten the hold or age a pair out early, so the shared clock
+    // follows `performance.now` even when `Date.now` disagrees by years.
+    const monotonic = vi.spyOn(performance, "now").mockReturnValue(5_000);
+    const wall = vi.spyOn(Date, "now").mockReturnValue(9_999_999_999_999);
+    try {
+      expect(signupProofClock.now()).toBe(5_000);
+    } finally {
+      monotonic.mockRestore();
+      wall.mockRestore();
+    }
   });
 });

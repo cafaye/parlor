@@ -2,16 +2,19 @@ import { configure, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import RegisterPage from "./page";
+import { SIGNUP_PROOF_MIN_AGE_MS, signupProofClock } from "@/lib/signup-proof";
 import { anIdentityError, stubIdentity } from "@/test/support/identity";
 import { renderWithProviders } from "@/test/support/render";
 
 /**
  * Submitting may hold the pair past identity's two-second floor before
- * `register` is called, so every assertion that waits on the registration (or
- * on the UI after it) gets a budget past that hold. The hold is real time in
- * these tests — the unit tests in `signup-proof.test.ts` pin the exact waits
- * against a scripted clock, and what is proved here is the form's behavior:
- * a fast submit still sends the render-time pair, a stale one is renewed.
+ * `register` is called, so the hold is scripted, not waited out: the shared
+ * clock's `sleep` resolves immediately in these tests, and the two lifecycle
+ * cases below pin the hold's LENGTH by asserting on what `sleep` was asked
+ * for. The exact waits are pinned against a scripted clock in
+ * `signup-proof.test.ts`; what is proved here is the form's behavior: a fast
+ * submit still sends the render-time pair, a stale one is renewed. No test in
+ * this file pays real seconds.
  */
 configure({ asyncUtilTimeout: 8000 });
 
@@ -36,6 +39,15 @@ function submit() {
  */
 beforeEach(() => {
   localStorage.clear();
+  // The submit hold resolves immediately: these tests prove WHAT is sent and
+  // when a renewal happens, not how long a browser timer takes — the two
+  // lifecycle cases below assert the hold's length from the recorded `sleep`
+  // argument instead of paying it in real time.
+  vi.spyOn(signupProofClock, "sleep").mockImplementation(() => Promise.resolve());
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 describe("register page", () => {
@@ -160,22 +172,22 @@ describe("register page", () => {
    * clock is not a party to the server's subtraction.
    */
   describe("when the pair is instant or stale", () => {
-    afterEach(() => {
-      vi.restoreAllMocks();
-    });
-
     it("holds a fast submit past the floor and sends the render-time pair", async () => {
       // The render mint has resolved and the submit lands in the same breath:
       // this is the password-manager case, where a direct submit would be
       // refused as bot-like. The registration still goes through, with the
-      // pair the render minted — held, not re-minted — and only after it aged.
+      // pair the render minted — held, not re-minted. The hold is asserted
+      // from the recorded `sleep` argument rather than waited out: the pair
+      // is brand new on the scripted clock, so the full floor must be held.
+      const tick = 1_000_000;
+      vi.spyOn(signupProofClock, "now").mockReturnValue(tick);
+      const sleep = vi.spyOn(signupProofClock, "sleep");
       const identity = stubIdentity({
         register: vi.fn(() => Promise.resolve({ id: "usr_1", email: CREDENTIALS.email })),
       });
       renderWithProviders(<RegisterPage />, { identity });
       await waitFor(() => expect(identity.mintSignupTimestamp).toHaveBeenCalledTimes(1));
 
-      const started = performance.now();
       fillIn(CREDENTIALS);
       submit();
 
@@ -186,16 +198,18 @@ describe("register page", () => {
           signature: "minted-signature",
         }),
       );
-      expect(performance.now() - started).toBeGreaterThanOrEqual(2000);
+      expect(sleep).toHaveBeenCalledWith(SIGNUP_PROOF_MIN_AGE_MS);
       expect(identity.mintSignupTimestamp).toHaveBeenCalledTimes(1);
     });
 
     it("renews a pair from a tab left open past the hour", async () => {
       // The render mint arrives at T; the submit happens an hour later, so the
       // pair it would send is one identity would refuse as expired. The form
-      // mints again and sends the renewal, aged past the floor like any mint.
-      const renderedAt = 1_700_000_000_000;
-      const now = vi.spyOn(Date, "now").mockReturnValue(renderedAt);
+      // mints again and sends the renewal, aged past the floor like any mint —
+      // the renewal's hold is asserted from the recorded `sleep`, not waited.
+      const renderedAt = 1_000_000;
+      const now = vi.spyOn(signupProofClock, "now").mockReturnValue(renderedAt);
+      const sleep = vi.spyOn(signupProofClock, "sleep");
       const identity = stubIdentity({
         mintSignupTimestamp: vi
           .fn()
@@ -218,6 +232,7 @@ describe("register page", () => {
         }),
       );
       expect(identity.mintSignupTimestamp).toHaveBeenCalledTimes(2);
+      expect(sleep).toHaveBeenCalledWith(SIGNUP_PROOF_MIN_AGE_MS);
     });
   });
 

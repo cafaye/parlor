@@ -55,7 +55,7 @@ import {
   fieldErrorMessage,
   type FieldError,
 } from "@/lib/identity";
-import { ensureSignupProof, type CachedSignupProof } from "@/lib/signup-proof";
+import { ensureSignupProof, signupProofClock, type CachedSignupProof } from "@/lib/signup-proof";
 
 /**
  * What the account was created and the link was asked for.
@@ -106,7 +106,7 @@ export function RegisterForm() {
   const inFlight = useRef(false);
   /**
    * The signed signup timestamp pair `POST /v1/users` requires, minted when
-   * the screen renders, with when it arrived.
+   * the screen renders, with when it arrived ON THE MONOTONIC CLOCK.
    *
    * Minted here rather than at submit because identity refuses a pair younger
    * than two seconds as bot-like — a person needs seconds to fill a form and
@@ -116,7 +116,9 @@ export function RegisterForm() {
    * left open past the hour keeps a stale pair. `ensureSignupProof` closes
    * both at submit — holding a young pair past the floor, renewing a stale
    * one — from local elapsed time only, never from the pair's timestamp
-   * against this client's clock. A submission without a pair is not attempted
+   * against this client's clock. The stamp below and that hold read the same
+   * shared clock (`signupProofClock`), so a test scripting one scripts both.
+   * A submission without a pair is not attempted
    * at all: identity would refuse it with a 422 before creating any row, so
    * sending it anyway spends a request to learn nothing.
    */
@@ -126,7 +128,7 @@ export function RegisterForm() {
     void client
       .mintSignupTimestamp()
       .then((minted) => {
-        if (live) proof.current = { pair: minted, mintedAt: Date.now() };
+        if (live) proof.current = { pair: minted, mintedAt: signupProofClock.now() };
       })
       .catch(() => {
         // Nothing to render yet: the failure is reported at submit, where the
@@ -163,7 +165,11 @@ export function RegisterForm() {
       // resolved. Either way the pair travels on the registration itself —
       // identity verifies it before any row is created — and a mint failure
       // throws here, so nothing submits without a valid proof.
-      const held = await ensureSignupProof(proof.current, () => client.mintSignupTimestamp());
+      const held = await ensureSignupProof(
+        proof.current,
+        () => client.mintSignupTimestamp(),
+        signupProofClock,
+      );
       proof.current = held;
       const created = await register({
         email: email.trim(),
