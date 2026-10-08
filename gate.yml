@@ -742,21 +742,23 @@ gate:
     # dependent in exactly the way this floor used to be.
     - id: ci-shape-checks
       match: '^([0-9]+) checks declared, [0-9]+ passed, [0-9]+ failed, [0-9]+ skipped$'
-      minimum: 47
-    # And the self-test, which is what makes the 47 above load-bearing: 52
+      minimum: 48
+    # And the self-test, which is what makes the 48 above load-bearing: 54
     # throwaway copies of the tree, each broken one way, each asserted to go
     # red. A gate that runs the checks but silently stopped proving they can
-    # fail would still print `47 checks declared` — this is the line that says
+    # fail would still print `48 checks declared` — this is the line that says
     # the rubber stamp was pressed.
     #
-    # 51 -> 52 is this packet's: one breakage, `no-typecheck-in-prime`, which
-    # deletes `npm run typecheck` from the gate and is asserted to send the
-    # script red. The 47 above does NOT move, and the asymmetry is the point:
-    # this packet EXTENDED an existing check rather than adding a seventh
-    # kind of check, so the number of checks the script reaches a verdict on is
-    # unchanged while the number of ways it can be proven to fail went up by
-    # one. A floor that moved for a reason the tree does not contain is a floor
-    # nobody can reconcile with the tally line.
+    # 52 -> 54 is this packet's: two breakages for one new check — the stack
+    # wiring identity an ephemeral signup key. `the-stack-names-no-signup-key`
+    # deletes the `SIGNUP_SIGNING_KEY` line from the compose document and
+    # `the-harness-generates-no-signup-key` deletes the preflight call from
+    # `bin/e2e-stack` — and each is asserted to send the script red. The 47
+    # above moves too, to 48, and the symmetry is the point: this packet ADDED
+    # a check rather than extending one, so the number of checks the script
+    # reaches a verdict on went up by one alongside the two new ways it can be
+    # proven to fail. A floor that did not move for a reason the tree contains
+    # is a floor nobody can reconcile with the tally line.
     #
     # ALSO A DECLARED COUNT, AND FOR THE SAME REASON. The self-test used to
     # floor the number of breakages it PROVED, which on a machine without `caf`
@@ -769,7 +771,7 @@ gate:
     # a true sentence and a false finding, which is the worst of both.
     #
     # So the proof now floors the number the repository DECLARES and the line
-    # carries the split: `self_test: 52 breakages declared, 51 proven able to
+    # carries the split: `self_test: 54 breakages declared, 53 proven able to
     # fail, 1 unprovable on this machine`. The unprovable one is named on its own
     # line in the run, counted here, and NEVER counted as proven. It is not
     # skipped to make this green — a skip that nobody is forced to notice is not
@@ -783,7 +785,7 @@ gate:
     # either, because the pattern needs the digits immediately after the colon.
     - id: check-self-test
       match: '^self_test: ([0-9]+) breakages declared'
-      minimum: 52
+      minimum: 54
   # NOT PROVED, and named here rather than left to be discovered: a proof is a
   # line of output. `484 passed` proves 484 tests ran; it does not prove the
   # tests touched identity, because they do not — the identity and billing

@@ -507,6 +507,33 @@ services:
       # `OAUTH_REDIRECT_BASE_URL` below is: a page identity redirects to has to
       # be a page the browser can actually load.
       OIDC_LOGIN_UI_URL: "http://127.0.0.1:${E2E_EDGE_PORT:-16000}/login"
+      # THE SIGNUP TIMESTAMP KEY — EPHEMERAL, FROM THE HARNESS, NEVER COMMITTED.
+      #
+      # identity's config.Load refuses to boot without SIGNUP_SIGNING_KEY
+      # (internal/config, ErrNoSignupSigningKey): it is the HMAC-SHA256 key the
+      # signup timestamp is signed under, the second half of signup bot defence,
+      # and the one secret with no supported absent state — a process that could
+      # boot without it would serve an undefended signup form. Measured on this
+      # tier: without this line the identity container exits 1 with
+      # `loading configuration: SIGNUP_SIGNING_KEY is not configured` and no
+      # browser journey ever starts.
+      #
+      # WHY `${SIGNUP_SIGNING_KEY:-}` WITH AN EMPTY DEFAULT, when identity's own
+      # docker-compose.yml carries a development default. A committed default —
+      # even an obviously-development one — is a key in a repository, and this
+      # tier needs no stable key at all: no container outlives `down -v`, and a
+      # timestamp minted under a key from a previous run is worthless to the
+      # next one. So `bin/e2e-stack` generates 32 random bytes per run
+      # (`ensure_signup_signing_key`, the same shape as `ensure_oidc_signing_key`)
+      # and hands them here through the environment, which is exactly the
+      # mechanism the OIDC block above already proves: compose interpolates the
+      # exported value and nothing secret is written, echoed or committed. An
+      # operator who wants a fixed key exports SIGNUP_SIGNING_KEY and the
+      # harness leaves it alone. A bare `docker compose up` without the harness
+      # renders this empty and identity refuses to boot naming the variable —
+      # the fail-loud direction, and the reason the default is empty rather
+      # than absent.
+      SIGNUP_SIGNING_KEY: "${SIGNUP_SIGNING_KEY:-}"
     # -------------------------------------------------------------------
       # SOCIAL LOGIN — the fake provider, and the seven overrides that make the
       # round trip testable at all

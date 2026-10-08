@@ -20,7 +20,7 @@
 # and a partial parse is a worse reader than a grep that says what it wants.
 #
 #   bash tests/validate-ci.sh              the checks
-#   bash tests/validate-ci.sh --self-test  prove they can fail (52 breakages,
+#   bash tests/validate-ci.sh --self-test  prove they can fail (54 breakages,
 #                                         minus whatever this machine cannot
 #                                         prove, plus the opposite cases)
 #
@@ -54,6 +54,7 @@ LOCKFILE=package-lock.json
 # run (see the end-to-end section below).
 E2E_WF="$ROOT/.github/workflows/e2e.yml"
 E2E_COMPOSE="$ROOT/e2e/docker-compose.yml"
+E2E_STACK="$ROOT/bin/e2e-stack"
 PW_CONFIG="$ROOT/playwright.config.ts"
 E2E_RUNNER="$ROOT/bin/e2e"
 # The first host port the stack publishes and the last. A port block is a block
@@ -923,6 +924,49 @@ if [ -f "$E2E_COMPOSE" ]; then
   fi
 fi
 
+# --- identity's signup key in the e2e stack ---------------------------------
+# identity refuses to boot without SIGNUP_SIGNING_KEY (its config's
+# ErrNoSignupSigningKey): the HMAC key the signup timestamp is signed under,
+# with no supported absent state. This stack once named no such variable, so
+# the identity container exited 1 with
+# `loading configuration: SIGNUP_SIGNING_KEY is not configured` after the
+# migrations had applied and before any /readyz answered — every preflight
+# green, no browser journey started. A missing key is invisible until boot,
+# so the contract is held here, statically, where a deletion goes red before
+# any container starts:
+#
+#   * the compose document wires `${SIGNUP_SIGNING_KEY:-}` — with an EMPTY
+#     default — into identity's environment, so the harness supplies it;
+#   * no committed literal or default travels with it: a key in this
+#     repository is a key that never rotates, and this tier needs no stable
+#     key at all;
+#   * `bin/e2e-stack` generates 32 random bytes per run, exports them, and
+#     calls the generator from preflight — the same shape as the OIDC key the
+#     stack already proves, and an operator preset is shape-checked without
+#     ever being printed.
+#
+# This check reads shapes, never values: nothing here renders or logs a key.
+if [ -f "$E2E_COMPOSE" ] && [ -f "$E2E_STACK" ]; then
+  signup_wired=$(code_lines "$E2E_COMPOSE" | found_fixed 'SIGNUP_SIGNING_KEY: "${SIGNUP_SIGNING_KEY:-}"')
+  signup_literal=$(code_lines "$E2E_COMPOSE" | found 'SIGNUP_SIGNING_KEY' | grep -vF '${SIGNUP_SIGNING_KEY' || true)
+  signup_default=$(code_lines "$E2E_COMPOSE" | found 'SIGNUP_SIGNING_KEY:.*:-[^}]' || true)
+  signup_defined=$(code_lines "$E2E_STACK" | found_fixed 'ensure_signup_signing_key() {')
+  signup_called=$(code_lines "$E2E_STACK" | found '^[[:space:]][[:space:]]*ensure_signup_signing_key$' || true)
+  signup_minted=$(code_lines "$E2E_STACK" | found_fixed 'openssl rand -base64 32')
+  signup_exported=$(code_lines "$E2E_STACK" | found_fixed 'export SIGNUP_SIGNING_KEY')
+  if [ -n "$signup_wired" ] && [ -z "$signup_literal" ] && [ -z "$signup_default" ] \
+    && [ -n "$signup_defined" ] && [ -n "$signup_called" ] \
+    && [ -n "$signup_minted" ] && [ -n "$signup_exported" ]; then
+    ok "the e2e stack supplies identity an ephemeral signup key"
+  else
+    no "the e2e stack supplies identity an ephemeral signup key" \
+      "compose must wire SIGNUP_SIGNING_KEY: \"\${SIGNUP_SIGNING_KEY:-}\" with no literal and no committed default, and bin/e2e-stack must define, call, mint (openssl rand -base64 32) and export it"
+  fi
+else
+  no "the e2e stack supplies identity an ephemeral signup key" \
+    "$E2E_COMPOSE or $E2E_STACK is missing"
+fi
+
 # --- the deployment story, in the four shapes CI assumes --------------------
 # These four checks are about the SHAPE, and every one of them needs no kamal,
 # no docker and no network — which is why they are here rather than only in
@@ -1359,7 +1403,7 @@ fi
 # repository's images. `--self-test` runs this same file against a throwaway copy
 # seeded with the files the checks read — and it does not seed `docker/`, so the
 # copy runs the verifier test with no verifier, the check reports FAIL, and the
-# baseline the 47 breakages are measured against is red before the first breakage
+# baseline the 54 breakages are measured against is red before the first breakage
 # is planted. Every self-test case then "passes" for the wrong reason, or none of
 # them runs. That is the exact failure the header above this section describes,
 # reached from the other direction: a check wired into the gate that cannot be
@@ -1447,7 +1491,7 @@ else
 fi
 
 # --- prove the checks can fail --------------------------------------------
-# Fifty-two breakages of a throwaway copy of every file these checks read, each
+# Fifty-four breakages of a throwaway copy of every file these checks read, each
 # asserted to send this gate red — except the ones this machine cannot prove,
 # which are counted separately and said out loud rather than passed quietly (see
 # `axis_available` and the tally at the bottom of `self_test`).
@@ -1565,6 +1609,7 @@ self_test() {
     # to be the same directory the checks read in the real tree.
     cp "$E2E_WF" "$SANDBOX/.github/workflows/e2e.yml"
     cp "$E2E_COMPOSE" "$SANDBOX/e2e/docker-compose.yml"
+    cp "$E2E_STACK" "$SANDBOX/bin/e2e-stack"
     cp "$PW_CONFIG" "$SANDBOX/playwright.config.ts"
     cp "$E2E_RUNNER" "$SANDBOX/bin/e2e"
     cp "$ROOT/tests/assert-e2e-ran.mjs" "$SANDBOX/tests/assert-e2e-ran.mjs"
@@ -1573,6 +1618,7 @@ self_test() {
       cp "$spec" "$SANDBOX/e2e/$(basename "$spec")"
     done
     chmod +x "$SANDBOX/bin/e2e"
+    chmod +x "$SANDBOX/bin/e2e-stack"
   }
 
   # Baseline first: a self-test that cannot see the copy go green in the first
@@ -1633,6 +1679,8 @@ self_test() {
     "playwright-points-at-another-stack|sed_i 's|\"E2E_PARLOR_PORT\", \"16003\"|\"E2E_PARLOR_PORT\", \"3000\"|' '$SANDBOX/playwright.config.ts'" \
     "a-service-with-no-health-and-no-finding|printf '  bogus-service:\n    image: busybox:1.36.1\n' >>'$SANDBOX/e2e/docker-compose.yml'" \
     "an-unpinned-image|sed_i 's|image: nginx:1.27.4-alpine|image: nginx:latest|' '$SANDBOX/e2e/docker-compose.yml'" \
+    "the-stack-names-no-signup-key|sed_i '/SIGNUP_SIGNING_KEY: \"\${SIGNUP_SIGNING_KEY:-}\"/d' '$SANDBOX/e2e/docker-compose.yml'" \
+    "the-harness-generates-no-signup-key|sed_i '/^  ensure_signup_signing_key$/d' '$SANDBOX/bin/e2e-stack'" \
     "no-deploy-config|rm -f '$SANDBOX/config/deploy.yml'" \
     "an-accessory-in-the-deploy-config|printf '\naccessories:\n  postgres:\n    image: postgres:17-alpine\n' >>'$SANDBOX/config/deploy.yml'" \
     "a-builder-arg-without-a-dockerfile-arg|echo '  args:' >>'$SANDBOX/config/deploy.yml' && echo '    NEXT_PUBLIC_CDN_URL: <%= cdn_url %>' >>'$SANDBOX/config/deploy.yml'" \

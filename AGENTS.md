@@ -418,15 +418,15 @@ in the repository. The format, the checker and the reasoning are `core`'s —
   enumerated with a `satisfy` command and what "unmet" looks like. A
   requirement nobody can demonstrate is worse than no requirement.
 - **The three `proof` floors are decrease-detectors, not budgets:** 727 vitest
-  tests, 47 `validate-ci.sh` checks, 52 self-test breakages. Adding a test means
+  tests, 48 `validate-ci.sh` checks, 54 self-test breakages. Adding a test means
   raising `minimum: 727` in `gate.yml` in the same commit. `core` has
   `test_the_gate_floor_is_not_below_the_suite_core_claims_to_have` to force
   that; **this repository has no equivalent**, so it is a thing a human has to
   remember.
 - **Two of those three floors are DECLARED totals, not counts of what ran, and
   that is load-bearing rather than a phrasing.** `ci-shape-checks` reads the
-  first number on `47 checks declared, …` — the sum of passed, failed and
-  skipped — and `check-self-test` reads `self_test: 52 breakages declared, …`.
+  first number on `48 checks declared, …` — the sum of passed, failed and
+  skipped — and `check-self-test` reads `self_test: 54 breakages declared, …`.
   Three checks in `tests/validate-ci.sh` are gated on `caf`, `shellcheck` and
   `docker`, none of which this repository requires, and each prints SKIP rather
   than PASS when the tool is absent. A floor on the PASSED count is therefore a

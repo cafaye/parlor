@@ -680,6 +680,7 @@ preflight() {
   fi
 
   ensure_oidc_signing_key
+  ensure_signup_signing_key
 }
 
 # ---------------------------------------------------------------------------
@@ -726,6 +727,67 @@ ensure_oidc_signing_key() {
     die "openssl produced an empty OIDC signing key."
   fi
   export OIDC_SIGNING_KEY="$generated"
+}
+
+# ---------------------------------------------------------------------------
+# The signup timestamp key, and why it is generated rather than committed
+# ---------------------------------------------------------------------------
+# identity refuses to boot without SIGNUP_SIGNING_KEY (internal/config,
+# ErrNoSignupSigningKey): it is the HMAC-SHA256 key the signup timestamp is
+# signed under, and the one secret with no supported absent state. The stack
+# used to omit it — the compose document named no such variable — so the
+# identity container exited 1 with
+# `loading configuration: SIGNUP_SIGNING_KEY is not configured` after the
+# migrations had applied and before any /readyz answered. The failure named the
+# variable and nothing about the harness that failed to supply it, sixty
+# seconds into a bring-up whose every preflight was green.
+#
+# So a key is generated here, per run, for the same two reasons the OIDC key
+# above is rather than committed:
+#
+#   * A committed HMAC key is a key in a repository. identity's own compose
+#     file carries an obviously-development default because a fresh clone must
+#     boot; this tier needs no stable key at all — no container outlives
+#     `down -v` — so it generates one and keeps the compose default empty.
+#   * Nothing caches the key across runs. A timestamp minted under a previous
+#     run's key is worthless to the next one, so a key that changes per run
+#     costs nothing and a key that never changes would be a key sitting in git
+#     for no benefit.
+#
+# Exporting rather than writing a file is what `e2e/docker-compose.yml` reads:
+# the document interpolates `${SIGNUP_SIGNING_KEY:-}`, so the value reaches the
+# container through the environment and never through a file, an argument, a
+# log line or the repository. An operator who wants a fixed key exports one
+# and this function leaves it alone — after checking its shape, because a
+# preset key that identity would refuse at boot is a failure this harness can
+# name before any container starts. The shape is base64url without padding of
+# exactly 32 bytes, which is 43 characters; the mint command is the one
+# identity's own README documents:
+#
+#   openssl rand -base64 32 | tr '+/' '-_' | tr -d '='
+#
+# NOTHING HERE PRINTS THE KEY. The length operator and the case pattern below
+# read it without echoing it, and the die messages name the variable and the
+# mint command, never the value.
+ensure_signup_signing_key() {
+  if [ -n "${SIGNUP_SIGNING_KEY:-}" ]; then
+    case "$SIGNUP_SIGNING_KEY" in
+      [A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-][A-Za-z0-9_-])
+        if [ "${#SIGNUP_SIGNING_KEY}" -eq 43 ]; then
+          return 0
+        fi
+        ;;
+    esac
+    die "SIGNUP_SIGNING_KEY is set but is not base64url of 32 bytes (43 characters, no padding). Unset it and let this harness generate one, or mint one with: openssl rand -base64 32 | tr '+/' '-_' | tr -d '='"
+  fi
+  need openssl "openssl generates identity's signup timestamp key at bring-up."
+  local generated
+  generated=$(openssl rand -base64 32 2>/dev/null | tr '+/' '-_' | tr -d '=\n') \
+    || die "openssl could not generate a signup timestamp key."
+  if [ -z "$generated" ]; then
+    die "openssl produced an empty signup timestamp key."
+  fi
+  export SIGNUP_SIGNING_KEY="$generated"
 }
 
 # --- the host port a service publishes --------------------------------------
