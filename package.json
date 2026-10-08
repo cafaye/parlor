@@ -56,5 +56,8 @@
     "vite": "^8.3.2",
     "vitest": "^5.0.2",
     "wrangler": "^4.147.0"
+  },
+  "overrides": {
+    "source-map-js": "1.2.2"
   }
 }
