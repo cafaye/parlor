@@ -538,4 +538,20 @@ describe("expressive list-first composition", () => {
     expect(arrow).toHaveAttribute("aria-hidden", "true");
     expect(row).toHaveAccessibleName(expect.stringContaining("Acme Corp"));
   });
+
+  it("docks the create form beside the list on wide screens, below it on narrow ones", async () => {
+    // The ledger over the entry form: the list is the workspace and the form
+    // the secondary action, so on desktop the form sits in a 300px aside
+    // rather than stacking a second full-width panel under the first. DOM
+    // order is unchanged — list first — so narrow screens and screen readers
+    // meet the same sequence as before.
+    signIn();
+    renderWithProviders(<AccountsPage />, { identity: signedIn(rows) });
+
+    const row = await screen.findByRole("link", { name: /Acme Corp/ });
+    const form = await screen.findByLabelText("Account name");
+    const grid = row.closest("ul")?.parentElement?.parentElement;
+    expect(grid?.className.split(" ")).toContain("lg:grid-cols-[minmax(0,1fr)_300px]");
+    expect(grid).toContainElement(form.closest("section"));
+  });
 });

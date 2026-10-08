@@ -57,7 +57,7 @@ export function AccountsScreen() {
   if (session.status === "anonymous") return <SignedOut />;
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-[minmax(0,1fr)_300px]">
       <AccountList accounts={accounts} />
       <CreateAccountForm />
     </div>

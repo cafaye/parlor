@@ -976,4 +976,23 @@ describe("expressive detail composition", () => {
     expect(headings).toHaveLength(1);
     expect(headings[0]).toHaveTextContent("Acme Corp");
   });
+
+  it("sets the facts with the rename and the invite with the members on wide screens", async () => {
+    // Two workflows side by side on desktop: the account itself (facts,
+    // rename) in one column and its people (invite, members) in the other.
+    // Asserted as the wiring check the row-stack ones are — the grouping, not
+    // copy — so a column that ever drifts back into one undifferentiated stack
+    // goes red. The DOM order is unchanged, so this holds at every width.
+    signIn();
+    renderWithProviders(<AccountScreen accountId={ACCOUNT_ID} />, { identity: asCaller({ role: "owner" }) });
+
+    const facts = await screen.findByRole("region", { name: "Account" });
+    const members = await screen.findByRole("region", { name: "Members" });
+    const invite = screen.getByRole("region", { name: "Invite somebody" });
+
+    const grid = facts.parentElement?.parentElement;
+    expect(grid?.className.split(" ")).toContain("lg:grid-cols-2");
+    expect(invite.parentElement).toBe(members.parentElement);
+    expect(facts.parentElement).not.toBe(members.parentElement);
+  });
 });

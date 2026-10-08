@@ -131,13 +131,27 @@ function Loaded({ account, accountId }: { account: AccountDetail; accountId: str
         </div>
       </header>
 
-      <AccountFacts account={account} />
+      {/*
+        Two workflows side by side on wide screens, one column on narrow ones.
+        The left column is the account itself (its facts, its name); the right
+        column is its people (inviting them, seeing them). The DOM order is
+        unchanged — facts, rename, invite, members — so a screen reader and a
+        narrow viewport meet the same sequence as before, and the irreversible
+        panel stays last and full-width below both. Nothing here is a new card:
+        the panels already existed, and the grid only decides where they stand.
+      */}
+      <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-2">
+        <div className="flex min-w-0 flex-col gap-8">
+          <AccountFacts account={account} />
 
-      {can(role, "renameAccount") ? <RenameForm account={account} /> : null}
+          {can(role, "renameAccount") ? <RenameForm account={account} /> : null}
+        </div>
+        <div className="flex min-w-0 flex-col gap-8">
+          {can(role, "inviteMember") ? <InviteForm role={role} accountId={accountId} /> : null}
 
-      {can(role, "inviteMember") ? <InviteForm role={role} accountId={accountId} /> : null}
-
-      <MembersPanel role={role} accountId={accountId} />
+          <MembersPanel role={role} accountId={accountId} />
+        </div>
+      </div>
 
       <DangerZone role={role} accountId={accountId} />
     </div>

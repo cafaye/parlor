@@ -741,13 +741,18 @@ gate:
     # suite on this tree: `Tests  1015 passed (1015)`, 38 files.
     # IT IS 1018 BY THE NEXT ACCOUNT. 1015 -> 1018, a +3 in
     # `src/app/accounts/[accountId]/account-screen.test.tsx`, the readable-dates
-    # pair the account-surfaces packet (m136) adds: the creation date reads as a
+    # trio the account-surfaces packet (m136) adds: the creation date reads as a
     # date rather than the wire value, the `<time>` keeps the machine-readable
     # `dateTime`, and an unparseable timestamp renders as it arrived. The first
     # was shown red before green against the old verbatim rendering.
+    # IT IS 1020 BY THE NEXT ACCOUNT. 1018 -> 1020, a +2 in the same packet
+    # (m136): the two desktop-composition contracts — the detail's facts/rename
+    # and invite/members column grouping plus its `lg:grid-cols-2` hook, and
+    # the index's docked-aside grid hook. Both were shown red before green
+    # against the old single-stack layout.
     - id: suite
       match: '^[ ]*Tests[ ]+([0-9]+)[ ]+passed(?![ ]*\|)'
-      minimum: 1018
+      minimum: 1020
     # The tally `tests/validate-ci.sh` prints, which is the second half of this
     # gate: the checks that the tree still has the shape CI assumes — one
     # runtime pin, `npm ci` and not `npm install`, the gate command, the
