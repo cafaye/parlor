@@ -1,73 +1,102 @@
 # REPORT-parlor-e2e-billing-probe-m128
 
-Worker packet m128 on `worker/m128-parlor-e2e-billing-probe`, worktree
-`/Users/kaka/Code/any/wt/parlor-e2e-signup-key`. One commit: `ff6cd66`
-(this report is the second commit). No merge, no push.
+Worker packet m128, branch `worker/m128-parlor-e2e-billing-probe`,
+worktree `/Users/kaka/Code/any/wt/parlor-e2e-signup-key`.
+Commit `ff6cd66` (inherited from a prior attempt of this same packet —
+landed mid-session; verified below, kept as correct) plus this report.
+No merge, no push.
 
 ## 1. Exact failure
 
-A local full-browser E2E run was blocked before any Playwright test began:
-identity and gateway reached `/readyz`; parlor stayed **503**. The parlor
-container's readiness body reported `identity: ok` and **`billing: not ok`**.
+A local full-browser E2E run was blocked before any Playwright test ran:
 
-Root cause, measured in the E2E container environment: parlor had
-`IDENTITY_URL=http://identity:8080` (correct) **and**
-`BILLING_URL=http://billing:3000`, from `e2e/docker-compose.yml:783` — but
-this E2E Compose stack runs **no billing service** (no `billing:` service in
-the document, nothing on the `platform` network answering that name).
-Parlor's `/readyz` (`src/app/readyz/route.ts:71-73`) probes billing whenever
-`BILLING_URL` is non-empty and fails the gate while that probe fails, so the
-readiness poll in `bin/e2e-stack` could never open and the tier came down
-with `{"name":"billing","ok":false}` before a single browser test ran.
-Billing is not part of the launch stack or the current feature set
-(`caf.dev.json`: billing deliberately absent, `required: false`).
+- `identity` and `gateway` reached `/readyz`; `parlor` stayed **503**.
+- The parlor container's readiness body reported `identity: ok`,
+  `billing: not ok`.
+- The E2E container environment showed
+  `IDENTITY_URL=http://identity:8080` (correct) and
+  `BILLING_URL=http://billing:3000` — but `e2e/docker-compose.yml`
+  declares **no `billing:` service**, so `billing` resolves to nothing.
 
-## 2. Config change (and only that)
+Root cause chain (all three links verified in-tree, no container run needed):
 
-- `e2e/docker-compose.yml` — deleted the `BILLING_URL: "http://billing:3000"`
-  line from parlor's `environment:` and left a comment saying why the absence
-  is the fix, when to re-add it (only together with a `billing:` service in
-  the same document), and where the pairing is held (`tests/validate-ci.sh`).
-- Readiness behavior is **untouched**: no `src/` change. `BILLING_URL` unset
-  means billing is not probed and the launch-shaped sweep is identity-only
-  (`deps: [{name: identity, ok: true}]`); a deployment that explicitly sets
-  `BILLING_URL` still gets billing as a readiness dependency. The forwarder
-  already treats empty `BILLING_URL` as "answer billing routes 503 here,
-  dial nothing" (`src/lib/upstream.ts`), so nothing else in the container
-  changes either.
-- Deliberately NOT done: no billing service added, no billing implemented,
-  no touch of launch stack (`config/deploy.yml` keeps its interpolated
-  `BILLING_URL` — that is the deploy's business), Site, Identity, or any
-  live `site-launch-*` container.
+1. `e2e/docker-compose.yml` (parlor service) set
+   `BILLING_URL: "http://billing:3000"` — stale from an older topology.
+2. `src/app/readyz/route.ts` probes billing **whenever `BILLING_URL`
+   is set** (`if (billingUrl !== "")`), and a configured-but-unreachable
+   dependency fails the gate: 503 with `{name:"billing", ok:false}`.
+3. `bin/e2e-stack`'s bounded host poll on parlor's `/readyz` therefore
+   spent its whole budget and brought the tier down.
 
-## 3. Regression check (the narrowest one)
+The readiness behavior itself is correct and unchanged: a deployment
+that explicitly configures billing keeps it as a readiness dependency
+(`route.test.ts`: "fails closed when billing is configured but
+unreachable"); an absent billing is not probed ("leaves billing out of
+the sweep when it is not configured — the launch stack's shape").
+Only the fixture was wrong.
 
-- `tests/validate-ci.sh` — new check
-  "the e2e stack does not point parlor at a billing service it does not run":
-  if the compose document (comments stripped) sets `BILLING_URL:` to a
-  non-empty value while no `^  billing:` service exists in the same document,
-  the gate fails. Adding a real `billing:` service later satisfies it; an
-  explicitly empty value passes either way (the probe treats it as unset).
-- Self-test — new breakage
-  `the-e2e-stack-points-parlor-at-a-billing-service-it-does-not-run`
-  (appends the stale `BILLING_URL` line to a sandbox copy; asserted to go red).
-- Floors moved with the tree, same commit: `gate.yml` ci-shape-checks
-  `48 -> 49`, check-self-test `54 -> 55`; `validate-ci.sh` header comments
-  `54 -> 55`. Suite floor `959` untouched (no vitest files changed).
+## 2. Config change (commit `ff6cd66`, verified, kept)
 
-## 4. Focused tests and exit statuses
+- **`e2e/docker-compose.yml`** — deleted the stale
+  `BILLING_URL: "http://billing:3000"` line from parlor's environment
+  and left a comment in its place stating the absence is the contract
+  (unset ⇒ not probed ⇒ honest shape of a stack with no billing;
+  re-point only together with a `billing:` service in the same
+  document). No service added, none removed otherwise.
+- **`tests/validate-ci.sh`** — one new static check: a `BILLING_URL:`
+  line carrying a value in the compose document requires a
+  `billing:` service in the same document; an explicitly empty value
+  (`""`/`''`) passes either way because the probe treats it as
+  unconfigured. Comment-stripped read (`code_lines`), so the prose
+  documenting the fix cannot trip it. Check count 48 → **49**.
+- **`tests/validate-ci.sh --self-test`** — one new breakage,
+  `the-e2e-stack-points-parlor-at-a-billing-service-it-does-not-run`,
+  which re-appends the stale line and must send the script red.
+  Breakage count 54 → **55** (axis `-`: needs nothing beyond node/grep).
+- **`gate.yml`** — floors raised with the packet that earned them:
+  `ci-shape-checks` minimum 48 → 49, `check-self-test` minimum
+  54 → 55, each with a history note. Suite floor untouched (no vitest
+  change — correct, the suite did not grow).
 
-| Test | Result |
-|---|---|
-| `timeout 300 bash tests/validate-ci.sh` | exit 0 — `49 checks declared, 49 passed, 0 failed, 0 skipped` (incl. the new check PASS, shellcheck clean) |
-| Red proof: appended `BILLING_URL: "http://billing:3000"` to `e2e/docker-compose.yml`, re-ran `validate-ci.sh` | exit 1 — `49 checks declared, 48 passed, 1 failed, 0 skipped`; the single FAIL is the new check and nothing else; restored with `git checkout -- e2e/docker-compose.yml` (verified: no `BILLING_URL:` code line remains) |
-| `timeout 280 npx vitest run src/app/readyz/route.test.ts` (after background `npm ci`, exit 0) | exit 0 — `Tests 17 passed (17)`; readiness behavior intact |
-| NOT run | Full `bin/prime`, full `validate-ci.sh --self-test` (55 breakages × ~12 s each exceeds this packet's hour budget; the new breakage's logic is proved by the plant/restore row above — CI runs the self-test via the gate), any E2E Docker run (forbidden by this brief), full vitest suite (no suite files changed) |
+Scope held: no billing service added, no billing implemented,
+`src/app/readyz/route.ts` untouched, launch stack (`config/deploy.yml`
+still declares `BILLING_URL` as a run-time var for deployments that
+*do* configure billing — that is the deployment story, not this
+fixture), Site, Identity, and live `site-launch-*` containers untouched.
+`git show ff6cd66 --stat` touches exactly the three files above.
 
-## 5. Handoff
+A suspected defect in the new check's empty-value regex
+(`(""|'"''"')` alternation) was investigated by executing the pattern:
+it evaluates to `(""|'')` and both `BILLING_URL: ""` and
+`BILLING_URL: ''` are correctly treated as unset. No edit needed;
+evidence overruled the first reading.
 
-Manager reruns the full Parlor browser suite (`./bin/e2e`), which should now
-pass parlor's `/readyz` with the identity-only `deps` shape that
-`e2e/stack.e2e.spec.ts` already asserts. Successor's first move if the tier
-still reports a billing dep: `grep -n BILLING_URL e2e/docker-compose.yml` —
-the new gate check answers that statically before any container starts.
+## 3. Focused tests and exit statuses (no E2E Docker run, per brief)
+
+| # | Command (each bounded by `timeout`) | Result |
+|---|--------------------------------------|--------|
+| 1 | `timeout 120 bash tests/validate-ci.sh` | exit **0** — `49 checks declared, 49 passed, 0 failed, 0 skipped` (log `/tmp/gate-parlor-e2e-signup-key.validate.log`) |
+| 2 | `npx vitest run src/app/readyz/route.test.ts` | exit **0** — `Test Files 1 passed (1)`, `Tests 17 passed (17)` (log `.../gate-parlor-e2e-signup-key.readyz.log`): readiness behavior intact, both directions (billing probed when set, absent when unset) |
+| 3 | New-check red proof: re-added `BILLING_URL: "http://billing:3000"` to a scratch copy of the compose doc, ran the check's exact logic | refs non-empty, no `billing:` service ⇒ **would FAIL** (correct); pristine tree passes |
+| 4 | `bash tests/validate-ci.sh --self-test` (background, polled) | `self_test: 55 breakages declared, 55 proven able to fail, 0 unprovable on this machine`, including `ok the-e2e-stack-points-parlor-at-a-billing-service-it-does-not-run goes red` (log `.../gate-parlor-e2e-signup-key.selftest.log`) |
+
+Full `bin/prime` and `./bin/e2e` were deliberately **not** run: the
+brief bounds this packet to focused static/config tests and reserves
+the full browser suite for the manager after this lands.
+
+## 4. Handoff for the manager
+
+- Merge candidate: `ff6cd66` + this report commit on
+  `worker/m128-parlor-e2e-billing-probe`. Nothing else in the tree
+  (verified `git status` clean apart from this report before
+  committing it).
+- Rerun trigger: the full parlor browser suite (`./bin/e2e`). Expected:
+  parlor `/readyz` goes 200 on `{deps:[{identity,ok}]}` and the tier
+  reaches the specs.
+- Known pre-existing note, not this packet's: `e2e/stack.e2e.spec.ts:85`
+  already asserts "this stack deploys no billing" — consistent with
+  this fix, no change needed there.
+- Watch: one stray `git diff --stat` blip mid-session reported an
+  uncommitted compose change that a re-run showed as clean (stale stat
+  cache or a concurrent touch in this shared worktree). Final
+  `git status` before the report commit was re-verified clean.
