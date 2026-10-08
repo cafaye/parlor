@@ -117,6 +117,32 @@ describe("ConfirmDialog, from the keyboard", () => {
   });
 });
 
+describe("ConfirmDialog, modal inertness", () => {
+  /**
+   * The property the hand-built `<div role="dialog">` never provided: the page
+   * behind the dialog is hidden from assistive interaction while it is open,
+   * not merely dimmed. A scrim that only dims still leaves every control behind
+   * it reachable to a screen reader.
+   */
+  it("hides the page behind the dialog from assistive interaction while it is open", () => {
+    render(<Harness />);
+    const opener = openViaKeyboard();
+
+    expect(opener.closest('[aria-hidden="true"]')).not.toBeNull();
+  });
+
+  it("restores the page behind the dialog when it closes", () => {
+    render(<Harness />);
+    const opener = openViaKeyboard();
+    expect(opener.closest('[aria-hidden="true"]')).not.toBeNull();
+
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "Escape" });
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(opener.closest("[aria-hidden]")).toBeNull();
+  });
+});
+
 describe("ConfirmDialog, type-to-confirm", () => {
   it("disables the confirm until the input matches the expected value", () => {
     render(
