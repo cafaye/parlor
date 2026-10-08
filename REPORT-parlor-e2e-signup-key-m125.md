@@ -90,6 +90,7 @@ unchanged. No topology change, no scope broadening.
   journeys run.
 - If identity still exits 1 on config: the refusal names the variable —
   compare against `loadSignupSigningKey` in the sibling checkout.
-- Commit SHA: <filled at commit time>.
+- Commit SHA: `405f65a223bc243f40629ae2b318812d8d83d4e9` (code in `88b984e`,
+  report in `405f65a`; this line added after).
 - Browser E2E is NOT claimed passed here; the manager reruns the tier after
   merge. Never pushed (worker contract).
