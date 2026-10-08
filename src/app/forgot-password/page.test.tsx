@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import ForgotPasswordPage from "./page";
@@ -233,5 +233,33 @@ describe("the failures, each one actionable", () => {
     submit();
 
     expect(await screen.findByRole("alert")).not.toHaveTextContent(/on its way/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Expressive composition, unchanged recovery contract
+// ---------------------------------------------------------------------------
+
+describe("expressive forgot-password composition", () => {
+  it("carries the product eyebrow above the heading, reusing the route's own label", () => {
+    // Same header block as `/login` and `/register` — the recovery screens
+    // read as one product with them. The eyebrow adds no copy: "parlor" is
+    // the product name already on the page (the shell brand). A paragraph, so
+    // the page keeps exactly one h1.
+    renderPage();
+
+    const main = screen.getByRole("main");
+    const eyebrow = within(main).getByText("parlor");
+    expect(eyebrow.tagName).toBe("P");
+    expect(eyebrow.compareDocumentPosition(within(main).getByRole("heading", { level: 1 }))).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  it("places the recovery form on the raised card", () => {
+    renderPage();
+
+    const form = screen.getByLabelText("Email").closest("form");
+    expect(form?.closest(".bg-surface-raised")).not.toBeNull();
   });
 });

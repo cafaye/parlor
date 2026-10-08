@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import VerifyEmailConfirmPage from "./page";
@@ -354,5 +354,36 @@ describe("the other failures after the button", () => {
     expect(alert).toHaveTextContent(/something went wrong/i);
     expect(alert).not.toHaveTextContent(/ECONNREFUSED/);
     expect(alert).not.toHaveTextContent(/10\.0\.0\.4/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Expressive composition, unchanged verification contract
+// ---------------------------------------------------------------------------
+
+describe("expressive verify-email confirm composition", () => {
+  it("carries the product eyebrow above the heading, reusing the route's own label", () => {
+    // Same header block as the request screen it pairs with. The eyebrow adds
+    // no copy: "parlor" is the product name already on the page. A paragraph,
+    // so the page keeps exactly one h1.
+    renderConfirmPage();
+
+    const main = screen.getByRole("main");
+    const eyebrow = within(main).getByText("parlor");
+    expect(eyebrow.tagName).toBe("P");
+    expect(eyebrow.compareDocumentPosition(within(main).getByRole("heading", { level: 1 }))).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  it("places the confirmation control on the raised card", () => {
+    // No form here — the token IS the credential and it arrived in the URL,
+    // so the screen is a single button. Asserted from that button rather than
+    // from a field, for the same reason the request screen asserts from its
+    // own control.
+    renderConfirmPage();
+
+    const button = screen.getByRole("button", { name: "Verify my email" });
+    expect(button.closest(".bg-surface-raised")).not.toBeNull();
   });
 });

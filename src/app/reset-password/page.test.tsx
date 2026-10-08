@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import ResetPasswordPage from "./page";
@@ -331,5 +331,33 @@ describe("the failures a person hits after the form", () => {
 
     await screen.findByRole("alert");
     expect(document.body.textContent).not.toContain(TOKEN);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Expressive composition, unchanged recovery contract
+// ---------------------------------------------------------------------------
+
+describe("expressive reset-password composition", () => {
+  it("carries the product eyebrow above the heading, reusing the route's own label", () => {
+    // Same header block as `/login` — the token-spending screen reads as one
+    // product with the sign-in screen it returns to. The eyebrow adds no copy:
+    // "parlor" is the product name already on the page. A paragraph, so the
+    // page keeps exactly one h1.
+    renderResetPage();
+
+    const main = screen.getByRole("main");
+    const eyebrow = within(main).getByText("parlor");
+    expect(eyebrow.tagName).toBe("P");
+    expect(eyebrow.compareDocumentPosition(within(main).getByRole("heading", { level: 1 }))).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  it("places the new-password form on the raised card", () => {
+    renderResetPage();
+
+    const form = screen.getByLabelText("New password").closest("form");
+    expect(form?.closest(".bg-surface-raised")).not.toBeNull();
   });
 });

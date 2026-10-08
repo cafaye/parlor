@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import VerifyEmailPage from "./page";
@@ -302,5 +302,33 @@ describe("after a request is accepted", () => {
     await screen.findByRole("status");
 
     expect(document.body.textContent).not.toContain("kaka@example.com");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Expressive composition, unchanged verification contract
+// ---------------------------------------------------------------------------
+
+describe("expressive verify-email composition", () => {
+  it("carries the product eyebrow above the heading, reusing the route's own label", () => {
+    // Same header block as the other auth screens, so the resend screen reads
+    // as one product with them. The eyebrow adds no copy: "parlor" is the
+    // product name already on the page (the shell brand). A paragraph, so the
+    // page keeps exactly one h1.
+    renderRequestPage();
+
+    const main = screen.getByRole("main");
+    const eyebrow = within(main).getByText("parlor");
+    expect(eyebrow.tagName).toBe("P");
+    expect(eyebrow.compareDocumentPosition(within(main).getByRole("heading", { level: 1 }))).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  it("places the verification request form on the raised card", () => {
+    renderRequestPage();
+
+    const form = screen.getByLabelText("Email").closest("form");
+    expect(form?.closest(".bg-surface-raised")).not.toBeNull();
   });
 });
