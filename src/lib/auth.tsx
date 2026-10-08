@@ -24,6 +24,7 @@ import {
   type Credentials,
   type IdentityClient,
   type LoginResult,
+  type Registration,
   type Session,
   type User,
 } from "@/lib/identity";
@@ -79,7 +80,7 @@ export type AuthValue = {
    * `completeSecondFactor` finishes the flow.
    */
   login: (credentials: Credentials) => Promise<LoginResult>;
-  register: (credentials: Credentials) => Promise<User>;
+  register: (input: Registration) => Promise<User>;
   logout: () => Promise<void>;
   /**
    * Forget the session this browser holds WITHOUT asking the service.
@@ -229,7 +230,7 @@ export function AuthProvider({
   });
 
   const registerMutation = useMutation({
-    mutationFn: (credentials: Credentials) => identity.register(credentials),
+    mutationFn: (input: Registration) => identity.register(input),
   });
 
   const logoutMutation = useMutation({
@@ -251,7 +252,7 @@ export function AuthProvider({
     session: deriveSession({ read, query: session }),
     client: identity,
     login: (credentials) => loginMutation.mutateAsync(credentials),
-    register: (credentials) => registerMutation.mutateAsync(credentials),
+    register: (input) => registerMutation.mutateAsync(input),
     logout: () => logoutMutation.mutateAsync(),
     forgetSession: () => {
       store.set(null);

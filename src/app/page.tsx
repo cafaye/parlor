@@ -4,10 +4,11 @@ import { Link } from "@tanstack/react-router";
  * The landing page.
  *
  * A directory rather than a pitch. Every link here goes to a screen that exists
- * in this build, and the two that are deliberately incomplete say so in their
- * own pages rather than being dressed up here: the plan catalogue is a
- * catalogue and not a subscription, because billing has no `/v1/subscriptions`
- * on master.
+ * in this build and is in launch scope: accounts. Billing is frozen for launch,
+ * so there is no plans entry, and the liveness/readiness probes are platform
+ * surface rather than customer navigation, so there is no health entry — both
+ * endpoints are still served and still tested, they are just not linked from
+ * here.
  */
 export default function Home() {
   return (
@@ -26,16 +27,6 @@ export default function Home() {
 
       <nav aria-label="Sections" className="grid gap-3 sm:grid-cols-2">
         <Card href="/accounts" name="Accounts" body="The accounts you belong to, your role in each, and who else is in them." />
-        <Card
-          href="/billing/plans"
-          name="Plans"
-          body="The plan catalogue: what can be bought, at what price, on what cadence."
-        />
-        <Card
-          href="/healthz"
-          name="Health"
-          body="The liveness and readiness probes the platform reads."
-        />
       </nav>
     </main>
   );

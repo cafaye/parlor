@@ -1,9 +1,22 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { configure, fireEvent, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import RegisterPage from "./page";
+import { SIGNUP_PROOF_MIN_AGE_MS, signupProofClock } from "@/lib/signup-proof";
 import { anIdentityError, stubIdentity } from "@/test/support/identity";
 import { renderWithProviders } from "@/test/support/render";
+
+/**
+ * Submitting may hold the pair past identity's two-second floor before
+ * `register` is called, so the hold is scripted, not waited out: the shared
+ * clock's `sleep` resolves immediately in these tests, and the two lifecycle
+ * cases below pin the hold's LENGTH by asserting on what `sleep` was asked
+ * for. The exact waits are pinned against a scripted clock in
+ * `signup-proof.test.ts`; what is proved here is the form's behavior: a fast
+ * submit still sends the render-time pair, a stale one is renewed. No test in
+ * this file pays real seconds.
+ */
+configure({ asyncUtilTimeout: 8000 });
 
 const CREDENTIALS = { email: "kaka@example.com", password: "correct horse" };
 
@@ -26,6 +39,15 @@ function submit() {
  */
 beforeEach(() => {
   localStorage.clear();
+  // The submit hold resolves immediately: these tests prove WHAT is sent and
+  // when a renewal happens, not how long a browser timer takes — the two
+  // lifecycle cases below assert the hold's length from the recorded `sleep`
+  // argument instead of paying it in real time.
+  vi.spyOn(signupProofClock, "sleep").mockImplementation(() => Promise.resolve());
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 describe("register page", () => {
@@ -60,7 +82,24 @@ describe("register page", () => {
   });
 
   describe("with a valid address", () => {
-    it("sends the credentials to the service", async () => {
+    it("mints a signed signup timestamp when the screen renders", async () => {
+      // Identity requires the `{timestamp, signature}` pair `POST
+      // /v1/signup-timestamp` mints on every `POST /v1/users` — a missing,
+      // forged, instant or expired pair is refused with a generic 422 before
+      // any row is created. The pair is minted here, on render, rather than at
+      // submit: a pair younger than two seconds is refused as bot-like, and a
+      // mint-then-submit in one breath would always be one. The submit path
+      // finishes the job — holding a young pair past the floor, renewing a
+      // stale one — so the render mint is the head start, not the whole proof.
+      const identity = stubIdentity({
+        register: vi.fn(() => Promise.resolve({ id: "usr_1", email: CREDENTIALS.email })),
+      });
+      renderWithProviders(<RegisterPage />, { identity });
+
+      await waitFor(() => expect(identity.mintSignupTimestamp).toHaveBeenCalled());
+    });
+
+    it("sends the credentials and the minted pair to the service", async () => {
       const identity = stubIdentity({
         register: vi.fn(() => Promise.resolve({ id: "usr_1", email: CREDENTIALS.email })),
       });
@@ -69,7 +108,13 @@ describe("register page", () => {
       fillIn(CREDENTIALS);
       submit();
 
-      await waitFor(() => expect(identity.register).toHaveBeenCalledWith(CREDENTIALS));
+      await waitFor(() =>
+        expect(identity.register).toHaveBeenCalledWith({
+          ...CREDENTIALS,
+          timestamp: 1759843200,
+          signature: "minted-signature",
+        }),
+      );
     });
 
     it("confirms the account was created", async () => {
@@ -114,6 +159,80 @@ describe("register page", () => {
 
       await screen.findByRole("status");
       expect(screen.queryByLabelText("Password")).not.toBeInTheDocument();
+    });
+  });
+
+  /**
+   * The timestamp lifecycle at submit: identity refuses a pair younger than
+   * two seconds or older than one hour, and ordinary use hits both — a
+   * password-manager fast submit beats the floor, a tab left open passes the
+   * ceiling. The form holds a young pair past the floor and renews a stale
+   * one, measuring age in local elapsed time only: the pair's `timestamp`
+   * against this client's clock is never consulted, because this client's
+   * clock is not a party to the server's subtraction.
+   */
+  describe("when the pair is instant or stale", () => {
+    it("holds a fast submit past the floor and sends the render-time pair", async () => {
+      // The render mint has resolved and the submit lands in the same breath:
+      // this is the password-manager case, where a direct submit would be
+      // refused as bot-like. The registration still goes through, with the
+      // pair the render minted — held, not re-minted. The hold is asserted
+      // from the recorded `sleep` argument rather than waited out: the pair
+      // is brand new on the scripted clock, so the full floor must be held.
+      const tick = 1_000_000;
+      vi.spyOn(signupProofClock, "now").mockReturnValue(tick);
+      const sleep = vi.spyOn(signupProofClock, "sleep");
+      const identity = stubIdentity({
+        register: vi.fn(() => Promise.resolve({ id: "usr_1", email: CREDENTIALS.email })),
+      });
+      renderWithProviders(<RegisterPage />, { identity });
+      await waitFor(() => expect(identity.mintSignupTimestamp).toHaveBeenCalledTimes(1));
+
+      fillIn(CREDENTIALS);
+      submit();
+
+      await waitFor(() =>
+        expect(identity.register).toHaveBeenCalledWith({
+          ...CREDENTIALS,
+          timestamp: 1759843200,
+          signature: "minted-signature",
+        }),
+      );
+      expect(sleep).toHaveBeenCalledWith(SIGNUP_PROOF_MIN_AGE_MS);
+      expect(identity.mintSignupTimestamp).toHaveBeenCalledTimes(1);
+    });
+
+    it("renews a pair from a tab left open past the hour", async () => {
+      // The render mint arrives at T; the submit happens an hour later, so the
+      // pair it would send is one identity would refuse as expired. The form
+      // mints again and sends the renewal, aged past the floor like any mint —
+      // the renewal's hold is asserted from the recorded `sleep`, not waited.
+      const renderedAt = 1_000_000;
+      const now = vi.spyOn(signupProofClock, "now").mockReturnValue(renderedAt);
+      const sleep = vi.spyOn(signupProofClock, "sleep");
+      const identity = stubIdentity({
+        mintSignupTimestamp: vi
+          .fn()
+          .mockResolvedValueOnce({ timestamp: 1759843200, signature: "minted-signature" })
+          .mockResolvedValue({ timestamp: 1759850400, signature: "renewed-signature" }),
+        register: vi.fn(() => Promise.resolve({ id: "usr_1", email: CREDENTIALS.email })),
+      });
+      renderWithProviders(<RegisterPage />, { identity });
+      await waitFor(() => expect(identity.mintSignupTimestamp).toHaveBeenCalledTimes(1));
+
+      now.mockReturnValue(renderedAt + 61 * 60 * 1000);
+      fillIn(CREDENTIALS);
+      submit();
+
+      await waitFor(() =>
+        expect(identity.register).toHaveBeenCalledWith({
+          ...CREDENTIALS,
+          timestamp: 1759850400,
+          signature: "renewed-signature",
+        }),
+      );
+      expect(identity.mintSignupTimestamp).toHaveBeenCalledTimes(2);
+      expect(sleep).toHaveBeenCalledWith(SIGNUP_PROOF_MIN_AGE_MS);
     });
   });
 
@@ -549,6 +668,26 @@ describe("register page", () => {
       const alert = await screen.findByRole("alert");
       expect(alert).toHaveTextContent(/went wrong/i);
       expect(alert).not.toHaveTextContent(/10\.0\.0\.4/);
+    });
+  });
+
+  describe("when the timestamp cannot be minted", () => {
+    it("reports a generic failure without attempting a registration", async () => {
+      // No pair means no registration worth attempting: identity would refuse
+      // the submission with a 422 before creating any row, so sending it anyway
+      // spends a request to learn nothing.
+      const identity = stubIdentity({
+        mintSignupTimestamp: vi.fn(() => Promise.reject(new TypeError("Failed to fetch"))),
+        register: vi.fn(() => Promise.resolve({ id: "usr_1", email: CREDENTIALS.email })),
+      });
+      renderWithProviders(<RegisterPage />, { identity });
+
+      fillIn(CREDENTIALS);
+      submit();
+
+      const alert = await screen.findByRole("alert");
+      expect(alert).toHaveTextContent(/went wrong/i);
+      expect(identity.register).not.toHaveBeenCalled();
     });
   });
 });

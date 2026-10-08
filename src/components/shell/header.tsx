@@ -9,11 +9,13 @@
  * "Sign in" to someone who is signed in is the kind of wrong that costs a
  * support ticket.
  *
- * The navigation sits outside that conditional on purpose. billing's plan
- * catalogue is the one surface in this app that needs no account, so hiding it
- * behind a session would hide the only thing a prospective customer can look
- * at. Accounts, on the other hand, is a dead end without one — it renders "Sign
- * in to see your accounts" — so it only appears once there is a session.
+ * The navigation sits outside that conditional on purpose. Accounts and
+ * settings belong to one person, so a signed-out visitor is offered the
+ * sign-in screen rather than an empty page — which is why they only appear
+ * once there is a session. Billing is frozen for launch and has no entry
+ * here at all; `/verify-email` is deliberately NOT linked either — it is the
+ * anonymous surface, and a signed-in person who wanted it has the resend on
+ * this page instead.
  */
 
 import { Link } from "@tanstack/react-router";
@@ -54,7 +56,6 @@ export function ShellHeader() {
 function HeaderNav({ authed }: { authed: boolean }) {
   return (
     <>
-      <NavLink href="/billing/plans">Plans</NavLink>
       {authed ? <NavLink href="/accounts">Accounts</NavLink> : null}
       {/* Same rule as Accounts and for the same reason: every control on it
           belongs to one person, so a signed-out visitor is offered the sign-in

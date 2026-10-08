@@ -4,6 +4,10 @@
  * The endpoints this file speaks are fixed by contract:
  *
  *   POST   /v1/users     201 {id,email} | 422 | 409
+ *     carrying the `{timestamp, signature}` pair `POST /v1/signup-timestamp`
+ *     mints (200, public and unauthenticated, exactly as registration is) —
+ *     a missing, forged, instant or expired pair is refused with the same
+ *     generic 422 before any row is created
  *   POST   /v1/session  200 {token,expires_at} | 202 {mfa_required,challenge,expires_at} | 401
  *   POST   /v1/session/mfa  200 {token,expires_at} | 401 | 423 | 503
  *   DELETE /v1/session  204
@@ -78,6 +82,30 @@ export const IDENTITY_BASE_URL = "";
 export const MIN_PASSWORD_LENGTH = 8;
 
 export type Credentials = { email: string; password: string };
+
+/**
+ * A minted signup timestamp pair, as `POST /v1/signup-timestamp` answers it.
+ *
+ * Transcribed from `SignupTimestamp` in `identity/openapi/v1.yaml` and the
+ * `signup.Pair` it renders. `timestamp` is a Unix integer in seconds — the
+ * signature is over the exact bytes of its decimal string, so the message has
+ * exactly one canonical form — and `signature` is the base64url (no padding)
+ * HMAC-SHA256 over it, keyed with a server secret this app never holds. The
+ * pair is a bearer credential with a one-hour window: a timestamp younger
+ * than two seconds is refused as bot-like, because a person needs seconds to
+ * fill a form and a bot submits instantly.
+ */
+export type SignupTimestamp = { timestamp: number; signature: string };
+
+/**
+ * The body of `POST /v1/users`.
+ *
+ * The credentials plus the minted pair. Identity verifies the pair after the
+ * honeypot check and before any row is created, and every rejection — forged,
+ * instant, expired, future, or simply absent — is the same generic 422, so a
+ * registration that does not carry one cannot succeed against a live service.
+ */
+export type Registration = Credentials & SignupTimestamp;
 
 /**
  * The authenticated user, as `GET /v1/me` and `PATCH /v1/me` answer it.
@@ -291,7 +319,7 @@ export type Transport = (request: TransportRequest) => Promise<Response>;
  * The one client every screen in this app talks to, and one of two things about
  * it that are decisions rather than defaults.
  *
- * 1. **Property declarations, not method shorthand.** `register(credentials):
+ * 1. **Property declarations, not method shorthand.** `register(input):
  *    Promise<User>` reads to TypeScript as a method with an implicit `this`,
  *    and then `const { register } = useAuth()` or a test's
  *    `expect(identity.register)` is a method separated from its object — which
@@ -309,7 +337,17 @@ export type Transport = (request: TransportRequest) => Promise<Response>;
  *    argument, which is the tenancy rule the service enforces.
  */
 export type IdentityClient = {
-  register: (credentials: Credentials) => Promise<User>;
+  /**
+   * Mint a signed signup timestamp pair for the registration form.
+   *
+   * `POST /v1/signup-timestamp` takes no body and no credential — public and
+   * unauthenticated, exactly as `POST /v1/users` is — and answers
+   * `{timestamp, signature}`. It is called when the form renders rather than
+   * when it submits, because a pair younger than two seconds is refused and a
+   * mint-then-submit in one breath would always be one.
+   */
+  mintSignupTimestamp: () => Promise<SignupTimestamp>;
+  register: (input: Registration) => Promise<User>;
   /**
    * The first leg of a sign in, which is sometimes the whole of one.
    *
@@ -873,7 +911,8 @@ export function createIdentityClient(
   const transport = options.transport ?? fetchTransport;
 
   return {
-    register: (credentials) => send(transport, `${base}/v1/users`, "POST", { body: credentials }),
+    register: (input) => send(transport, `${base}/v1/users`, "POST", { body: input }),
+    mintSignupTimestamp: () => send(transport, `${base}/v1/signup-timestamp`, "POST"),
 
     // -----------------------------------------------------------------------
     // The login leg.
@@ -1262,9 +1301,11 @@ async function send<T>(
   options: { body?: unknown; token?: string } = {},
 ): Promise<T> {
   const headers: Record<string, string> = { Accept: "application/json, application/problem+json" };
-  // Only a request that carries a token has one to send. register, login and
-  // completeSecondFactor must arrive with no Authorization header at all — the
-  // last because the challenge in the body IS the credential there.
+  // Only a request that carries a token has one to send. register, login,
+  // mintSignupTimestamp and completeSecondFactor must arrive with no
+  // Authorization header at all — the last because the challenge in the body
+  // IS the credential there, and the mint because a browser arriving at the
+  // form holds nothing but the address it was sent to.
   if (options.token) headers.Authorization = `Bearer ${options.token}`;
 
   const body = options.body === undefined ? undefined : JSON.stringify(options.body);

@@ -196,6 +196,16 @@ All notable changes to parlor are recorded here. The format follows
   The gate floor moved 964 → 954 (twenty-four tests left with the screen,
   fourteen arrived; the account is in `gate.yml`).
 
+- **The plan catalogue and the probe links are gone from the customer
+  surface** (`worker/parlor-m116-signup-timestamp`, m116b). Billing is frozen
+  for launch, so the header Plans link, the homepage Plans card and the
+  `/billing/plans` route, page, screen and tests are removed — a direct visit
+  no longer advertises unavailable billing. The homepage Health card goes for
+  the same reason: `/healthz` answers JSON for probes, and the app link landed
+  on not-found. The probe handlers and their tests stay, and so do the billing
+  API contracts: the client, the BFF forwarding entries and the OpenAPI
+  document still describe the service. The gate floor moved 981 → 959.
+
 ### Fixed
 
 - **`ci (kit, node) / node` is green: 335 lint errors → 0.** kit's shared `node`
@@ -324,6 +334,16 @@ All notable changes to parlor are recorded here. The format follows
   `identity_app`, so the process serving the browser can disable RLS on its own
   tables. `FORCE` still holds the rows; the ability to remove the policies does
   not. DECISION NEEDED in identity.
+
+- **Registration carries identity's signed signup-timestamp pair**
+  (`worker/parlor-m116-signup-timestamp`, m116). `POST /v1/users` refuses a
+  missing, forged, instant or expired `{timestamp, signature}` pair with a
+  generic 422 before any row is created, so the register screen — which minted
+  nothing — failed every submission. The client gains `mintSignupTimestamp`
+  and a `Registration` body, the forwarder allows `POST /v1/signup-timestamp`,
+  and the screen mints on render (a pair younger than two seconds is refused,
+  so mint-at-submit would always be one) and carries the pair on submit. The
+  gate floor moved 975 → 981.
 
 ### Changed
 

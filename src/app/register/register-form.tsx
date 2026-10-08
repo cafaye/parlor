@@ -44,7 +44,7 @@
  */
 
 import { Link } from "@tanstack/react-router";
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { Button, Callout, Field, FieldSummary, Input } from "@/components/ui";
 import { useAuth } from "@/lib/auth";
@@ -53,9 +53,9 @@ import {
   IdentityError,
   MIN_PASSWORD_LENGTH,
   fieldErrorMessage,
-  type Credentials,
   type FieldError,
 } from "@/lib/identity";
+import { ensureSignupProof, signupProofClock, type CachedSignupProof } from "@/lib/signup-proof";
 
 /**
  * What the account was created and the link was asked for.
@@ -92,11 +92,52 @@ export function RegisterForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [state, setState] = useState<FormState>({ kind: "idle" });
+  /**
+   * True while a submit is held minting or ageing the proof, before `register`
+   * is called. `pending` only covers the React Query mutations, so without
+   * this the control would read enabled through the hold — a second click is
+   * still refused by `inFlight`, but the state would be invisible.
+   */
+  const [waiting, setWaiting] = useState(false);
   // `pending` disables the button, but a second click can land in the frame
   // between the click and the re-render that disables it — and a stale closure
   // would still say `false` there. A ref is set synchronously, so this is the
   // only guard that actually closes the window.
   const inFlight = useRef(false);
+  /**
+   * The signed signup timestamp pair `POST /v1/users` requires, minted when
+   * the screen renders, with when it arrived ON THE MONOTONIC CLOCK.
+   *
+   * Minted here rather than at submit because identity refuses a pair younger
+   * than two seconds as bot-like — a person needs seconds to fill a form and
+   * a bot submits instantly — so a mint-then-submit in one breath would always
+   * be refused. The render mint alone leaves two ordinary edges: a
+   * password-manager fast submit lands inside those two seconds, and a tab
+   * left open past the hour keeps a stale pair. `ensureSignupProof` closes
+   * both at submit — holding a young pair past the floor, renewing a stale
+   * one — from local elapsed time only, never from the pair's timestamp
+   * against this client's clock. The stamp below and that hold read the same
+   * shared clock (`signupProofClock`), so a test scripting one scripts both.
+   * A submission without a pair is not attempted
+   * at all: identity would refuse it with a 422 before creating any row, so
+   * sending it anyway spends a request to learn nothing.
+   */
+  const proof = useRef<CachedSignupProof | null>(null);
+  useEffect(() => {
+    let live = true;
+    void client
+      .mintSignupTimestamp()
+      .then((minted) => {
+        if (live) proof.current = { pair: minted, mintedAt: signupProofClock.now() };
+      })
+      .catch(() => {
+        // Nothing to render yet: the failure is reported at submit, where the
+        // screen already has a sentence for "something went wrong".
+      });
+    return () => {
+      live = false;
+    };
+  }, [client]);
 
   const fields = state.kind === "local" || state.kind === "failed" ? state.fields : [];
   const errorFor = (field: string) => {
@@ -116,10 +157,26 @@ export function RegisterForm() {
     }
 
     inFlight.current = true;
-    const credentials: Credentials = { email: email.trim(), password };
     setState({ kind: "idle" });
+    setWaiting(true);
     try {
-      const created = await register(credentials);
+      // The render-time mint aged past the floor, a renewal when the tab sat
+      // open past the ceiling, or a fresh mint when the render one never
+      // resolved. Either way the pair travels on the registration itself —
+      // identity verifies it before any row is created — and a mint failure
+      // throws here, so nothing submits without a valid proof.
+      const held = await ensureSignupProof(
+        proof.current,
+        () => client.mintSignupTimestamp(),
+        signupProofClock,
+      );
+      proof.current = held;
+      const created = await register({
+        email: email.trim(),
+        password,
+        timestamp: held.pair.timestamp,
+        signature: held.pair.signature,
+      });
       setPassword("");
       // The account exists. Everything below is about a second, separable fact,
       // and none of its failures may un-say the first one.
@@ -129,6 +186,7 @@ export function RegisterForm() {
       setState(failureState(thrown));
     } finally {
       inFlight.current = false;
+      setWaiting(false);
     }
   }
 
@@ -258,7 +316,12 @@ export function RegisterForm() {
         />
       </Field>
 
-      <Button aria-busy={pending} busy={pending} disabled={pending} type="submit">
+      <Button
+        aria-busy={pending || waiting}
+        busy={pending || waiting}
+        disabled={pending || waiting}
+        type="submit"
+      >
         Create account
       </Button>
     </form>
