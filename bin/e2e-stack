@@ -6,6 +6,7 @@
 #   bin/e2e-stack up                 build, publish/pull siblings, migrate, start, wait
 #   bin/e2e-stack wait               wait for /readyz on an already-running stack
 #   bin/e2e-stack host-port <service>   the published host port, on stdout
+#   bin/e2e-stack grant-staff <email>    mark a registered address as staff (the system-admin fixture)
 #   bin/e2e-stack verify-sibling-images [<svc>]   which ref an image was built from
 #   bin/e2e-stack logs               print the stack's logs
 #   bin/e2e-stack ps                 what is running
@@ -1640,6 +1641,28 @@ dump_state() {
   printf '\n[e2e] ===== end stack state =====\n' >&2
 }
 
+# --- grant-staff ------------------------------------------------------------
+# Mark a freshly registered address as staff, for the system-admin browser
+# spec, using the operator command identity SHIPS IN ITS OWN IMAGE.
+#
+# `/app/identity-staff` is packaged by identity's Dockerfile (a second build
+# output beside `/app/service`) and it is the ONLY writer of `users.is_staff`:
+# no HTTP route writes the column, so there is no endpoint a spec could call
+# instead and no backdoor to invent. The spec registers a real account through
+# the real form first, then calls this as the explicit fixture action that
+# makes that account staff — the operator step a deployment performs by hand.
+#
+# It runs INSIDE the identity container, so DATABASE_URL is the container's
+# own and nothing secret crosses to the host: the only thing printed is the
+# command's own `<email> staff=true` line, a fixture address, never a
+# credential. `-T` disables TTY allocation, which is what makes this work from
+# a non-interactive Playwright child process as well as from a terminal.
+grant_staff() {
+  [ $# -ge 1 ] || die "usage: bin/e2e-stack grant-staff <email>"
+  [ -n "${1:-}" ] || die "usage: bin/e2e-stack grant-staff <email>"
+  compose_timed 60 exec -T identity /app/identity-staff grant "$1"
+}
+
 # --- down -------------------------------------------------------------------
 down() {
   log "stopping $PROJECT and deleting its volumes"
@@ -1660,7 +1683,11 @@ case "${1:-}" in
   # block lives in exactly one file, so the reader is this function and not a
   # literal somebody copied.
   host-port) [ $# -ge 2 ] || die "usage: bin/e2e-stack host-port <service>"; host_port "$2" ;;
-  # Which ref each sibling image was built from, as a check rather than a log.
+  # The system-admin fixture: one registered address becomes staff, through
+  # the operator command identity packages in its own image. A spec calls this
+  # after registering the staff candidate through the real form; it is never a
+  # step of bring-up, migration, or readiness.
+  grant-staff) shift; grant_staff "$@" ;;  # Which ref each sibling image was built from, as a check rather than a log.
   # It existed before the pin (registry-e2e-02) and became load-bearing with
   # it: `verify-sibling-images oauth-stub` is how a reader confirms the double
   # these assertions were written against is the one in the local image store, and
@@ -1711,10 +1738,11 @@ case "${1:-}" in
     # prints a usage that does not list it, which is the failure it is for. It
     # was wrong by one line when this was written (3,13p, which printed a blank
     # line and cut off `down`) and is asserted by the sibling tier's checks. The
-    # range moved from 4,11p to 4,12p with the `verify-sibling-images` line, which
-    # is the same kind of edit: a subcommand added without moving the range is a
-    # subcommand this usage does not list.
-    sed -n '4,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    # range moved from 4,11p to 4,12p with the `verify-sibling-images` line and
+    # to 4,13p with the `grant-staff` line, which is the same kind of edit: a
+    # subcommand added without moving the range is a subcommand this usage does
+    # not list.
+    sed -n '4,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
     exit 2
     ;;
 esac
