@@ -56,11 +56,11 @@ export type OperatorMe = { user: { id: string; email: string; staff: boolean } }
 /**
  * One row of `GET /v1/operator/users`.
  *
- * The four nullable timestamps are `string | null` and never absent-or-
- * defaulted: a disabled account with `disabled_at: null` invented by the
- * client is an enabled account, and a verified address with an invented
- * timestamp is a proved one. Absence is read as null, which is the safe side
- * for both.
+ * The four nullable timestamps are `string | null` and never defaulted: a
+ * disabled account with `disabled_at: null` invented by the client is an
+ * enabled account, and a verified address with an invented timestamp is a
+ * proved one. An ABSENT key is refused outright — absence is not the same
+ * answer as explicit `null` — so only a present `null` reads as "no value".
  */
 export type OperatorUser = {
   id: string;
@@ -153,8 +153,11 @@ function readOperatorMe(body: unknown): OperatorMe {
  * Reads `GET /v1/operator/users` strictly.
  *
  * `users` must be an array; each row must carry `id`, `email` and
- * `created_at`. The nullable fields default to null when absent, which is the
- * safe side for both — never an invented timestamp, never an invented state.
+ * `created_at`. The three nullable fields must be PRESENT — an absent key is
+ * not the same answer as an explicit `null`, and defaulting a missing key to
+ * null would read a row the contract did not describe as one it did. Explicit
+ * `null` is the safe side for both: never an invented timestamp, never an
+ * invented state.
  */
 function readOperatorUsers(body: { users: unknown }): OperatorUser[] {
   if (!Array.isArray(body.users)) {
@@ -174,15 +177,39 @@ function readOperatorUsers(body: { users: unknown }): OperatorUser[] {
         { status: 200, code: "internal" },
       );
     }
+    if (record === null) {
+      throw new IdentityError(
+        "identity's operator/users answered a row this app does not recognise",
+        { status: 200, code: "internal" },
+      );
+    }
     return {
       id,
       email,
-      display_name: record ? readNullableString(record.display_name) : null,
-      disabled_at: record ? readNullableString(record.disabled_at) : null,
-      email_verified_at: record ? readNullableString(record.email_verified_at) : null,
+      display_name: readPresentNullable(record, "display_name"),
+      disabled_at: readPresentNullable(record, "disabled_at"),
+      email_verified_at: readPresentNullable(record, "email_verified_at"),
       created_at: createdAt,
     };
   });
+}
+
+/**
+ * A nullable contract field that must be present.
+ *
+ * Absent and explicit-`null` are different answers on this contract: absence
+ * means the service sent a shape nobody here described, and only explicit
+ * `null` reads as "no value". An absent key throws rather than defaulting,
+ * because a default would turn an undescribed shape into a rendered one.
+ */
+function readPresentNullable(record: Record<string, unknown>, field: string): string | null {
+  if (!Object.hasOwn(record, field)) {
+    throw new IdentityError(
+      `identity's operator/users answered a row without ${field}, which this app does not recognise`,
+      { status: 200, code: "internal" },
+    );
+  }
+  return readNullableString(record[field]);
 }
 
 async function send<T>(

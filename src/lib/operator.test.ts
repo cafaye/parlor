@@ -178,6 +178,20 @@ describe("operator/users search", () => {
 
     expect(failure.code).toBe("internal");
   });
+
+  it("refuses a row with an absent nullable key rather than defaulting it to null", async () => {
+    // Absence is not explicit null: a row the contract did not describe must
+    // not render as one it did. Only a present `null` reads as "no value".
+    const { display_name: _dropped, ...rowWithoutName } = USER_ROW;
+    void _dropped;
+    const { transport, calls } = stubTransport(() => json(200, { users: [rowWithoutName] }));
+    const client = createOperatorClient({ transport });
+
+    const failure = await theFailure(client.searchUsers("session-token", "kaka"));
+
+    expect(failure.code).toBe("internal");
+    expect(calls).toHaveLength(1);
+  });
 });
 
 describe("disable and enable", () => {

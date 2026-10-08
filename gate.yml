@@ -753,9 +753,24 @@ gate:
     # IT IS 1021 BY THE NEXT ACCOUNT. 1020 -> 1021, a +1 in the same packet
     # (m136): the member panel's role distribution reads as one summary strip
     # rather than a stacked grid. Shown red before green against the old grid.
+    # IT IS 1061 BY THE NEXT ACCOUNT. 1021 -> 1061, a +40 in the system-admin
+    # packet (m147): 14 in `src/lib/operator.test.ts` (the four operator
+    # client methods — request shapes, the always-present bearer, the 401/403
+    # split, strict readers refusing malformed bodies, empty query never sent);
+    # 6 in `src/lib/upstream.test.ts` (the four `/operator` routes forwarded,
+    # undeclared query dropped, non-uuid user id refused, 403 passing through,
+    # unlisted disable-shaped path refused — plus the client walk extended to
+    # all four operator methods); 16 in `src/app/admin/page.test.tsx` (gate,
+    # denied, search, confirm-gated disable/enable, staff-lost re-verify);
+    # 3 in `src/components/shell/header.test.tsx` (staff-gated nav entry);
+    # 1 in `src/lib/telemetry.server.test.ts` (the `/admin` route template).
+    # The empty-query test was shown red before green (sync throw vs rejects);
+    # the admin console tests were shown red before green (a disabled query
+    # reads `isPending`, which held the Search button disabled — the screen
+    # now keys on `fetchStatus`).
     - id: suite
       match: '^[ ]*Tests[ ]+([0-9]+)[ ]+passed(?![ ]*\|)'
-      minimum: 1021
+      minimum: 1061
     # The tally `tests/validate-ci.sh` prints, which is the second half of this
     # gate: the checks that the tree still has the shape CI assumes — one
     # runtime pin, `npm ci` and not `npm install`, the gate command, the

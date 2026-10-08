@@ -156,8 +156,8 @@ describe("user search", () => {
     searchFor("example.com");
 
     const list = await screen.findByRole("list", { name: "Matching users" });
-    expect(within(list).getByRole("button", { name: /kaka@example.com.*Active.*Verified/s }));
-    expect(within(list).getByRole("button", { name: /sam@example.com.*Disabled.*Unverified/s }));
+    expect(within(list).getByRole("button", { name: /kaka@example.com.*Active.*Verified/ }));
+    expect(within(list).getByRole("button", { name: /sam@example.com.*Disabled.*Unverified/ }));
   });
 
   it("reads an empty result as an answer rather than a failure", async () => {
@@ -202,7 +202,7 @@ describe("disable and enable", () => {
     await renderConsole({ operator });
 
     searchFor("kaka@example.com");
-    fireEvent.click(await screen.findByRole("button", { name: /kaka@example.com/s }));
+    fireEvent.click(await screen.findByRole("button", { name: /kaka@example.com/ }));
     fireEvent.click(screen.getByRole("button", { name: "Disable" }));
 
     const dialog = await screen.findByRole("dialog");
@@ -227,7 +227,7 @@ describe("disable and enable", () => {
     await renderConsole({ operator });
 
     searchFor("kaka@example.com");
-    fireEvent.click(await screen.findByRole("button", { name: /kaka@example.com/s }));
+    fireEvent.click(await screen.findByRole("button", { name: /kaka@example.com/ }));
     fireEvent.click(screen.getByRole("button", { name: "Disable" }));
 
     const dialog = await screen.findByRole("dialog");
@@ -248,7 +248,7 @@ describe("disable and enable", () => {
     await renderConsole({ operator });
 
     searchFor("kaka@example.com");
-    fireEvent.click(await screen.findByRole("button", { name: /kaka@example.com/s }));
+    fireEvent.click(await screen.findByRole("button", { name: /kaka@example.com/ }));
 
     expect(screen.getByText("Disabled")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Re-enable" }));
@@ -277,7 +277,7 @@ describe("disable and enable", () => {
     await renderConsole({ operator });
 
     searchFor("kaka@example.com");
-    fireEvent.click(await screen.findByRole("button", { name: /kaka@example.com/s }));
+    fireEvent.click(await screen.findByRole("button", { name: /kaka@example.com/ }));
     fireEvent.click(screen.getByRole("button", { name: "Disable" }));
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Disable this user" }));
@@ -300,7 +300,7 @@ describe("disable and enable", () => {
     await renderConsole({ operator });
 
     searchFor("kaka@example.com");
-    fireEvent.click(await screen.findByRole("button", { name: /kaka@example.com/s }));
+    fireEvent.click(await screen.findByRole("button", { name: /kaka@example.com/ }));
     fireEvent.click(screen.getByRole("button", { name: "Disable" }));
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Disable this user" }));

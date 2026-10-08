@@ -340,6 +340,7 @@ const ROUTE_TEMPLATES: readonly string[] = [
   "/",
   "/accounts",
   "/accounts/{accountId}",
+  "/admin",
   "/forgot-password",
   "/healthz",
   "/invitations/{token}",
