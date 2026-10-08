@@ -1837,8 +1837,7 @@ self_test() {
       # worker exits. Replace it before anything can fail. Single-quoted on
       # purpose: both variables are still in scope when the worker exits.
       trap 'rm -rf "$SELFTEST_WORK/worker-$w"' EXIT
-      SANDBOX="$SELFTEST_WORK/worker-$w/sandbox"
-      mkdir -p "$SANDBOX"
+      mkdir -p "$SELFTEST_WORK/worker-$w"
       i=$start
       while [ "$i" -lt "$end" ]; do
         proof=$(cat "$SELFTEST_WORK/case-$i")
@@ -1862,6 +1861,10 @@ self_test() {
           printf 'UNPROVABLE\n' >"$SELFTEST_WORK/result-$i"
         else
           # One throwaway copy per breakage, seeded from the pristine one.
+          # A private directory per case, never shared between cases: the
+          # worker reuses nothing, and each seed starts from an empty dir.
+          SANDBOX="$SELFTEST_WORK/worker-$w/case-$i"
+          mkdir -p "$SANDBOX"
           seed_sandbox
           # shellcheck disable=SC2086  # the breakage list is deliberately a string
           eval "$breakage"
