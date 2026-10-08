@@ -8,23 +8,23 @@ built in Phase 2 alongside `gateway`. The shell arrived first (routing, theme,
 health surfaces, test rig); the auth screens arrived next, against a client for
 the identity contract with a mocked transport underneath it.
 
-## The philosophy: you own the code
+## The philosophy: a template, not a runtime dependency
 
 This is a **template**, not a platform-as-a-service dependency.
 
-- You clone it. You read all of it. It is a few hundred files of ordinary
-  React you can reason about end to end — TanStack Start for the server and the
-  routes, Vite for the dev server and the build.
-- You change whatever you need and ship your fork. There is no license key, no
-  feature gate, no call home, no vendor that can raise your prices or pull the
-  rug.
+- It is a few hundred files of ordinary React you can reason about end to
+  end — TanStack Start for the server and the routes, Vite for the dev server
+  and the build.
+- There is no license key, no feature gate, no call home, no vendor that can
+  raise your prices or pull the rug.
 - We ship improvements upstream, so keeping in sync means a merge, not a
   migration.
 - Anything cafaye later adds — identity screens, billing screens, team
   management — arrives as code in your repo, not as a runtime dependency.
 
-The test of whether this philosophy is real: if cafaye disappeared tomorrow,
-would your product still build? It has to be.
+What you may do with this code is set by [LICENSE](LICENSE), not by this
+README: access alone grants no general permission, and rights beyond viewing
+exist only where a separate written Cafaye agreement expressly grants them.
 
 ## What is here today
 
@@ -760,7 +760,11 @@ rules, and the health-surface contracts. Long-running commands get `timeout N`.
 
 ## License
 
-MIT. See [LICENSE](LICENSE). `package.json` declares the same thing.
-
-parlor is a platform consumed through the service registry, so MIT is what
-keeps a consumer's own licensing situation unchanged when they add it.
+Copyright (c) 2026 Cafaye. All rights reserved. See [LICENSE](LICENSE):
+this repository is Cafaye proprietary property, and access alone grants no
+general permission to use, copy, modify, or redistribute it. Rights beyond
+viewing exist only where a separate written Cafaye agreement expressly grants
+them. Third-party components remain under their own licenses and notices —
+see `package.json` / `package-lock.json` and the notices preserved in source.
+`package.json` marks this package `UNLICENSED` (npm's marker for proprietary
+packages) to say the same thing where tooling reads it.
