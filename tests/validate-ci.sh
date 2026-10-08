@@ -20,7 +20,7 @@
 # and a partial parse is a worse reader than a grep that says what it wants.
 #
 #   bash tests/validate-ci.sh              the checks
-#   bash tests/validate-ci.sh --self-test  prove they can fail (55 breakages,
+#   bash tests/validate-ci.sh --self-test  prove they can fail (56 breakages,
 #                                         minus whatever this machine cannot
 #                                         prove, plus the opposite cases)
 #
@@ -1001,6 +1001,40 @@ else
     "$E2E_COMPOSE is missing"
 fi
 
+# --- the e2e gateway healthcheck matches the shipped Go image ----------------
+# The live `parlor-e2e-gateway-1` image is `cafaye/gateway:e2e`: Go on
+# `gcr.io/distroless/static-debian12:nonroot` — no shell, no curl, no wget, no
+# bun (gateway's Dockerfile says so at the same line). The overlay once probed
+# it with `bun -e fetch(...)`, which answered `exec: "bun": executable file not
+# found in $PATH` on every probe while the process served traffic: a stale
+# TypeScript-era check, not a product failure. The verified probe is the
+# binary's own flag — `test: ["CMD", "/app/service", "-healthcheck"]`, the
+# exact liveness command gateway's own `docker-compose.yml` uses
+# (`cmd/gateway/main.go` implements `-healthcheck` against `/healthz`).
+#
+# So the pairing is held here, statically, where a reintroduction goes red
+# before any container starts: the gateway block must carry exactly that probe
+# and no out-of-image runtime (`bun`, `CMD-SHELL`, `curl`, `wget`) and no
+# `/readyz` — a container healthcheck on `/readyz` would restart the gateway
+# every time identity hiccuped, and readiness stays the harness's job, done
+# from outside in `bin/e2e-stack`. This check reads code lines, never comments,
+# so the paragraph above cannot fail it.
+if [ -f "$E2E_COMPOSE" ]; then
+  gateway_block=$(awk '/^  gateway:[[:space:]]*$/ { inside = 1; next } inside && /^  [a-z][a-z0-9-]*:[[:space:]]*$/ { exit } inside { print }' "$E2E_COMPOSE")
+  gateway_code=$(printf '%s\n' "$gateway_block" | code_lines /dev/stdin)
+  gateway_probe=$(printf '%s\n' "$gateway_code" | found_fixed 'test: ["CMD", "/app/service", "-healthcheck"]')
+  gateway_foreign=$(printf '%s\n' "$gateway_code" | found 'bun|CMD-SHELL|curl|wget|/readyz')
+  if [ -n "$gateway_probe" ] && [ -z "$gateway_foreign" ]; then
+    ok "the e2e gateway healthcheck probes the Go image binary"
+  else
+    no "the e2e gateway healthcheck probes the Go image binary" \
+      "the gateway: block in $E2E_COMPOSE must carry test: [\"CMD\", \"/app/service\", \"-healthcheck\"] with no bun, CMD-SHELL, curl, wget or /readyz; the distroless Go image has none of those runtimes and readiness must not restart the gateway"
+  fi
+else
+  no "the e2e gateway healthcheck probes the Go image binary" \
+    "$E2E_COMPOSE is missing"
+fi
+
 # --- the deployment story, in the four shapes CI assumes --------------------
 # These four checks are about the SHAPE, and every one of them needs no kamal,
 # no docker and no network — which is why they are here rather than only in
@@ -1716,6 +1750,7 @@ self_test() {
     "the-stack-names-no-signup-key|sed_i '/SIGNUP_SIGNING_KEY: \"\${SIGNUP_SIGNING_KEY:-}\"/d' '$SANDBOX/e2e/docker-compose.yml'" \
     "the-harness-generates-no-signup-key|sed_i '/^  ensure_signup_signing_key$/d' '$SANDBOX/bin/e2e-stack'" \
     "the-e2e-stack-points-parlor-at-a-billing-service-it-does-not-run|printf '      BILLING_URL: \"http://billing:3000\"\n' >>'$SANDBOX/e2e/docker-compose.yml'" \
+    "the-e2e-gateway-healthcheck-uses-bun|sed_i 's|\"/app/service\", \"-healthcheck\"|\"bun\", \"-healthcheck\"|' '$SANDBOX/e2e/docker-compose.yml'" \
     "no-deploy-config|rm -f '$SANDBOX/config/deploy.yml'" \
     "an-accessory-in-the-deploy-config|printf '\naccessories:\n  postgres:\n    image: postgres:17-alpine\n' >>'$SANDBOX/config/deploy.yml'" \
     "a-builder-arg-without-a-dockerfile-arg|echo '  args:' >>'$SANDBOX/config/deploy.yml' && echo '    NEXT_PUBLIC_CDN_URL: <%= cdn_url %>' >>'$SANDBOX/config/deploy.yml'" \
