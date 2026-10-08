@@ -98,7 +98,9 @@ export function RegisterForm() {
    * wire body carries `website: ""` next to the signed pair. State rather than
    * a constant so the trap is live: a bot that fills every field sends a
    * non-empty value, and identity refuses exactly that with a generic 422
-   * before any row is created. No label, `hidden`, `tabIndex={-1}` and
+   * before any row is created. An omitted trap would default to empty — the
+   * service answers 201 without it — so this is hardening, not the fix for
+   * any observed failure. No label, `hidden`, `tabIndex={-1}` and
    * `aria-hidden`: a person never sees it, never tabs to it, and is never
    * offered it.
    */

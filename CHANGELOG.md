@@ -8,22 +8,38 @@ All notable changes to parlor are recorded here. The format follows
 
 ### Fixed
 
-- **Register now sends the `website` honeypot, the Second factor section keeps
-  its landmark, and pointer focus paints no ring** (P-07, against the
-  `parlor-e2e` full-stack run of 2026-10-08: 26 passed, 5 failed). The
-  register wire body carries `website: ""` next to the signed
-  `{timestamp, signature}` pair (`Registration` requires it; the form renders
-  a hidden, unreachable, unlabeled trap and sends its value as-is, so a bot
-  filling it is refused by identity before any row is created). The Second
-  factor panel wraps its loading and error states, so `region "Second
-  factor"` stands in every state. Pointer focus resolves
-  `outline-width: 0` via an explicit `:focus:not(:focus-visible)` rule
-  (Chrome reports 3px with style none otherwise), and the reduced-motion
-  pointer branch re-navigates first so the click genuinely moves focus. The
-  E2E stack raises `RATE_LIMIT_SIGNUP` 10 → 30 with the suite's counted load
-  (11 registrations per run sharing one source address; the limiter replaces
-  the response after the row is created, which is what the two late-run
-  register failures were).
+- **Register carries the `website` honeypot, the Second factor section proves
+  its answered state, and pointer focus asserts the painted state** (P-07,
+  against the `parlor-e2e` full-stack run of 2026-10-08: 26 passed, 5 failed;
+  P-07b corrections on top). The register wire body carries `website: ""`
+  next to the signed `{timestamp, signature}` pair (the form renders a
+  hidden, unreachable, unlabeled trap and sends its value as-is, so a bot
+  filling it is refused by identity before any row is created). That trap is
+  hardening, NOT the fix for the observed failures: a direct real-identity
+  `POST /v1/users` with a valid pair and no `website` answers 201 — the API
+  defaults an omitted trap to empty — and a live-stack browser repro of the
+  real form journey records `POST /v1/signup-timestamp → 200` and
+  `POST /v1/users → 201` with the confirmation rendered. The demonstrated
+  mismatch is the signup rate limit: the suite submits 11 registrations per
+  run through one forwarder address against identity's default
+  `RATE_LIMIT_SIGNUP` of 10/minute, and the middleware replaces the handler
+  response with 429 AFTER the row is created, which reads in the browser as
+  the generic failure while leaving the account behind. The E2E stack raises
+  the limit 10 → 30 with the suite's counted load; production limits are
+  unchanged, and identity's own suite remains where the limiter is proved.
+  The E2E identity service now receives an ephemeral per-run 32-byte
+  base64url `MFA_ENCRYPTION_KEY` from `bin/e2e-stack` (same shape as the
+  signup key; never committed), without which identity leaves the MFA
+  management routes unmounted and the panel could only render its failure
+  state — so the settings spec asserts the answered disabled state (`Not
+  enabled` with the setup control), not just the landmark. Pointer focus
+  carries NO author rule: a live-stack repro after a real mouse click
+  measures `focused: true`, `:focus-visible: false`, `outline-width: 3px`,
+  `outline-style: none`, and a width with a `none` style paints nothing —
+  the width alone was a false positive, so the
+  `:focus:not(:focus-visible)` zeroing rule is removed and both browser
+  branches assert `:focus-visible` false with `outline-style` none from a
+  clean page, keeping the 2px keyboard halo (3px under reduced motion).
 
 ### Added
 
