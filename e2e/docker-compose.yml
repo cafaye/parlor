@@ -534,6 +534,23 @@ services:
       # the fail-loud direction, and the reason the default is empty rather
       # than absent.
       SIGNUP_SIGNING_KEY: "${SIGNUP_SIGNING_KEY:-}"
+      # THE RECOVERY RATE LIMIT — RAISED FOR THE HARNESS, AND COUNTED, NOT GUESSED.
+      #
+      # identity's default is `RATE_LIMIT_RECOVERY=5` per minute per (client IP,
+      # route), and the limiter answers 429 by REPLACING the handler's response
+      # (identity/internal/httpapi/ratelimit.go) — so a refused verification
+      # request reads as 429, not as the 503 the no-courier stack otherwise
+      # answers. Every browser request in this tier reaches identity through
+      # parlor's forwarder, i.e. from ONE source address, so the whole suite
+      # shares one budget on `POST /v1/email-verifications`: 2 (design-system)
+      # + 5 (email-verification) + 1 (password-reset) + 3 (session) + 1 (social)
+      # = 12 per full run, all inside one minute. Measured in m131: the manager's
+      # 2026-10-08 run exhausted the default of 5 mid-suite, and
+      # session.e2e.spec.ts's register flow rendered CREATED_NO_REQUEST (the
+      # correct rendering of a non-503) instead of the CREATED_NO_MAIL the test
+      # asserts. 30 keeps a real bound with headroom for the funnel; identity's
+      # own suite remains the place the limiter itself is proved.
+      RATE_LIMIT_RECOVERY: "30"
     # -------------------------------------------------------------------
       # SOCIAL LOGIN — the fake provider, and the seven overrides that make the
       # round trip testable at all
