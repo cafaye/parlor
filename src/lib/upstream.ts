@@ -499,6 +499,30 @@ export const ROUTES: readonly Route[] = [
   // rather than the bar the anonymous recovery routes answer.
   { method: "POST", path: ["session", "mfa"], upstream: "identity" },
 
+  // --- identity: the operator surface --------------------------------------
+  //
+  // THE FOUR HUMAN-SESSION SYSTEM-ADMIN ROUTES, and the reason they are here
+  // rather than refused with the other unlisted identity routes. The client
+  // can perform all four (`createOperatorClient` in `src/lib/operator.ts`)
+  // and the `/admin` screen drives them — the same bar every entry in this
+  // table answers to.
+  //
+  // These are the HUMAN-session routes. The machine-key disable/enable pair
+  // stays refused above: no client here holds a machine key, and a route with
+  // no caller is a capability this app does not have. `operator/me` is the
+  // gate the screen and the header read; the search carries `query` and
+  // `limit` because those are the two parameters the contract names, and an
+  // undeclared parameter is dropped rather than forwarded.
+  { method: "GET", path: ["operator", "me"], upstream: "identity" },
+  {
+    method: "GET",
+    path: ["operator", "users"],
+    upstream: "identity",
+    query: ["query", "limit"],
+  },
+  { method: "POST", path: ["operator", "users", ":userId", "disable"], upstream: "identity" },
+  { method: "POST", path: ["operator", "users", ":userId", "enable"], upstream: "identity" },
+
   // --- billing ------------------------------------------------------------
   { method: "GET", path: ["plans"], upstream: "billing", query: ["cursor", "limit", "order"] },
   { method: "GET", path: ["plans", ":slug"], upstream: "billing" },

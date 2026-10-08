@@ -803,6 +803,97 @@ paths:
         "413":
           $ref: '#/components/responses/PayloadTooLarge'
   # -------------------------------------------------------------------------
+  # operator
+  #
+  # The human-session system-admin surface (m147). Every route resolves a human
+  # session and then checks staff: anonymous gets 401, authenticated non-staff
+  # gets 403, and both pass through so the `/admin` screen can tell the two
+  # apart. The machine-key disable/enable pair is a separate surface and is
+  # not described here. The request and response bodies are identity's
+  # contract, transcribed from the packet rather than from a merged service.
+  # -------------------------------------------------------------------------
+  /v1/operator/me:
+    get:
+      tags: [identity]
+      summary: Read the operator behind this session.
+      description: >-
+        Forwards to identity's `GET /v1/operator/me`. Answers
+        `{user:{id,email,staff}}`; `staff` is the whole of the authorization
+        fact the `/admin` screen and header read.
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+  /v1/operator/users:
+    get:
+      tags: [identity]
+      summary: Search users as an operator.
+      description: >-
+        Forwards to identity's `GET /v1/operator/users`. The query below is
+        parlor's forwarding allow-list; `query` must be non-empty and `limit`
+        is the contract's page size. The `{users:[...]}` envelope is
+        identity's contract.
+      parameters:
+        - name: query
+          in: query
+          required: true
+          description: The search string. Must be non-empty.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Page size. The contract fixes it at 25.
+          schema:
+            type: integer
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+  /v1/operator/users/{userId}/disable:
+    post:
+      tags: [identity]
+      summary: Disable a user as an operator.
+      description: >-
+        Forwards to identity's `POST /v1/operator/users/{userId}/disable`.
+        The success response carries no body. Identity writes a
+        human-attributed audit record for the session that called it.
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: The user's uuid.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccessNoContent'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+  /v1/operator/users/{userId}/enable:
+    post:
+      tags: [identity]
+      summary: Re-enable a user as an operator.
+      description: >-
+        Forwards to identity's `POST /v1/operator/users/{userId}/enable`.
+        The success response carries no body.
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: The user's uuid.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccessNoContent'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+  # -------------------------------------------------------------------------
   # billing
   #
   # The launch stack deploys no billing, so `BILLING_URL` may be empty; the

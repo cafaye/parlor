@@ -19,8 +19,10 @@
  */
 
 import { Link } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 
 import { useAuth, type SessionState } from "@/lib/auth";
+import { useOperator } from "@/lib/operator-context";
 import { Button } from "@/components/ui";
 
 export function ShellHeader() {
@@ -63,8 +65,35 @@ function HeaderNav({ authed }: { authed: boolean }) {
           linked here — it is the anonymous surface, and a signed-in person who
           wanted it has the resend on this page instead. */}
       {authed ? <NavLink href="/settings">Settings</NavLink> : null}
+      {authed ? <OperatorNavLink /> : null}
     </>
   );
+}
+
+/**
+ * The system-admin entry: rendered only after a server-verified staff read.
+ *
+ * The link is hidden until `operator/me` answers `staff: true` for THIS
+ * session — hiding is not authorization (the `/admin` screen re-checks, and
+ * identity enforces 401/403 on every call), but showing it to everyone would
+ * advertise a surface most sessions are refused at. A pending or failed gate
+ * renders nothing rather than a disabled link: a control that cannot work is
+ * worse than no control.
+ */
+function OperatorNavLink() {
+  const { token } = useAuth();
+  const operator = useOperator();
+  const gate = useQuery({
+    queryKey: ["operator", "me", token],
+    queryFn: () => operator.me(token ?? ""),
+    enabled: token !== null,
+    retry: false,
+    staleTime: Infinity,
+    gcTime: 0,
+  });
+
+  if (gate.data?.user.staff !== true) return null;
+  return <NavLink href="/admin">System admin</NavLink>;
 }
 
 function NavLink({ href, children }: { href: string; children: string }) {

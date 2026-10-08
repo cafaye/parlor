@@ -20,14 +20,17 @@ import { useState, type ReactNode } from "react";
 
 import { AuthProvider } from "@/lib/auth";
 import { BillingProvider } from "@/lib/billing-context";
+import { OperatorProvider } from "@/lib/operator-context";
 import { type BillingClient } from "@/lib/billing";
 import { createIdentityClient, type IdentityClient } from "@/lib/identity";
+import { type OperatorClient } from "@/lib/operator";
 import { createTokenStore, type TokenStore } from "@/lib/token-store";
 
 export function Providers({
   children,
   identity,
   billing,
+  operator,
   tokens,
 }: {
   children: ReactNode;
@@ -35,6 +38,8 @@ export function Providers({
   identity?: IdentityClient;
   /** Overrides the real client. Tests only. */
   billing?: BillingClient;
+  /** Overrides the real client. Tests only. */
+  operator?: OperatorClient;
   /** Overrides the real store. Tests only. */
   tokens?: TokenStore;
 }) {
@@ -60,7 +65,9 @@ export function Providers({
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider identity={client} tokens={store}>
-        <BillingProvider billing={billing}>{children}</BillingProvider>
+        <BillingProvider billing={billing}>
+          <OperatorProvider operator={operator}>{children}</OperatorProvider>
+        </BillingProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

@@ -1065,6 +1065,22 @@ describe("the table and the clients agree", () => {
     await client.startMfaEnrollment("t");
     await client.confirmMfaEnrollment("t", id, { code: "482913" });
     await client.regenerateMfaRecoveryCodes("t", { code: "482913" });
+    // The four operator routes, walked through the same door. `me` and
+    // `searchUsers` throw on `{}` by design here — the stub answers every hop
+    // with `200 "{}"`, and a gate answer with no `user` and a user list with
+    // no `users` are both unreadable — so both are `.catch`ed like the social
+    // pair: what the walk proves is that each URL reached an upstream through
+    // the table rather than being refused, and `checked` runs before the
+    // method's own response handling.
+    const { createOperatorClient } = await import("./operator");
+    const operator = createOperatorClient({
+      baseUrl: "",
+      transport: ({ url, method }) => checked(url, method),
+    });
+    await operator.me("t").catch(() => undefined);
+    await operator.searchUsers("t", "kaka@example.com").catch(() => undefined);
+    await operator.disableUser("t", id);
+    await operator.enableUser("t", id);
 
     await billing.listPlans({ limit: 2 });
     await billing.getPlanBySlug("pro");
@@ -1891,5 +1907,120 @@ describe("the social surface", () => {
 
     expect(hops[0].headers.authorization).toBeUndefined();
     expect(hops[0].headers.cookie).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 7. The operator surface: the four human-session system-admin routes.
+//
+// The machine-key disable/enable pair stays refused — no client here holds a
+// machine key — and these four are allowed because the operator client can
+// perform them and the `/admin` screen drives them. The 401/403 answers pass
+// through untouched (property 4), because the screen tells "anonymous" from
+// "not staff" by the status.
+// ---------------------------------------------------------------------------
+
+describe("the operator surface", () => {
+  const userId = "8f2c1a44-0000-4000-8000-000000000001";
+
+  it("forwards the staff gate to identity", async () => {
+    const { forward, hops } = forwarder();
+
+    const response = await forward(
+      new Request("https://parlor.test/v1/operator/me", {
+        headers: { Authorization: "Bearer t" },
+      }),
+      ["operator", "me"],
+    );
+
+    expect(response.status).toBe(200);
+    expect(hops).toHaveLength(1);
+    expect(hops[0].url).toBe(`${IDENTITY_URL}/v1/operator/me`);
+    expect(hops[0].headers.authorization).toBe("Bearer t");
+  });
+
+  it("forwards a user search with its declared query, and drops what is not declared", async () => {
+    const { forward, hops } = forwarder();
+
+    const response = await forward(
+      new Request("https://parlor.test/v1/operator/users?query=kaka&limit=25&redirect_uri=https://evil.test", {
+        headers: { Authorization: "Bearer t" },
+      }),
+      ["operator", "users"],
+    );
+
+    expect(response.status).toBe(200);
+    expect(hops).toHaveLength(1);
+    expect(hops[0].url).toBe(`${IDENTITY_URL}/v1/operator/users?query=kaka&limit=25`);
+  });
+
+  it("forwards disable and enable on the contract paths", async () => {
+    const { forward, hops } = forwarder();
+
+    for (const action of ["disable", "enable"] as const) {
+      const response = await forward(
+        new Request(`https://parlor.test/v1/operator/users/${userId}/${action}`, {
+          method: "POST",
+          headers: { Authorization: "Bearer t" },
+        }),
+        ["operator", "users", userId, action],
+      );
+
+      expect(response.status).toBe(200);
+    }
+
+    expect(hops.map((hop) => hop.url)).toEqual([
+      `${IDENTITY_URL}/v1/operator/users/${userId}/disable`,
+      `${IDENTITY_URL}/v1/operator/users/${userId}/enable`,
+    ]);
+  });
+
+  it("refuses a non-uuid user id before an address is contacted", async () => {
+    const { forward, hops } = forwarder();
+
+    const response = await forward(
+      new Request("https://parlor.test/v1/operator/users/not-a-uuid/disable", { method: "POST" }),
+      ["operator", "users", "not-a-uuid", "disable"],
+    );
+
+    expect(response.status).toBe(404);
+    expect(hops).toHaveLength(0);
+  });
+
+  it("refuses an unlisted disable-shaped path outside /operator", async () => {
+    // Only the four `/operator` entries above are allowed. A disable-shaped
+    // path anywhere else — whatever service owns it — is refused here, before
+    // an address is contacted, and identity never sees the request.
+    const { forward, hops } = forwarder();
+
+    const response = await forward(
+      new Request(`https://parlor.test/v1/users/${userId}/disable`, { method: "POST" }),
+      ["users", userId, "disable"],
+    );
+
+    expect(response.status).toBe(404);
+    expect(hops).toHaveLength(0);
+  });
+
+  it("passes a 403 through rather than turning it into a success", async () => {
+    const { forward } = forwarder(
+      () =>
+        new Response(
+          JSON.stringify({
+            type: "https://errors.cafaye.com/forbidden",
+            title: "Staff only.",
+            status: 403,
+            code: "forbidden",
+          }),
+          { status: 403, headers: { "Content-Type": "application/problem+json" } },
+        ),
+    );
+
+    const response = await forward(new Request("https://parlor.test/v1/operator/me"), [
+      "operator",
+      "me",
+    ]);
+
+    expect(response.status).toBe(403);
   });
 });

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ShellHeader } from "./header";
 import { SESSION_TOKEN_KEY, createTokenStore } from "@/lib/token-store";
 import { anIdentityError, aUser, stubIdentity } from "@/test/support/identity";
+import { aNonStaffMe, aStaffMe, stubOperator } from "@/test/support/operator";
 import { renderWithProviders } from "@/test/support/render";
 
 /**
@@ -244,5 +245,42 @@ describe("navigation", () => {
     // "parlor", it is the nav, and a landmark called "parlor" is a dead end in
     // the landmarks list.
     expect(screen.getByRole("navigation", { name: "Main" })).toBeInTheDocument();
+  });
+});
+
+describe("system-admin navigation", () => {
+  it("offers the console once a staff session is verified", async () => {
+    storeToken("tok_abc");
+    renderWithProviders(<ShellHeader />, {
+      identity: stubIdentity({ me: vi.fn(() => Promise.resolve(aUser())) }),
+      operator: stubOperator({ me: vi.fn(() => Promise.resolve(aStaffMe())) }),
+    });
+
+    expect(await screen.findByRole("link", { name: "System admin" })).toHaveAttribute(
+      "href",
+      "/admin",
+    );
+  });
+
+  it("hides the console from a signed-in non-staff session", async () => {
+    storeToken("tok_abc");
+    renderWithProviders(<ShellHeader />, {
+      identity: stubIdentity({ me: vi.fn(() => Promise.resolve(aUser())) }),
+      operator: stubOperator({ me: vi.fn(() => Promise.resolve(aNonStaffMe())) }),
+    });
+
+    await screen.findByRole("button", { name: "Sign out" });
+    expect(screen.queryByRole("link", { name: "System admin" })).toBeNull();
+  });
+
+  it("hides the console from a signed-out visitor without asking", async () => {
+    const operator = stubOperator({
+      me: vi.fn(() => Promise.reject(new Error("must not be called"))),
+    });
+    renderWithProviders(<ShellHeader />, { identity: stubIdentity(), operator });
+
+    expect(screen.getByRole("link", { name: "Sign in" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "System admin" })).toBeNull();
+    expect(operator.me).not.toHaveBeenCalled();
   });
 });
