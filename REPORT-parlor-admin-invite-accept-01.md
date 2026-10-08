@@ -59,14 +59,23 @@ from identity's `registerTenancyRoutes`.
 
 - `timeout 600 npm ci` — exit 0.
 - `npm run typecheck` — clean.
-- `./bin/e2e -- e2e/account-admin.e2e.spec.ts` — **1 passed (8.5s)**; teardown:
-  "scanned 0 produced file(s) ... for 2 session token(s): none found"; stack
-  brought down with volumes deleted.
-- Expected floor note: `bin/e2e` then reported FAIL because a one-file filter
-  passes 1 test against `MINIMUM_TESTS = 2`. That floor guards the FULL tier
-  against silent filtering — tripping it under an explicit file filter is the
-  mechanism working, not a test failure. The full-tier green belongs to the
-  manager's merged-tree gate, which runs the unfiltered suite.
+- Earlier focused invocation `./bin/e2e -- e2e/account-admin.e2e.spec.ts` —
+  1 passed (8.5s); teardown scanned for 2 session tokens, none found in
+  artifacts; stack brought down with volumes deleted. The harness then exited
+  red at its `MINIMUM_TESTS = 2` floor: the floor guards the full tier against
+  silent filtering, so tripping it under an explicit file filter is the
+  mechanism working, not a test failure. That focused invocation was not a
+  green tier run and is not claimed as one.
+- Final combined invocation (manager-observed, `/tmp/gate-parlor-admin-audit.e2e2.log`):
+  `./bin/e2e -- e2e/account-admin.e2e.spec.ts e2e/settings-invitations.e2e.spec.ts` —
+  **4 passed, 0 failed, 0 skipped, 0 retried (18.2s)**, including the
+  owner-invites/guest-accepts/owner-promotes scenario
+  (`e2e/account-admin.e2e.spec.ts:139`) plus the three
+  `e2e/settings-invitations.e2e.spec.ts` tests; teardown scanned 0 produced
+  files for 2 session tokens (none found) and `parlor-e2e` stopped with its
+  volumes deleted. This combined invocation is the green tier evidence. The
+  filtered E2E invocation should not be repeated; the full-tier green on the
+  merged tree belongs to the manager's gate, which runs the unfiltered suite.
 
 ## What remains (manager)
 
