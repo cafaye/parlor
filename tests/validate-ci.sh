@@ -1627,13 +1627,37 @@ axis_available() {
   esac
 }
 
+# How many self-test workers to fan out to. Bounded on purpose: each worker
+# runs full copies of this file (caf, shellcheck, node startups per case), so
+# one worker per breakage would be 56 concurrent suites on a large machine.
+# Eight is the ceiling; `getconf _NPROCESSORS_ONLN` is POSIX and answers on
+# both macOS and Linux, and anything it cannot answer falls back to four.
+self_test_workers() {
+  local ncpu=4 probe
+  probe=$(getconf _NPROCESSORS_ONLN 2>/dev/null || printf '4')
+  case "$probe" in
+    ''|*[!0-9]*) ncpu=4 ;;
+    *) ncpu=$probe ;;
+  esac
+  if [ "$ncpu" -gt 8 ]; then ncpu=8; fi
+  if [ "$ncpu" -lt 1 ]; then ncpu=1; fi
+  printf '%s' "$ncpu"
+}
+
 self_test() {
   local proofs=0 unprovable=0 declared=0 proof name breakage axis
+  local total_cases=0 workers=0 per=0 w=0 start=0 end=0 pids="" worker_failed=0 idx=0 status="" p="" i=""
   # Deliberately not `local`: the EXIT trap below is global, and a local would
   # be out of scope by the time the trap runs — leaving the sandbox behind, or
   # erroring on a set -u reference to a variable that no longer exists.
   SANDBOX=$(mktemp -d)
-  trap 'rm -rf "${SANDBOX:-/nonexistent}"' EXIT
+  # The fan-out below needs one directory per worker plus one verdict file per
+  # case. It is a second mktemp for the same reason the first one is: the
+  # results have to live somewhere no breakage can reach, and next to the
+  # sandbox is somewhere the EXIT trap already owns. Global for the same
+  # reason SANDBOX is.
+  SELFTEST_WORK=$(mktemp -d)
+  trap 'rm -rf "${SANDBOX:-/nonexistent}" "${SELFTEST_WORK:-/nonexistent}"' EXIT
 
   # Every file the checks read, copied verbatim. The lockfile comes along
   # because a sandbox without it fails the "a committed lockfile exists" check
@@ -1767,40 +1791,136 @@ self_test() {
     "the-lockfile-does-not-know-the-tarball|node -e 'const fs=require(\"fs\"),p=require(\"path\"),c=require(\"crypto\");const f=process.argv[1];const root=p.dirname(f);const l=JSON.parse(fs.readFileSync(f,\"utf8\"));const rel=\"vendor/thing-1.0.0.tgz\";fs.mkdirSync(p.join(root,\"vendor\"),{recursive:true});fs.writeFileSync(p.join(root,rel),\"a tarball\");l.packages[\"node_modules/thing\"]={version:\"1.0.0\",resolved:\"file:\"+rel,integrity:\"sha512-AAAA\"+c.createHash(\"sha512\").update(\"different bytes\").digest(\"base64\")};fs.writeFileSync(f,JSON.stringify(l,null,2)+\"\\n\")' '$SANDBOX/package-lock.json'" \
     "a-tally-helper-that-is-not-a-function|node -e 'const fs=require(\"fs\");const f=process.argv[1];const s=fs.readFileSync(f,\"utf8\");const m=/\\nexit 0\\n$/;if(!m.test(s))throw new Error(\"this script no longer ends in a bare exit 0\");fs.writeFileSync(f,s.replace(m,\"\\nskip \\\"a tally helper that is not a function\\\"\\nexit 0\\n\"))' '$SANDBOX/tests/validate-ci.sh'"
   do
-    name=${proof%%|*}
-    breakage=${proof#*|}
-    axis=$(breakage_axis "$name")
-    declared=$((declared + 1))
+    # Materialize the breakage list into one file per case, so the workers
+    # below can claim cases by index. The list itself is unchanged: one
+    # throwaway copy per breakage, seeded from the pristine tree, each
+    # asserted to send the gate red.
+    printf '%s' "$proof" >"$SELFTEST_WORK/case-$total_cases"
+    total_cases=$((total_cases + 1))
+  done
 
-    # THE AXIS CHECK, and the whole content of this packet. On a machine that
-    # cannot run a check there is no witness for its breakage, so running it
-    # anyway reports "did NOT go red — that check cannot fail", which is a true
-    # sentence about a check that CAN fail and a false finding about the gate.
-    # The three honest options are all bad in a different direction — skip it
-    # silently, let it fail, or lower the floor — and the one taken here is to
-    # NOT count it as proven, to say so on its own line, and to leave it in the
-    # declared total the floor reads. So the number in the proof is the number
-    # of breakages this file DECLARES, the same on every machine, and the run
-    # prints how many of them this machine actually proved. That is the same
-    # asymmetry the checks tally uses, for the same reason: a floor that moves
-    # with the environment is not a floor.
-    if ! axis_available "$axis"; then
-      unprovable=$((unprovable + 1))
-      printf '  UNPROVABLE  %s — needs %s, which is not available on this machine; NOT counted as proven\n' \
-        "$name" "$axis"
-      continue
+  # WHY WORKERS, AND WHAT STAYS SERIAL. One full run of this file costs ~12s
+  # (caf, shellcheck, node startups), and the old loop paid it 56 times in a
+  # row, plus a pristine baseline and two controls. Each case
+  # already seeds its own throwaway copy from the pristine tree, so cases are
+  # independent: a worker claims a slice of the index files, seeds a PRIVATE
+  # sandbox per case (never shared between cases), plants that case's
+  # breakage, and records one verdict word. The baseline above and the two
+  # controls below stay serial — the baseline gates everything, and the
+  # controls are two runs, not fifty-six.
+  #
+  # WHAT PARALLELISM DOES NOT CHANGE: the declared list, the per-case seed,
+  # the full-suite run per case, the axis rule, the verdict lines, or their
+  # declaration order. The join prints verdicts by index, so the output reads
+  # exactly as the serial loop's did — including stopping at the first case
+  # that did not go red. Cases after a failure still ran (their sandboxes are
+  # already gone), but their verdicts are never printed, which is the
+  # observable half of "the loop stopped there".
+  #
+  # THE BOUND is `self_test_workers`: a ceiling of eight, so a large machine
+  # does not fan out to 56 concurrent caf/shellcheck/node runs. A worker that
+  # dies, a case with no verdict file, or a verdict word nobody wrote all fail
+  # LOUDLY — a quiet skip here would be a proof that passed by not running.
+  workers=$(self_test_workers)
+  if [ "$workers" -gt "$total_cases" ]; then workers=$total_cases; fi
+  per=$(((total_cases + workers - 1) / workers))
+  w=0
+  pids=""
+  while [ "$w" -lt "$workers" ]; do
+    start=$((w * per))
+    end=$((start + per))
+    if [ "$end" -gt "$total_cases" ]; then end=$total_cases; fi
+    if [ "$start" -ge "$total_cases" ]; then break; fi
+    (
+      # First statement, on purpose: this subshell inherits the EXIT trap
+      # above, which would delete the MAIN sandbox and work dir when the
+      # worker exits. Replace it before anything can fail. Single-quoted on
+      # purpose: both variables are still in scope when the worker exits.
+      trap 'rm -rf "$SELFTEST_WORK/worker-$w"' EXIT
+      SANDBOX="$SELFTEST_WORK/worker-$w/sandbox"
+      mkdir -p "$SANDBOX"
+      i=$start
+      while [ "$i" -lt "$end" ]; do
+        proof=$(cat "$SELFTEST_WORK/case-$i")
+        name=${proof%%|*}
+        breakage=${proof#*|}
+        axis=$(breakage_axis "$name")
+        # THE AXIS RULE, moved here with its meaning unchanged from the
+        # serial loop: on a machine that cannot run a check there is no
+        # witness for its breakage, so it is reported unprovable — named,
+        # counted, and never counted as proven — rather than run and found
+        # green. The three honest options are all bad in a different
+        # direction — skip it silently, let it fail, or lower the floor —
+        # and the one taken here is to NOT count it as proven, to say so on
+        # its own line, and to leave it in the declared total the floor
+        # reads. So the number in the proof is the number of breakages this
+        # file DECLARES, the same on every machine, and the run prints how
+        # many of them this machine actually proved. That is the same
+        # asymmetry the checks tally uses, for the same reason: a floor that
+        # moves with the environment is not a floor.
+        if ! axis_available "$axis"; then
+          printf 'UNPROVABLE\n' >"$SELFTEST_WORK/result-$i"
+        else
+          # One throwaway copy per breakage, seeded from the pristine one.
+          seed_sandbox
+          # shellcheck disable=SC2086  # the breakage list is deliberately a string
+          eval "$breakage"
+          if bash "$SANDBOX/tests/validate-ci.sh" >/dev/null 2>&1; then
+            printf 'NOTRED\n' >"$SELFTEST_WORK/result-$i"
+          else
+            printf 'ok\n' >"$SELFTEST_WORK/result-$i"
+          fi
+        fi
+        i=$((i + 1))
+      done
+    ) &
+    pids="$pids $!"
+    w=$((w + 1))
+  done
+  worker_failed=0
+  # shellcheck disable=SC2086  # pids is a space-separated PID list by construction
+  for p in $pids; do
+    if ! wait "$p"; then
+      worker_failed=1
     fi
+  done
+  if [ "$worker_failed" -ne 0 ]; then
+    echo "self_test: a worker failed before reporting every verdict; failing loudly rather than counting what is missing as proven" >&2
+    return 1
+  fi
 
-    # One throwaway copy per breakage, seeded from the pristine one.
-    seed_sandbox
-    # shellcheck disable=SC2086  # the breakage list is deliberately a string
-    eval "$breakage"
-    if bash "$SANDBOX/tests/validate-ci.sh" >/dev/null 2>&1; then
-      printf 'self_test: %s did NOT go red — that check cannot fail\n' "$name" >&2
+  # The join: verdicts in declaration order, counted exactly as before.
+  idx=0
+  while [ "$idx" -lt "$total_cases" ]; do
+    proof=$(cat "$SELFTEST_WORK/case-$idx")
+    name=${proof%%|*}
+    if [ ! -f "$SELFTEST_WORK/result-$idx" ]; then
+      printf 'self_test: no verdict for breakage %s; a worker failed to report\n' "$name" >&2
       return 1
     fi
-    proofs=$((proofs + 1))
-    printf '  ok   %s goes red\n' "$name"
+    status=$(cat "$SELFTEST_WORK/result-$idx")
+    declared=$((declared + 1))
+    case "$status" in
+      ok)
+        proofs=$((proofs + 1))
+        printf '  ok   %s goes red\n' "$name"
+        ;;
+      UNPROVABLE)
+        axis=$(breakage_axis "$name")
+        unprovable=$((unprovable + 1))
+        printf '  UNPROVABLE  %s — needs %s, which is not available on this machine; NOT counted as proven\n' \
+          "$name" "$axis"
+        ;;
+      NOTRED)
+        printf 'self_test: %s did NOT go red — that check cannot fail\n' "$name" >&2
+        return 1
+        ;;
+      *)
+        printf 'self_test: corrupt verdict for breakage %s; failing loudly\n' "$name" >&2
+        return 1
+        ;;
+    esac
+    idx=$((idx + 1))
   done
 
   # The other direction, and the one that keeps the gate usable: a workflow
