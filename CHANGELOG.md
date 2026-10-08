@@ -8,6 +8,19 @@ All notable changes to parlor are recorded here. The format follows
 
 ### Fixed
 
+- **The E2E gateway healthcheck probes the shipped Go image binary** (P-08).
+  The overlay probed `cafaye/gateway:e2e` with `bun -e fetch(...)`, a stale
+  TypeScript-era check against a Go distroless image with no shell, curl,
+  wget or bun — every probe failed with `exec: "bun": executable file not
+  found in $PATH` while the process served traffic. The overlay now uses the
+  exact liveness command gateway's own `docker-compose.yml` uses:
+  `test: ["CMD", "/app/service", "-healthcheck"]` against `/healthz`, not
+  `/readyz`, so an identity outage still reports through readiness without
+  restarting the gateway. `tests/validate-ci.sh` holds the pairing
+  statically (`the e2e gateway healthcheck probes the Go image binary`, with
+  a `the-e2e-gateway-healthcheck-uses-bun` self-test breakage): the declared
+  shape-check floor moves 49 → 50 and the breakage floor 55 → 56. No Gateway
+  source change, no new runtime, no topology change.
 - **Register carries the `website` honeypot, the Second factor section proves
   its answered state, and pointer focus asserts the painted state** (P-07,
   against the `parlor-e2e` full-stack run of 2026-10-08: 26 passed, 5 failed;

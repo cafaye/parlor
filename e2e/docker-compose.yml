@@ -790,11 +790,16 @@ services:
       # container healthcheck on /readyz would restart the gateway every time
       # identity hiccuped. Readiness is the harness's job and it is done from
       # outside, on /readyz, in bin/e2e-stack.
-      test:
-        - CMD
-        - bun
-        - -e
-        - "fetch('http://127.0.0.1:8080/healthz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      #
+      # `/app/service -healthcheck`, and NOT a request from outside the container,
+      # because the shipped image is the Go distroless one
+      # (`gcr.io/distroless/static-debian12:nonroot`): no shell, no curl, no
+      # wget, no bun. The binary probes its own `/healthz` over the container
+      # loopback and exits 0 or 1 — the exact liveness command gateway's own
+      # `docker-compose.yml` uses (`cmd/gateway/main.go` implements
+      # `-healthcheck`). The TypeScript-era `bun -e fetch(...)` answered
+      # `exec: "bun": executable file not found in $PATH` on every probe.
+      test: ["CMD", "/app/service", "-healthcheck"]
       interval: 2s
       timeout: 3s
       retries: 30
