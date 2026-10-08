@@ -742,14 +742,14 @@ gate:
     # dependent in exactly the way this floor used to be.
     - id: ci-shape-checks
       match: '^([0-9]+) checks declared, [0-9]+ passed, [0-9]+ failed, [0-9]+ skipped$'
-      minimum: 48
-    # And the self-test, which is what makes the 48 above load-bearing: 54
+      minimum: 49
+    # And the self-test, which is what makes the 49 above load-bearing: 55
     # throwaway copies of the tree, each broken one way, each asserted to go
     # red. A gate that runs the checks but silently stopped proving they can
-    # fail would still print `48 checks declared` — this is the line that says
+    # fail would still print `49 checks declared` — this is the line that says
     # the rubber stamp was pressed.
     #
-    # 52 -> 54 is this packet's: two breakages for one new check — the stack
+    # 52 -> 54 is the signup-key packet's: two breakages for one new check — the stack
     # wiring identity an ephemeral signup key. `the-stack-names-no-signup-key`
     # deletes the `SIGNUP_SIGNING_KEY` line from the compose document and
     # `the-harness-generates-no-signup-key` deletes the preflight call from
@@ -759,6 +759,14 @@ gate:
     # reaches a verdict on went up by one alongside the two new ways it can be
     # proven to fail. A floor that did not move for a reason the tree contains
     # is a floor nobody can reconcile with the tally line.
+    #
+    # 54 -> 55 is m128's: one breakage for one new check — the e2e fixture
+    # naming a billing service the stack does not run. `the-e2e-stack-
+    # points-parlor-at-a-billing-service-it-does-not-run` re-adds
+    # `BILLING_URL: "http://billing:3000"` to the compose document and is
+    # asserted to send the script red. 48 moves to 49 alongside it, same
+    # symmetry as the signup-key packet: a new check, a new way to prove it
+    # fails.
     #
     # ALSO A DECLARED COUNT, AND FOR THE SAME REASON. The self-test used to
     # floor the number of breakages it PROVED, which on a machine without `caf`
@@ -785,7 +793,7 @@ gate:
     # either, because the pattern needs the digits immediately after the colon.
     - id: check-self-test
       match: '^self_test: ([0-9]+) breakages declared'
-      minimum: 54
+      minimum: 55
   # NOT PROVED, and named here rather than left to be discovered: a proof is a
   # line of output. `484 passed` proves 484 tests ran; it does not prove the
   # tests touched identity, because they do not — the identity and billing

@@ -20,7 +20,7 @@
 # and a partial parse is a worse reader than a grep that says what it wants.
 #
 #   bash tests/validate-ci.sh              the checks
-#   bash tests/validate-ci.sh --self-test  prove they can fail (54 breakages,
+#   bash tests/validate-ci.sh --self-test  prove they can fail (55 breakages,
 #                                         minus whatever this machine cannot
 #                                         prove, plus the opposite cases)
 #
@@ -967,6 +967,40 @@ else
     "$E2E_COMPOSE or $E2E_STACK is missing"
 fi
 
+# --- parlor's e2e readiness matches the stack that actually runs --------------
+# Parlor's `/readyz` probes billing whenever `BILLING_URL` is set, and answers
+# 503 while that probe fails (`src/app/readyz/route.ts`: an unconfigured
+# dependency is not probed at all, a configured-but-unreachable one fails the
+# gate). This stack runs no billing service, so a `BILLING_URL` pointing at one
+# is a readiness gate that can never open: `bin/e2e-stack` spends its whole
+# readiness budget polling parlor's `/readyz` and brings the tier down with
+# `{"name":"billing","ok":false}` before a single browser test runs — measured
+# at m128, where the fixture named `http://billing:3000` and no `billing:`
+# service existed in the document.
+#
+# So the pairing is held here, statically, where a reintroduction goes red
+# before any container starts: a `BILLING_URL` with a value in the compose
+# document requires a `billing:` service in the same document. Adding the
+# service later is the other half of that pairing arriving, not a violation —
+# the check passes then. An explicitly empty value (`""`) is the same as
+# unset and passes either way, because the probe treats it as not configured.
+#
+# This check reads shapes, never values: nothing here renders or logs an
+# address beyond the service name it already names.
+if [ -f "$E2E_COMPOSE" ]; then
+  e2e_billing_refs=$(code_lines "$E2E_COMPOSE" | found 'BILLING_URL:' | grep -vE 'BILLING_URL:[[:space:]]*(""|'"''"')?[[:space:]]*$' || true)
+  e2e_billing_service=$(code_lines "$E2E_COMPOSE" | found '^  billing:[[:space:]]*$' || true)
+  if [ -n "$e2e_billing_refs" ] && [ -z "$e2e_billing_service" ]; then
+    no "the e2e stack does not point parlor at a billing service it does not run" \
+      "these BILLING_URL lines name a billing service no service in $E2E_COMPOSE provides:$(printf '%s' "$e2e_billing_refs" | tr '\n' ' '). Parlor probes billing whenever BILLING_URL is set, so this is a /readyz that answers 503 forever; unset the variable or add the billing: service."
+  else
+    ok "the e2e stack does not point parlor at a billing service it does not run"
+  fi
+else
+  no "the e2e stack does not point parlor at a billing service it does not run" \
+    "$E2E_COMPOSE is missing"
+fi
+
 # --- the deployment story, in the four shapes CI assumes --------------------
 # These four checks are about the SHAPE, and every one of them needs no kamal,
 # no docker and no network — which is why they are here rather than only in
@@ -1491,7 +1525,7 @@ else
 fi
 
 # --- prove the checks can fail --------------------------------------------
-# Fifty-four breakages of a throwaway copy of every file these checks read, each
+# Fifty-five breakages of a throwaway copy of every file these checks read, each
 # asserted to send this gate red — except the ones this machine cannot prove,
 # which are counted separately and said out loud rather than passed quietly (see
 # `axis_available` and the tally at the bottom of `self_test`).
@@ -1681,6 +1715,7 @@ self_test() {
     "an-unpinned-image|sed_i 's|image: nginx:1.27.4-alpine|image: nginx:latest|' '$SANDBOX/e2e/docker-compose.yml'" \
     "the-stack-names-no-signup-key|sed_i '/SIGNUP_SIGNING_KEY: \"\${SIGNUP_SIGNING_KEY:-}\"/d' '$SANDBOX/e2e/docker-compose.yml'" \
     "the-harness-generates-no-signup-key|sed_i '/^  ensure_signup_signing_key$/d' '$SANDBOX/bin/e2e-stack'" \
+    "the-e2e-stack-points-parlor-at-a-billing-service-it-does-not-run|printf '      BILLING_URL: \"http://billing:3000\"\n' >>'$SANDBOX/e2e/docker-compose.yml'" \
     "no-deploy-config|rm -f '$SANDBOX/config/deploy.yml'" \
     "an-accessory-in-the-deploy-config|printf '\naccessories:\n  postgres:\n    image: postgres:17-alpine\n' >>'$SANDBOX/config/deploy.yml'" \
     "a-builder-arg-without-a-dockerfile-arg|echo '  args:' >>'$SANDBOX/config/deploy.yml' && echo '    NEXT_PUBLIC_CDN_URL: <%= cdn_url %>' >>'$SANDBOX/config/deploy.yml'" \

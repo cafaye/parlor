@@ -780,7 +780,16 @@ services:
       # Server-side only. Never `NEXT_PUBLIC_*`: that prefix inlines the value
       # into the browser bundle, which is precisely what this packet removed.
       IDENTITY_URL: "http://identity:8080"
-      BILLING_URL: "http://billing:3000"
+      # NO BILLING_URL, AND THE ABSENCE IS THE FIX (m128). This stack runs no
+      # billing service, and parlor's `/readyz` probes billing whenever
+      # `BILLING_URL` is set — so naming `http://billing:3000` here held the
+      # rollout gate at 503 with `{"name":"billing","ok":false}` forever, on a
+      # name nothing resolves, before a single browser test ran. An unconfigured
+      # dependency is not a failed one (`src/app/readyz/route.ts`), so leaving
+      # the variable unset is the honest shape of this deployment rather than a
+      # gap in it. Point it at a billing service again only together with a
+      # `billing:` service in this same document; `tests/validate-ci.sh` holds
+      # that pairing statically.
       # Telemetry, by the kit convention in
       # `templates/compose/.env.example`'s "service env" block. `PARLOR_OTEL_ENDPOINT`
       # is the ONE variable `core/schemas/telemetry/otel-endpoint.schema.json`
