@@ -281,15 +281,24 @@ function MemberListBody({
 
   return (
     <div className="flex flex-col gap-4">
-      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-        <dt className="text-muted">Total</dt>
-        <dd>{rows.length}</dd>
+      {/*
+        One summary strip, not a stacked form: the distribution is the panel's
+        ledger line — read left to right, figures set semibold against muted
+        terms — and the rows or the notice below it are the detail. `dl`
+        semantics and the exact terms stay, so the counts keep their shape for
+        assistive tech and for the tests that pin them.
+      */}
+      <dl className="flex flex-wrap items-baseline gap-x-6 gap-y-1 text-sm">
+        <div className="flex items-baseline gap-2">
+          <dt className="text-muted">Total</dt>
+          <dd className="text-base font-semibold tabular-nums">{rows.length}</dd>
+        </div>
         {(["owner", "admin", "member"] as const)
           .filter((key) => counts[key] > 0)
           .map((key) => (
-            <div className="col-span-2 grid grid-cols-subgrid" key={key}>
+            <div className="flex items-baseline gap-2" key={key}>
               <dt className="text-muted">{roleLabel(key)}s</dt>
-              <dd>{counts[key]}</dd>
+              <dd className="text-base font-semibold tabular-nums">{counts[key]}</dd>
             </div>
           ))}
       </dl>

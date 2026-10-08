@@ -294,6 +294,19 @@ function loadedPanel() {
     expect(counts?.textContent?.replace(/\s+/g, "")).toBe("Total4Owners1Admins1Members2");
   });
 
+  it("lays the counts out as one summary strip above the detail", async () => {
+    // The distribution is the panel's ledger line: figures in a wrapping row,
+    // not a stacked label/value grid. The `dl` and its terms are unchanged —
+    // the pin above is what guards that — so this asserts only the strip hook.
+    signIn();
+    renderWithProviders(<AccountScreen accountId={ACCOUNT_ID} />, { identity: asCaller() });
+
+    const panel = await loadedPanel();
+    await within(panel).findByText("Owners");
+    const counts = panel.querySelector("dl");
+    expect(counts?.className.split(" ")).toContain("flex-wrap");
+  });
+
   it("omits a role nobody holds, rather than showing it as zero", async () => {
     signIn();
     const identity = asCaller({
