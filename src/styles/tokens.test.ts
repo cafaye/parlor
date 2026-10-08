@@ -379,6 +379,28 @@ describe("cafaye palette — measured contrast", () => {
     }
   });
 
+  it("pointer focus resolves no outline width", () => {
+    // Measured in Chrome: a focused button computes `outline-width: 3px`
+    // with `outline-style: none` even when NO author rule paints — the width
+    // the end-to-end tier reads as "the unconditional ring is back". The
+    // `:focus:not(:focus-visible)` rule below zeroes it explicitly, so the
+    // pointer branch of the browser suite reads what the style already says.
+    // Longhands only: the `outline: none` shorthand resets the width to
+    // `medium`, which resolves back to the same 3px.
+    const utilities = css.slice(css.indexOf("@layer utilities"));
+    const rule = utilities.match(/\.focus-ring:focus:not\(:focus-visible\)\s*\{([^}]*)\}/);
+    expect(rule, "expected a .focus-ring:focus:not(:focus-visible) zeroing rule").not.toBeNull();
+    const body = rule![1];
+
+    const width = body.match(/outline-width:\s*([^;]+);/);
+    expect(width, `the pointer-focus rule declares no outline-width:\n${body}`).not.toBeNull();
+    expect(Number.parseFloat(width![1])).toBe(0);
+    expect(
+      /(^|[{;\s])outline\s*:/.test(body),
+      `the pointer-focus rule must not use the outline shorthand:\n${body}`,
+    ).toBe(false);
+  });
+
   /**
    * Reduced motion changes the ring's WIDTH only (2px → 3px): the override
    * keeps the `:focus-visible` gate and declares nothing else — no shorthand

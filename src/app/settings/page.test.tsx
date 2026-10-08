@@ -1012,6 +1012,27 @@ describe("the second factor section", () => {
     expect(screen.getByRole("button", { name: "Set up a second factor" })).toBeInTheDocument();
   });
 
+  it("keeps the Second factor landmark while the status is loading", async () => {
+    // The section is a landmark in every state, not only when the service has
+    // answered: a panel whose region vanishes on a slow request is a landmark
+    // list that renames itself under the person navigating by it.
+    renderMfa({ mfaStatus: vi.fn((): Promise<never> => new Promise<never>(() => {})) });
+
+    expect(await screen.findByRole("region", { name: "Second factor" })).toBeInTheDocument();
+  });
+
+  it("keeps the Second factor landmark when the status cannot be read", async () => {
+    // Same landmark, same retry, same copy — the failure state is wrapped,
+    // not replaced. `GET /v1/mfa` answers 404 on a deployment whose identity
+    // has no MFA key wired, and the section must still be the section rather
+    // than a bare alert.
+    renderMfa({ mfaStatus: vi.fn(() => Promise.reject(anIdentityError(404, "not_found"))) });
+
+    expect(await screen.findByRole("region", { name: "Second factor" })).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(/could not load your second-factor status/i);
+    expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+  });
+
   it("shows the secret and the provisioning URI once, with the code input", async () => {
     const { identity } = renderMfa({ startMfaEnrollment: enrollment() });
 

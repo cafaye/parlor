@@ -137,6 +137,73 @@ describe("register page", () => {
       );
     });
 
+    it("sends the empty honeypot with the signed pair", async () => {
+      // The wire body carries `website: ""` next to the `{timestamp,
+      // signature}` pair: identity's `POST /v1/users` takes a request-only
+      // honeypot, and the form renders it empty for every person. A body that
+      // omits the field is one this form never sent.
+      const identity = stubIdentity({
+        register: vi.fn(() => Promise.resolve({ id: "usr_1", email: CREDENTIALS.email })),
+      });
+      renderWithProviders(<RegisterPage />, { identity });
+
+      fillIn(CREDENTIALS);
+      submit();
+
+      await waitFor(() =>
+        expect(identity.register).toHaveBeenCalledWith({
+          ...CREDENTIALS,
+          timestamp: 1759843200,
+          signature: "minted-signature",
+          website: "",
+        }),
+      );
+    });
+
+    it("carries a honeypot no person can see or reach", () => {
+      renderWithProviders(<RegisterPage />, { identity: stubIdentity() });
+
+      // No label: a labelled control is one a screen reader offers, and this
+      // one is not for anybody to fill in.
+      expect(screen.queryByLabelText(/website/i)).not.toBeInTheDocument();
+      const trap = document.querySelector('input[name="website"]');
+      expect(trap).not.toBeNull();
+      // `hidden` takes it out of layout, `tabIndex={-1}` out of the tab
+      // order, `aria-hidden` out of the accessibility tree: three independent
+      // reasons a person never meets it, so no single attribute carries the
+      // property alone.
+      expect(trap).toHaveAttribute("hidden");
+      expect(trap).toHaveAttribute("tabindex", "-1");
+      expect(trap).toHaveAttribute("aria-hidden", "true");
+      expect(trap).not.toBeVisible();
+    });
+
+    it("sends a filled honeypot as-is, so the service can refuse it", async () => {
+      // The trap is live, not decorative: a bot that fills every field sends
+      // a non-empty `website`, and identity refuses exactly that with a generic
+      // 422 before any row is created. A form that dropped the field
+      // client-side would be disarming its own trap.
+      const identity = stubIdentity({
+        register: vi.fn(() => Promise.resolve({ id: "usr_1", email: CREDENTIALS.email })),
+      });
+      renderWithProviders(<RegisterPage />, { identity });
+
+      fillIn(CREDENTIALS);
+      fireEvent.change(document.querySelector('input[name="website"]') as HTMLInputElement, {
+        target: { value: "http://spam.example.com" },
+      });
+      submit();
+
+      await waitFor(() =>
+        expect(identity.register).toHaveBeenCalledWith({
+          ...CREDENTIALS,
+          timestamp: 1759843200,
+          signature: "minted-signature",
+          website: "http://spam.example.com",
+        }),
+      );
+    });
+
     it("confirms the account was created", async () => {
       const identity = stubIdentity({
         register: vi.fn(() => Promise.resolve({ id: "usr_1", email: CREDENTIALS.email })),

@@ -147,6 +147,21 @@ describe("register", () => {
     expect(JSON.parse(calls[0].body ?? "null")).toEqual(REGISTRATION);
   });
 
+  it("carries the empty website honeypot with the signed pair", async () => {
+    // `POST /v1/users` takes a request-only `website` honeypot alongside the
+    // `{timestamp, signature}` pair: the register form renders it empty, a
+    // person never fills it, and identity refuses a non-empty one with the
+    // same generic 422 as any other validation failure — before any row is
+    // created. The wire body carries all three, so a registration that omits
+    // the field is one the form never sent.
+    const { transport, calls } = stubTransport(() => json(201, { id: "usr_1", email: CREDENTIALS.email }));
+    const client = createIdentityClient({ baseUrl, transport });
+
+    await client.register({ ...REGISTRATION, website: "" });
+
+    expect(JSON.parse(calls[0].body ?? "null")).toEqual({ ...REGISTRATION, website: "" });
+  });
+
   it("sends no bearer token when registering", async () => {
     const { transport, calls } = stubTransport(() => json(201, { id: "usr_1", email: CREDENTIALS.email }));
     const client = createIdentityClient({ baseUrl, transport });
