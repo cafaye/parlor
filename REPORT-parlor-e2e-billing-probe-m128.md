@@ -77,7 +77,7 @@ evidence overruled the first reading.
 |---|--------------------------------------|--------|
 | 1 | `timeout 120 bash tests/validate-ci.sh` | exit **0** — `49 checks declared, 49 passed, 0 failed, 0 skipped` (log `/tmp/gate-parlor-e2e-signup-key.validate.log`) |
 | 2 | `npx vitest run src/app/readyz/route.test.ts` | exit **0** — `Test Files 1 passed (1)`, `Tests 17 passed (17)` (log `.../gate-parlor-e2e-signup-key.readyz.log`): readiness behavior intact, both directions (billing probed when set, absent when unset) |
-| 3 | New-check red proof: re-added `BILLING_URL: "http://billing:3000"` to a scratch copy of the compose doc, ran the check's exact logic | refs non-empty, no `billing:` service ⇒ **would FAIL** (correct); pristine tree passes |
+| 3 | Red proof: appended `BILLING_URL: "http://billing:3000"` to `e2e/docker-compose.yml`, re-ran the full `validate-ci.sh` | exit **1** — `49 checks declared, 48 passed, 1 failed, 0 skipped`; the single FAIL is the new check and nothing else; restored with `git checkout -- e2e/docker-compose.yml` (verified clean) |
 | 4 | `bash tests/validate-ci.sh --self-test` (background, polled) | `self_test: 55 breakages declared, 55 proven able to fail, 0 unprovable on this machine`, including `ok the-e2e-stack-points-parlor-at-a-billing-service-it-does-not-run goes red` (log `.../gate-parlor-e2e-signup-key.selftest.log`) |
 
 Full `bin/prime` and `./bin/e2e` were deliberately **not** run: the
