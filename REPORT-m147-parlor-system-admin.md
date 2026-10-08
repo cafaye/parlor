@@ -58,9 +58,9 @@ upstream table-and-walk go red — that is the tripwire, and the mismatch gets
 reported, not absorbed.
 
 ## Verification
-- Narrow focused runs (the only suites re-run after the final reader fix):
+- Narrow focused runs (the only suites re-run after the final reader fixes):
   `src/lib/operator.test.ts` + `src/app/admin/page.test.tsx` +
-  `src/lib/telemetry.server.test.ts` → **3 files, 74 passed, 0 failed**.
+  `src/lib/telemetry.server.test.ts` → **3 files, 76 passed, 0 failed**.
 - Earlier in this run, before the manager stopped gate work:
   `npx vitest run` (full) → 40 files, 1061 passed; `npx tsc --noEmit` →
   clean; `npm run build` → clean with regenerated `src/routeTree.gen.ts`.
@@ -77,11 +77,13 @@ reported, not absorbed.
 - No E2E/Docker in this packet per brief (manager owns merged browser gate).
 
 ## Notes for successor / manager
-- Post-freeze reader fix (manager-directed): `readOperatorUsers` previously
-  defaulted absent nullable keys to `null` while its own comment forbade
-  defaulting. It now rejects absent `display_name`/`disabled_at`/
-  `email_verified_at` keys and accepts only explicit `null`, with a focused
-  regression test (absent-key row → `internal` failure, request still sent).
+- Post-freeze reader fix, corrected per manager: `readOperatorUsers`
+  requires the two TIMESTAMP keys (`disabled_at`, `email_verified_at`) to be
+  present — the contract promises null keys — and accepts an omitted
+  `display_name` as null (identity tags it `omitempty`). Three focused tests:
+  omitted name accepted, each absent timestamp refused. An earlier revision
+  wrongly required all three; the correction is recorded here rather than
+  hidden.
 - Two findings worth keeping: (1) a React Query with `enabled: false` reads
   `isPending === true` — the Search button stayed disabled until the screen
   keyed on `fetchStatus === "fetching"`; (2) `Button` defaults `type` to

@@ -179,18 +179,44 @@ describe("operator/users search", () => {
     expect(failure.code).toBe("internal");
   });
 
-  it("refuses a row with an absent nullable key rather than defaulting it to null", async () => {
-    // Absence is not explicit null: a row the contract did not describe must
-    // not render as one it did. Only a present `null` reads as "no value".
+  it("accepts an omitted display_name as null (omitempty upstream)", async () => {
+    // Identity tags `display_name` `json:"display_name,omitempty"`, so
+    // absence is a valid answer and normalizes to null — unlike the two
+    // timestamp keys, which the contract promises as null keys.
     const { display_name: _dropped, ...rowWithoutName } = USER_ROW;
     void _dropped;
-    const { transport, calls } = stubTransport(() => json(200, { users: [rowWithoutName] }));
+    const { transport } = stubTransport(() => json(200, { users: [rowWithoutName] }));
+    const client = createOperatorClient({ transport });
+
+    const [user] = await client.searchUsers("session-token", "kaka");
+
+    expect(user?.display_name).toBeNull();
+  });
+
+  it("refuses a row with an absent disabled_at rather than defaulting it to null", async () => {
+    // The contract promises the timestamp keys as null keys: an absent one is
+    // a shape nobody described, and defaulting it would render a disabled
+    // state the service never sent.
+    const { disabled_at: _dropped, ...rowWithoutKey } = USER_ROW;
+    void _dropped;
+    const { transport, calls } = stubTransport(() => json(200, { users: [rowWithoutKey] }));
     const client = createOperatorClient({ transport });
 
     const failure = await theFailure(client.searchUsers("session-token", "kaka"));
 
     expect(failure.code).toBe("internal");
     expect(calls).toHaveLength(1);
+  });
+
+  it("refuses a row with an absent email_verified_at rather than defaulting it to null", async () => {
+    const { email_verified_at: _dropped, ...rowWithoutKey } = USER_ROW;
+    void _dropped;
+    const { transport } = stubTransport(() => json(200, { users: [rowWithoutKey] }));
+    const client = createOperatorClient({ transport });
+
+    const failure = await theFailure(client.searchUsers("session-token", "kaka"));
+
+    expect(failure.code).toBe("internal");
   });
 });
 

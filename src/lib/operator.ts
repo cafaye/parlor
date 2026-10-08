@@ -59,8 +59,9 @@ export type OperatorMe = { user: { id: string; email: string; staff: boolean } }
  * The four nullable timestamps are `string | null` and never defaulted: a
  * disabled account with `disabled_at: null` invented by the client is an
  * enabled account, and a verified address with an invented timestamp is a
- * proved one. An ABSENT key is refused outright — absence is not the same
- * answer as explicit `null` — so only a present `null` reads as "no value".
+ * proved one. The two TIMESTAMP keys must be present — the contract promises
+ * null keys there, so absence is refused. `display_name` is the exception:
+ * identity tags it `omitempty`, so an absent name is valid and reads as null.
  */
 export type OperatorUser = {
   id: string;
@@ -153,11 +154,11 @@ function readOperatorMe(body: unknown): OperatorMe {
  * Reads `GET /v1/operator/users` strictly.
  *
  * `users` must be an array; each row must carry `id`, `email` and
- * `created_at`. The three nullable fields must be PRESENT — an absent key is
- * not the same answer as an explicit `null`, and defaulting a missing key to
- * null would read a row the contract did not describe as one it did. Explicit
- * `null` is the safe side for both: never an invented timestamp, never an
- * invented state.
+ * `created_at`. `disabled_at` and `email_verified_at` must be PRESENT — the
+ * contract promises null keys there, so an absent key is a shape nobody
+ * described and defaulting it would render one as the other. `display_name`
+ * is the exception: identity tags it `json:"display_name,omitempty"`, so
+ * absence is valid and normalizes to null.
  */
 function readOperatorUsers(body: { users: unknown }): OperatorUser[] {
   if (!Array.isArray(body.users)) {
@@ -186,7 +187,10 @@ function readOperatorUsers(body: { users: unknown }): OperatorUser[] {
     return {
       id,
       email,
-      display_name: readPresentNullable(record, "display_name"),
+      // `display_name` is `omitempty` upstream: absence is valid and reads as
+      // null. The two timestamps have no such tag — the contract promises
+      // null keys — so only they go through the presence check.
+      display_name: readNullableString(record.display_name),
       disabled_at: readPresentNullable(record, "disabled_at"),
       email_verified_at: readPresentNullable(record, "email_verified_at"),
       created_at: createdAt,
@@ -197,10 +201,10 @@ function readOperatorUsers(body: { users: unknown }): OperatorUser[] {
 /**
  * A nullable contract field that must be present.
  *
- * Absent and explicit-`null` are different answers on this contract: absence
- * means the service sent a shape nobody here described, and only explicit
- * `null` reads as "no value". An absent key throws rather than defaulting,
- * because a default would turn an undescribed shape into a rendered one.
+ * For the two timestamp keys the contract promises null keys: absent and
+ * explicit-`null` are different answers there, and only explicit `null` reads
+ * as "no value". An absent key throws rather than defaulting, because a
+ * default would turn an undescribed shape into a rendered one.
  */
 function readPresentNullable(record: Record<string, unknown>, field: string): string | null {
   if (!Object.hasOwn(record, field)) {
