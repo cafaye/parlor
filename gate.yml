@@ -692,9 +692,19 @@ gate:
     # region/headingId preservation pin that is green by design). 6 of the 7
     # were shown red before green; the narrow run is 83 passed on the two
     # files. The manager reconciles to exact at merge.
+    #
+    # IT IS 982 BY THE NEXT ACCOUNT. 975 -> 982, a +7 in the invitations and
+    # settings packet (P-04): 4 composition tests in
+    # `src/app/invitations/[token]/invitation-screen.test.tsx` (product
+    # eyebrow above the pending and accepted headings, byte-identical pins
+    # for the pending copy and the gone/unrecognised headings) plus 3 in
+    # `src/app/settings/page.test.tsx` (product eyebrow above the Settings
+    # h1, six section headings in existing order, delete-row mobile-stack).
+    # 4 of the 7 were shown red before green; the narrow run is 89 passed on
+    # the two files. The manager reconciles to exact at merge.
     - id: suite
       match: '^[ ]*Tests[ ]+([0-9]+)[ ]+passed(?![ ]*\|)'
-      minimum: 975
+      minimum: 982
     # The tally `tests/validate-ci.sh` prints, which is the second half of this
     # gate: the checks that the tree still has the shape CI assumes — one
     # runtime pin, `npm ci` and not `npm install`, the gate command, the

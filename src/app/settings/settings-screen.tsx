@@ -718,7 +718,12 @@ function DeleteAccountPanel({ token }: { token: string }) {
           </p>
         ) : null}
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
+        {/* The irreversible row: the explanation is the primary line and the
+            control sits below it on mobile, right-aligned beside it from `sm`
+            up — the same list-first row shape the account detail's
+            leave/delete rows took. The control, its gating and its wiring are
+            unchanged — only the row's own stacking. */}
+        <div className="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-muted">
             Deleting removes your account, your personal account, and your membership of every
             team account. Every session is ended. There is no undo.

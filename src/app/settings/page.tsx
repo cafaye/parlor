@@ -31,9 +31,14 @@ import { SettingsScreen } from "./settings-screen";
 export default function SettingsPage() {
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-10">
-      <header className="mb-8">
+      {/* The header block: eyebrow, heading, supporting line — the same
+          composition as the account screens and the auth screens. The eyebrow
+          adds no copy: "parlor" is the product name already on the page (the
+          shell brand). The heading keeps its rung. */}
+      <header className="mb-8 flex flex-col gap-2">
+        <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted">parlor</p>
         <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-        <p className="mt-1 text-sm text-muted">
+        <p className="text-sm text-muted">
           Your name, your address, your second factor, and everywhere you are signed in.
         </p>
       </header>

@@ -148,7 +148,13 @@ export function InvitationScreen({ token }: { token: string }) {
 
   return (
     <section className="flex flex-col gap-4">
-      <div>
+      <div className="flex flex-col gap-2">
+        {/* The header block: eyebrow, heading, supporting line — the same
+            composition as the account screens and the auth screens. The
+            eyebrow adds no copy: "parlor" is the product name already on the
+            page (the shell brand). The heading keeps its rung and its exact
+            words: invitation state wording is contract vocabulary. */}
+        <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted">parlor</p>
         <h1 className="text-xl font-semibold tracking-tight">You have been invited</h1>
         <p className="mt-1 text-sm text-muted">
           Accepting makes you a member of the account that sent this link. Nothing
@@ -175,7 +181,10 @@ export function InvitationScreen({ token }: { token: string }) {
 function Accepted({ membership }: { membership: Membership }) {
   return (
     <section className="flex flex-col gap-4">
-      <div>
+      <div className="flex flex-col gap-2">
+        {/* Same header block as the pending state: eyebrow, heading, fact.
+            The heading keeps its rung and its exact words. */}
+        <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted">parlor</p>
         <h1 className="text-xl font-semibold tracking-tight">You are in</h1>
         <p className="mt-1 text-sm text-muted">
           You joined as {roleLabel(membership.role).toLowerCase()}.
