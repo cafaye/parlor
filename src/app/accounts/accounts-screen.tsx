@@ -93,8 +93,13 @@ function AccountList({ accounts }: { accounts: UseQueryResult<AccountListItem[]>
     <ul aria-label="Your accounts" className="flex flex-col gap-2">
       {rows.map((account) => (
         <li key={account.id}>
+          {/* List-first rows: the account name is the primary line and the
+              membership facts the secondary one, stacked on mobile and
+              side by side — facts right-aligned — from `sm` up. The row is
+              still one link to the account's own page; nothing gained,
+              nothing renamed. */}
           <Link
-            className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface-raised px-4 py-3 hover:border-cafaye-300"
+            className="flex flex-col gap-3 rounded-lg border border-border bg-surface-raised px-4 py-3 hover:border-cafaye-300 sm:flex-row sm:items-center sm:justify-between"
             to="/accounts/$accountId"
             params={{ accountId: account.id }}
           >

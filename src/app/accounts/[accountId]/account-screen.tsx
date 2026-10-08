@@ -106,7 +106,12 @@ function Loaded({ account, accountId }: { account: AccountDetail; accountId: str
 
   return (
     <div className="flex flex-col gap-8">
+      {/* The header block: eyebrow, heading, facts — the same composition as
+          the list and the auth screens. The eyebrow adds no copy: "parlor" is
+          the product name already on the page. The heading keeps its rung and
+          stays the account's name, which is still the page's only h1. */}
       <header className="flex flex-col gap-2">
+        <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted">parlor</p>
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-semibold tracking-tight">{account.name}</h1>
           <RoleBadge role={role} />
@@ -304,7 +309,11 @@ function MemberRow({
 
   return (
     <li className="flex flex-col gap-2 border-t border-border pt-2 first:border-t-0 first:pt-0">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      {/* List-first member row: the member is the primary line and the
+          role/remove actions sit below it on mobile, right-aligned beside it
+          from `sm` up. The controls, their order and their wiring are
+          unchanged — only the row's own stacking. */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <span className="font-mono text-xs text-muted">{member.user_id}</span>
         <span className="flex items-center gap-2">
           <RoleChangeControl
@@ -661,7 +670,7 @@ function DangerZone({ role, accountId }: { role: Role; accountId: string }) {
         {error ? <FieldSummary>{error}</FieldSummary> : null}
 
         {canLeave ? (
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm text-muted">
               Leaving removes your membership. You will need a new invitation to come back.
             </p>
@@ -682,7 +691,7 @@ function DangerZone({ role, accountId }: { role: Role; accountId: string }) {
         ) : null}
 
         {canDelete ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
+          <div className="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm text-muted">
               Deleting removes the account and everything scoped by it. There is no undo.
             </p>

@@ -13,9 +13,16 @@ import { AccountsScreen } from "./accounts-screen";
 export default function AccountsPage() {
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-10">
-      <header className="mb-8">
+      {/* The header block: eyebrow, heading, supporting line — the same
+          composition as `/login` and `/register`, so the account screens read
+          as one product with the auth screens. The eyebrow adds no copy:
+          "parlor" is the product name already on the page (the shell brand).
+          The heading keeps its rung: the type-scale step-up is the
+          landing/auth move, and this packet is the list-first one. */}
+      <header className="mb-8 flex flex-col gap-2">
+        <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted">parlor</p>
         <h1 className="text-2xl font-semibold tracking-tight">Accounts</h1>
-        <p className="mt-1 text-sm text-muted">
+        <p className="text-sm text-muted">
           The accounts you belong to, and the role you hold in each one.
         </p>
       </header>

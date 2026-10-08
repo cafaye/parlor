@@ -682,9 +682,19 @@ gate:
     # `Tests 977 passed (977)`, 38 files — the floor trails measured because
     # the pre-P-02 tree already counted 970 against a 961 floor; the manager
     # reconciles to exact at merge.
+    #
+    # IT IS 975 BY THE NEXT ACCOUNT. 968 -> 975, a +7 in the account/team
+    # surfaces packet (P-03): 2 list composition tests in
+    # `src/app/accounts/page.test.tsx` (product eyebrow above the h1, row
+    # mobile-stack) plus 5 detail tests in
+    # `src/app/accounts/[accountId]/account-screen.test.tsx` (product eyebrow,
+    # member-row / leave-row / delete-row mobile-stack, and a Panel
+    # region/headingId preservation pin that is green by design). 6 of the 7
+    # were shown red before green; the narrow run is 83 passed on the two
+    # files. The manager reconciles to exact at merge.
     - id: suite
       match: '^[ ]*Tests[ ]+([0-9]+)[ ]+passed(?![ ]*\|)'
-      minimum: 968
+      minimum: 975
     # The tally `tests/validate-ci.sh` prints, which is the second half of this
     # gate: the checks that the tree still has the shape CI assumes — one
     # runtime pin, `npm ci` and not `npm install`, the gate command, the
