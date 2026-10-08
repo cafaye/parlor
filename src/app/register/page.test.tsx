@@ -457,6 +457,30 @@ describe("register page", () => {
       expect(status).not.toHaveTextContent(/ECONNREFUSED/);
       expect(status).not.toHaveTextContent(/10\.0\.0\.4/);
     });
+
+    it("does not read a rate limit as a deployment that cannot send", async () => {
+      // identity answers 429 by replacing the handler's response once the
+      // per-(client, route) recovery budget is spent, so in a stack with no
+      // courier the register flow's verification request can 429 instead of
+      // 503 (m131: the full browser suite makes 12 such requests from one
+      // source address inside a minute against a default budget of 5). A 429
+      // is retryable — the deployment CAN send — so it must take the plain
+      // branch and never the "cannot send email" one, which would strand
+      // somebody behind a limit that resets.
+      renderWithProviders(
+        <RegisterPage />,
+        { identity: accountCreatedThen(anIdentityError(429, "rate_limited")) },
+      );
+
+      fillIn(CREDENTIALS);
+      submit();
+
+      const status = await screen.findByRole("status");
+      expect(status).toHaveTextContent(/account created/i);
+      expect(status).toHaveTextContent(/could not start sending/i);
+      expect(status).not.toHaveTextContent(/on its way/i);
+      expect(status).not.toHaveTextContent(/cannot send email/i);
+    });
   });
 
   describe("when the service rejects the address", () => {
