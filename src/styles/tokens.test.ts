@@ -318,6 +318,71 @@ describe("cafaye palette — measured contrast", () => {
   });
 
   /**
+   * The ring is keyboard-visible only: EVERY `.focus-ring` selector carries
+   * `:focus-visible`, so the outline paints for keyboard focus and never at
+   * rest or on pointer (mouse/touch) focus. A bare `.focus-ring` rule paints
+   * unconditionally — the defect this packet fixes — and this walks the
+   * selectors rather than matching a string so a second bare rule cannot hide
+   * behind a gated one.
+   */
+  it("no focus-ring rule paints without :focus-visible", () => {
+    const utilities = css.slice(css.indexOf("@layer utilities"));
+
+    // Every `.focus-ring… {` selector, as written between the class name and
+    // the opening brace.
+    const selectors: string[] = [];
+    const re = /\.focus-ring([^{]*)\{/g;
+    for (const match of utilities.matchAll(re)) {
+      selectors.push(match[1].trim());
+    }
+
+    expect(selectors.length, "expected at least one .focus-ring rule").toBeGreaterThan(0);
+    for (const selector of selectors) {
+      expect(
+        selector,
+        `a .focus-ring rule is not gated by :focus-visible (selector suffix is "${selector}") — ` +
+          `the ring paints at rest and on pointer focus`,
+      ).toContain(":focus-visible");
+    }
+  });
+
+  /**
+   * Reduced motion changes the ring's WIDTH only (2px → 3px): the override
+   * keeps the `:focus-visible` gate and declares nothing else — no shorthand
+   * repaint, no offset change, no colour change.
+   */
+  it("reduced motion widens the ring without changing the visibility condition", () => {
+    const at = css.indexOf("prefers-reduced-motion");
+    expect(at, "tokens.css still declares a reduced-motion override").toBeGreaterThan(-1);
+    const reduced = css.slice(at);
+
+    expect(
+      reduced,
+      "the reduced-motion block must keep the :focus-visible gate on its focus-ring rule",
+    ).toContain(".focus-ring:focus-visible");
+
+    const rule = reduced.match(/\.focus-ring:focus-visible\s*\{([^}]*)\}/);
+    expect(
+      rule,
+      "expected a .focus-ring:focus-visible rule body in the reduced-motion block",
+    ).not.toBeNull();
+    const body = rule![1];
+
+    const width = body.match(/outline-width:\s*([^;]+);/);
+    expect(width, `the reduced-motion override declares no outline-width:\n${body}`).not.toBeNull();
+    expect(width![1].trim()).toBe("3px");
+
+    expect(
+      /(^|[{;\s])outline\s*:/.test(body),
+      `the reduced-motion override must not repaint with the outline shorthand:\n${body}`,
+    ).toBe(false);
+    expect(
+      body.includes("outline-offset"),
+      `the reduced-motion override must not move the offset (the 2px gap is load-bearing):\n${body}`,
+    ).toBe(false);
+  });
+
+  /**
    * The ramps have to be usable as ramps, which means lightness must fall
    * monotonically. A ramp with two steps at the same lightness is a ramp
    * where `bg-x-300` and `bg-x-400` are indistinguishable, and the first
