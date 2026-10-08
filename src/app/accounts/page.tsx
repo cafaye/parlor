@@ -18,8 +18,11 @@ export default function AccountsPage() {
           as one product with the auth screens. The eyebrow adds no copy:
           "parlor" is the product name already on the page (the shell brand).
           The heading keeps its rung: the type-scale step-up is the
-          landing/auth move, and this packet is the list-first one. */}
-      <header className="mb-8 flex flex-col gap-2">
+          landing/auth move, and this packet is the list-first one. The
+          hairline under it is the shared workspace rule: it closes the page
+          header and opens the working surface, the same rule the settings
+          page and the account detail carry. */}
+      <header className="mb-8 flex flex-col gap-2 border-b border-border pb-6">
         <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted">parlor</p>
         <h1 className="text-2xl font-semibold tracking-tight">Accounts</h1>
         <p className="text-sm text-muted">

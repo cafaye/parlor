@@ -499,4 +499,43 @@ describe("expressive list-first composition", () => {
     const row = await screen.findByRole("link", { name: /Acme Corp/ });
     expect(row.className.split(" ")).toContain("flex-col");
   });
+
+  it("counts the list in plain words, so the size of the workspace is stated", async () => {
+    // Derived from the rows on screen, not a new fact: the same operating
+    // context a ledger gives before its entries.
+    signIn();
+    renderWithProviders(<AccountsPage />, { identity: signedIn(rows) });
+
+    expect(await screen.findByTestId("account-count")).toHaveTextContent("2 accounts you belong to.");
+  });
+
+  it("counts a single account without the plural", async () => {
+    signIn();
+    renderWithProviders(<AccountsPage />, { identity: signedIn([rows[0]]) });
+
+    expect(await screen.findByTestId("account-count")).toHaveTextContent("1 account you belong to.");
+  });
+
+  it("keeps the row's focus ring, because the whole row is the control", async () => {
+    // The row is a `CardLink`, which carries the shared `focus-ring`: a row a
+    // keyboard cannot see is a row a keyboard cannot use.
+    signIn();
+    renderWithProviders(<AccountsPage />, { identity: signedIn(rows) });
+
+    const row = await screen.findByRole("link", { name: /Acme Corp/ });
+    expect(row.className.split(" ")).toContain("focus-ring");
+  });
+
+  it("hides the row's navigation arrow from assistive tech, so the link name is still the account", async () => {
+    // The arrow is affordance, not content: if it entered the accessible name,
+    // every row's name would carry a trailing glyph voice control would have to
+    // speak around.
+    signIn();
+    renderWithProviders(<AccountsPage />, { identity: signedIn(rows) });
+
+    const row = await screen.findByRole("link", { name: /Acme Corp/ });
+    const arrow = within(row).getByText("→");
+    expect(arrow).toHaveAttribute("aria-hidden", "true");
+    expect(row).toHaveAccessibleName(expect.stringContaining("Acme Corp"));
+  });
 });

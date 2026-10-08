@@ -917,4 +917,28 @@ describe("expressive detail composition", () => {
       expect(screen.getByRole("region", { name })).toBeInTheDocument();
     }
   });
+
+  it("offers a way back to the accounts list from a loaded account", async () => {
+    // Operating context, not a feature: the detail is reached from the list,
+    // and the way back is the same `/accounts` the not-found state already
+    // offers. Named without "your" so it never collides with that state's
+    // "Back to your accounts" in a test — or in a voice-control listing.
+    signIn();
+    renderWithProviders(<AccountScreen accountId={ACCOUNT_ID} />, { identity: asCaller() });
+
+    await screen.findByRole("heading", { level: 1, name: "Acme Corp" });
+    expect(screen.getByRole("link", { name: "Back to accounts" })).toHaveAttribute(
+      "href",
+      "/accounts",
+    );
+  });
+
+  it("keeps the account name the page's only h1 after the restyle", async () => {
+    signIn();
+    renderWithProviders(<AccountScreen accountId={ACCOUNT_ID} />, { identity: asCaller() });
+
+    const headings = await screen.findAllByRole("heading", { level: 1 });
+    expect(headings).toHaveLength(1);
+    expect(headings[0]).toHaveTextContent("Acme Corp");
+  });
 });

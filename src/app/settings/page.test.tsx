@@ -1068,8 +1068,27 @@ describe("the second factor section", () => {
     expect(screen.getByRole("button", { name: "Sign in again" })).toBeInTheDocument();
   });
 
-  it("never renders the secret again after the confirm", async () => {
+  it("lays the recovery codes out in two columns on wider screens", async () => {
+    // The responsive contract for the one-time codes: one column is a corridor
+    // nobody scans, and the codes are fixed-width so the columns stay aligned.
+    // Asserted on the layout hook, the way the list-first rows assert theirs.
     renderMfa({
+      startMfaEnrollment: enrollment(),
+      confirmMfaEnrollment: confirmed(),
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Set up a second factor" }));
+    fireEvent.change(await screen.findByLabelText("Code"), { target: { value: "482913" } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+
+    const list = await screen.findByTestId("recovery-codes");
+    expect(list.tagName).toBe("UL");
+    expect(list.className.split(" ")).toContain("sm:grid-cols-2");
+    // The codes are still list items a screen reader can count, not divs.
+    expect(list.querySelectorAll("li")).toHaveLength(CODES.length);
+  });
+
+  it("never renders the secret again after the confirm", async () => {    renderMfa({
       startMfaEnrollment: enrollment(),
       confirmMfaEnrollment: confirmed(),
     });

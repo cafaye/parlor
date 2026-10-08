@@ -405,8 +405,14 @@ function SecretValue({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-1.5">
       <span className="text-sm font-medium text-foreground">{label}</span>
-      <div className="flex flex-wrap items-center gap-2">
-        <code className="break-all font-mono text-sm text-foreground">{value}</code>
+      {/* The value sits on a sunken strip: a one-time secret is a thing to lift
+          off the page and carry elsewhere, and the inset reads as exactly
+          that. The text stays selectable and readable by a screen reader, and
+          the copy button keeps its name. */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <code className="min-w-0 flex-1 rounded-md border border-border bg-surface-sunken px-3 py-2 break-all font-mono text-sm text-foreground">
+          {value}
+        </code>
         <CopyButton label={`Copy ${label}`} value={value} />
       </div>
     </div>
@@ -492,7 +498,11 @@ function RecoveryCodes({ codes }: { codes: string[] }) {
       <p className="text-sm text-muted">
         Each code works once. These are shown once — copy them now.
       </p>
-      <ul className="flex flex-col gap-1">
+      {/* Two columns from `sm` up: ten codes in one column is a corridor nobody
+          scans, and the codes are fixed-width so the columns stay aligned. The
+          list keeps its implicit list semantics and the copy button keeps its
+          name. */}
+      <ul className="grid grid-cols-1 gap-1 sm:grid-cols-2" data-testid="recovery-codes">
         {codes.map((code) => (
           <li key={code}>
             <code className="font-mono text-sm text-foreground">{code}</code>

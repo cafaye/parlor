@@ -24,6 +24,7 @@ import type { UseQueryResult } from "@tanstack/react-query";
 import { SignedOut } from "./page";
 import {
   Button,
+  CardLink,
   EmptyState,
   ErrorState,
   Field,
@@ -90,33 +91,43 @@ function AccountList({ accounts }: { accounts: UseQueryResult<AccountListItem[]>
   }
 
   return (
-    <ul aria-label="Your accounts" className="flex flex-col gap-2">
-      {rows.map((account) => (
-        <li key={account.id}>
-          {/* List-first rows: the account name is the primary line and the
-              membership facts the secondary one, stacked on mobile and
-              side by side — facts right-aligned — from `sm` up. The row is
-              still one link to the account's own page; nothing gained,
-              nothing renamed. */}
-          <Link
-            className="flex flex-col gap-3 rounded-lg border border-border bg-surface-raised px-4 py-3 hover:border-cafaye-300 sm:flex-row sm:items-center sm:justify-between"
-            to="/accounts/$accountId"
-            params={{ accountId: account.id }}
-          >
-            <span className="flex min-w-0 flex-col">
-              <span className="truncate font-medium">{account.name}</span>
-              <span className="truncate font-mono text-xs text-muted">{account.slug}</span>
-            </span>
-            <span className="flex items-center gap-2">
-              {account.personal ? (
-                <span className="text-xs text-muted">Personal account</span>
-              ) : null}
-              <RoleBadge role={account.role} />
-            </span>
-          </Link>
-        </li>
-      ))}
-    </ul>
+    <div className="flex flex-col gap-3">
+      <p className="text-sm text-muted" data-testid="account-count">
+        {rows.length === 1 ? "1 account" : `${rows.length} accounts`} you belong to.
+      </p>
+      <ul aria-label="Your accounts" className="flex flex-col gap-2">
+        {rows.map((account) => (
+          <li key={account.id}>
+            {/* List-first rows: the account name is the primary line and the
+                membership facts the secondary one, stacked on mobile and
+                side by side — facts right-aligned — from `sm` up. The row is
+                still one link to the account's own page; nothing gained,
+                nothing renamed. `CardLink` is the shared row shape, so the row
+                keeps its focus ring instead of re-typing it. The arrow is
+                navigation affordance only and hidden from assistive tech, so
+                the link's name is still just the account and its facts. */}
+            <CardLink
+              className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+              href={`/accounts/${account.id}`}
+            >
+              <span className="flex min-w-0 flex-col">
+                <span className="truncate font-medium">{account.name}</span>
+                <span className="truncate font-mono text-xs text-muted">{account.slug}</span>
+              </span>
+              <span className="flex items-center gap-2">
+                {account.personal ? (
+                  <span className="text-xs text-muted">Personal account</span>
+                ) : null}
+                <RoleBadge role={account.role} />
+                <span aria-hidden="true" className="text-muted">
+                  →
+                </span>
+              </span>
+            </CardLink>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

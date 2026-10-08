@@ -34,8 +34,10 @@ export default function SettingsPage() {
       {/* The header block: eyebrow, heading, supporting line — the same
           composition as the account screens and the auth screens. The eyebrow
           adds no copy: "parlor" is the product name already on the page (the
-          shell brand). The heading keeps its rung. */}
-      <header className="mb-8 flex flex-col gap-2">
+          shell brand). The heading keeps its rung. The hairline under it is
+          the shared workspace rule: it closes the page header and opens the
+          working surface, the same rule the accounts pages carry. */}
+      <header className="mb-8 flex flex-col gap-2 border-b border-border pb-6">
         <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted">parlor</p>
         <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
         <p className="text-sm text-muted">

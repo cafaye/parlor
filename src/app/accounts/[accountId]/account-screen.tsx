@@ -109,8 +109,20 @@ function Loaded({ account, accountId }: { account: AccountDetail; accountId: str
       {/* The header block: eyebrow, heading, facts — the same composition as
           the list and the auth screens. The eyebrow adds no copy: "parlor" is
           the product name already on the page. The heading keeps its rung and
-          stays the account's name, which is still the page's only h1. */}
-      <header className="flex flex-col gap-2">
+          stays the account's name, which is still the page's only h1. The way
+          back sits above the eyebrow, outside the heading block, so the
+          eyebrow still immediately precedes the heading. The hairline under it
+          is the shared workspace rule, the same one the list and settings
+          pages carry. */}
+      <header className="flex flex-col gap-2 border-b border-border pb-6">
+        <p className="text-sm">
+          <Link
+            className="font-medium underline underline-offset-2 hover:no-underline"
+            to="/accounts"
+          >
+            <span aria-hidden="true">← </span>Back to accounts
+          </Link>
+        </p>
         <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted">parlor</p>
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-semibold tracking-tight">{account.name}</h1>
