@@ -8,6 +8,26 @@ built in Phase 2 alongside `gateway`. The shell arrived first (routing, theme,
 health surfaces, test rig); the auth screens arrived next, against a client for
 the identity contract with a mocked transport underneath it.
 
+## Status: `website` is the customer-facing frontend
+
+Decision D1 (2026-10-09): **`cafaye/website` is the one customer-facing
+frontend.** Every new human surface — the landing page, agent claim, email
+providers, audit, boxes — lands there, and no new screens land in this
+repository. This app was that product's reference implementation: every route
+family it has (auth, accounts, invitations, admin, settings, the `/v1/*` BFF)
+is present in `website`, and where the two differ, `website` is ahead. The
+audit behind this statement is [docs/parlor-website-audit.md](docs/parlor-website-audit.md).
+
+**What remains true about parlor: the code is free.** This repository stays
+public — its history, branches and code remain readable by anyone, free of
+charge, and nothing here is being deleted. What you may do with it is set by
+[LICENSE](LICENSE), not by this README: access alone grants no general
+permission, and rights beyond viewing exist only where a separate written
+Cafaye agreement expressly grants them.
+
+**Where to go instead:** [cafaye/website](https://github.com/cafaye/website) —
+for the product, its screens, and every screen still to come.
+
 ## The philosophy: a template, not a runtime dependency
 
 This is a **template**, not a platform-as-a-service dependency.
