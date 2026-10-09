@@ -41,7 +41,7 @@ exist only where a separate written Cafaye agreement expressly grants them.
 | One account | `/accounts/[accountId]` | Facts, members, rename, invite, leave, delete — gated by your role. |
 | Accept an invitation | `/invitations/[token]` | Redeem a token. Does not accept on load. |
 | Plan catalogue | `/billing/plans` | What can be bought, at what price, on what cadence. Paged. |
-| Session shell | `src/components/shell/` | Header: navigation, sign out when authed, sign in when not. |
+| Session shell | `src/components/shell/` | Header: navigation, sign out when authed, sign in when not. Footer: the fine print — `/terms` and `/privacy`, from every page. |
 | The one origin | `/v1/*` | The BFF. Answers the browser's identity and billing calls on this app's own origin and forwards them server-side. |
 | Identity client | `src/lib/identity.ts` | Typed, transport-injected client for every identity endpoint this app calls. The tables below are the source of truth for which. |
 | Role vocabulary | `src/lib/roles.ts` | The capability matrix, transcribed from identity's authorization. |
@@ -56,6 +56,9 @@ exist only where a separate written Cafaye agreement expressly grants them.
 | Readiness | `/readyz` | `{"status":"ok","deps":[{"name":"identity","ok":true}]}` — a real sweep: identity's own `/readyz` with a short timeout, billing only when `BILLING_URL` is set. Any failure is a 503. |
 | Theme tokens | `src/styles/tokens.css` | The cafaye design system: two ramps, a semantic layer, and a measured focus ring. Contrast-checked in `src/styles/tokens.test.ts`. |
 | Primitives | `src/components/ui/` | Button, Input, Select, Field, Callout, ConfirmDialog, Spinner, Surface, TextLink/CardLink, Panel, and the state components. One import path: `@/components/ui`. |
+| Site primitives | `src/components/shadcn/` | Tabs, Badge, Separator — for the surfaces a product's marketing home is made of (code panels, label chips, ruled divisions). shadcn/ui's API on Base UI and this system's tokens, zero new dependencies. See `docs/design-system.md` § Site primitives. |
+| Legal pages | `/terms`, `/privacy` | Placeholders, deliberately: they say they are placeholders and point at the policy generators. Replacing them is a legal decision, not a copy change. |
+| Motion primitive | `src/components/landing/reveal.tsx` | Scroll reveal whose default state is visible: no scripting, `prefers-reduced-motion`, and a test renderer all get the finished page. |
 | Design system guide | [`docs/design-system.md`](docs/design-system.md) | Which component to reach for, what the variants mean, and the four decisions that were measured rather than chosen. |
 | Tests | `src/**/*.test.{ts,tsx}` | vitest + `@testing-library/react`. |
 

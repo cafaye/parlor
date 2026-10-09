@@ -14,7 +14,9 @@ it should know whether they are arguing with taste or with arithmetic.
 | If you need | Reach for |
 | --- | --- |
 | Something a person clicks to commit | `Button` |
-| Something that navigates | `TextLink` (in a sentence) or `CardLink` (a whole row) |
+| A label chip — a language, a status, a one-word fact | `Badge` (`@/components/shadcn`) |
+| A code panel with one tab per command | `Tabs` (`@/components/shadcn`) |
+| Something navigates | `TextLink` (in a sentence) or `CardLink` (a whole row) |
 | A field with a label | `Field` wrapping `Input` or `Select` |
 | A form failed, as a whole | `FieldSummary` — one per form |
 | Something went wrong, with a retry | `ErrorState` |
@@ -202,6 +204,7 @@ table rather than repeating them per file:
 | `secondary` | Everything else that is still an action. |
 | `ghost` | Tertiary: "Cancel", "Dismiss". |
 | `destructive` | **Only** irreversible actions. Once per screen, inside a `ConfirmDialog`. |
+| `ink` | The one filled action on an INK plane — a hero, a closing band, the places a marketing surface paints `neutral-950`. Paper-on-ink, the same inversion the accent makes in dark mode. At most one per ink section. |
 
 Sizes: `sm` (32px) for a dense table row, `md` (36px) for a page.
 
@@ -312,6 +315,62 @@ should interrupt, because the form as a whole has failed.
 
 ---
 
+## Site primitives (`src/components/shadcn/`)
+
+A product has two kinds of surface, and they want different tools. The
+**app surface** — forms, accounts, settings, admin — is `src/components/ui/`
+and has been since the beginning. The **site surface** — a marketing home, a
+changelog, a landing page — is `src/components/shadcn/`: `Tabs`, `Badge`,
+`Separator`. Two directories, two jobs, one token system: every value in
+both is from `tokens.css`, and the measured focus ring is the same ring.
+
+shadcn/ui's API, on this system's foundation:
+
+- **The API is shadcn's.** `Tabs`/`TabsList`/`TabsTrigger`/`TabsContent`,
+  one value per trigger; `Badge` with `default`/`solid`/`outline`/`positive`/
+  `caution`; `Separator` with an orientation. A page reads the same whichever
+  build it meets, and the variant names are the ones the wider shadcn
+  ecosystem uses.
+- **The behavior is Base UI's.** parlor already carries `@base-ui/react` —
+  the dialog is built on it, and the barrel header calls it the shadcn/ui
+  default foundation. A second headless library in the template every
+  product starts from is a dependency decision nobody should inherit by
+  accident, so the site primitives are Base UI's and stay that way.
+- **Zero new dependencies.** The construction is this repository's own: a
+  base string plus a variant map composed by `cx` (`src/lib/cx.ts`), exactly
+  as `button.tsx` does it. `class-variance-authority`, `clsx` and
+  `tailwind-merge` are still deliberately not adopted — the fleet records
+  them as needing manager approval, and nothing here needs them.
+
+`Tabs` is the one file in that directory that carries `"use client"`: Base
+UI's tab family is a context family, and with the directive stripped the
+wrapper is a server module, the provider is serialized, the triggers render
+— and nothing activates. That is the case the boundary test names and
+excludes by name (`components/ui/client-boundary.test.ts`). `Badge` and
+`Separator` are hook-free and unmarked, and the check still covers them.
+
+`src/components/landing/reveal.tsx` is the site surface's motion primitive:
+a scroll reveal whose default state is **visible**. JavaScript only ever
+takes the visibility away in order to give it back with intent, so a
+visitor with scripting off, a reader with `prefers-reduced-motion`, and a
+test in jsdom all get the same finished page. One reveal per element,
+disconnected after the first intersection — a section that re-hides on
+scroll back teaches the reader to distrust what they just read.
+
+### The footer, and the legal pages it points at
+
+`src/components/shell/footer.tsx` mounts in the root route beside the
+header, so every page carries the fine print: a named `nav` landmark — a
+legal page a visitor cannot navigate to is not a page a visitor can read —
+linking `/terms` and `/privacy`. Both are placeholders by deliberate
+decision (`LegalPlaceholder`, `ProsePage` in `src/components/ui/`): they say
+they are placeholders, they tell the operator to update the "Last updated"
+line when replacing them, and they point at the policy generators the
+fleet's precedent names. Replacing any of it with real text is a legal
+decision with a person attached, not a copy change.
+
+---
+
 ## The rules that are not negotiable
 
 - **`tokens.css` is the only place a colour lives.** A hex in a component is a
@@ -344,9 +403,12 @@ ships everything is a pile of exports.
   or a control rather than a grid of cells. When a real grid appears — and the
   plans list will want one — it gets a `Table` with `caption` and
   `scope`, and it gets its own tests.
-- **A `Tabs` component.** Nothing here has tabs. When something does, it should
-  be links with `aria-current`, not a widget, unless the panels are genuinely
-  client-side.
+- **A `Tabs` component in the app surface.** Nothing in the app has tabs, and
+  when something does it should still be links with `aria-current`, not a
+  widget — switching between whole views is navigation. The one exception is
+  genuinely client-side panels — code panels, previews — and that exception
+  now exists in `src/components/shadcn/` (Base UI, site surfaces only). See
+  § Site primitives.
 - **A `Toast`.** It implies an announcement policy — how many, for how long,
   whether they interrupt — and no screen here needs one. An `ErrorState` in
   place is better than a toast nobody can re-read.

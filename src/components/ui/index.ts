@@ -48,6 +48,7 @@ export {
   type ButtonVariant,
 } from "./button";
 export { Field, FieldSummary, type FieldProps } from "./field";
+export { LegalPlaceholder, type LegalPlaceholderProps } from "./legal-placeholder";
 export { ConfirmDialog, type ConfirmDialogProps } from "./confirm-dialog";
 export {
   DialogBackdrop,
@@ -68,6 +69,7 @@ export {
   type TextLinkProps,
 } from "./link";
 export { Spinner } from "./spinner";
+export { ProsePage, type ProsePageProps } from "./prose";
 export {
   DescriptionList,
   EmptyState,

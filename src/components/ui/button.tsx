@@ -62,7 +62,19 @@ import { Spinner } from "./spinner";
  * moving the target. `aria-busy` is the whole mechanism, and it is what
  * `Spinner` is decorative *to* — the button is what announces.
  */
-export type ButtonVariant = "primary" | "secondary" | "ghost" | "destructive";
+/**
+ * Four variants for the app, and one for the ink.
+ *
+ * `ink` is not a fifth app variant: it is the inversion a primary action
+ * makes when it sits on an ink plane — a hero, a closing band, the places a
+ * marketing surface paints `neutral-950`. The same inversion the accent
+ * makes in dark mode ("a near-black button on a near-black page is
+ * invisible" — tokens.css), one level up: on ink, the filled action is
+ * PAPER-on-ink rather than ink-on-paper. It exists here rather than as a
+ * one-off className at a call site because a call site that retypes it is a
+ * call site that loses the focus ring six months later.
+ */
+export type ButtonVariant = "primary" | "secondary" | "ghost" | "destructive" | "ink";
 export type ButtonSize = "sm" | "md";
 
 const VARIANTS: Record<ButtonVariant, string> = {
@@ -72,6 +84,7 @@ const VARIANTS: Record<ButtonVariant, string> = {
   ghost: "border border-transparent bg-transparent text-muted hover:text-foreground",
   destructive:
     "border border-transparent bg-critical text-on-accent hover:opacity-90",
+  ink: "border border-transparent bg-neutral-50 text-neutral-950 hover:opacity-90",
 };
 
 /**
@@ -87,7 +100,8 @@ const VARIANTS: Record<ButtonVariant, string> = {
  */
 const BASE =
   "focus-ring inline-flex items-center justify-center rounded-md font-medium " +
-  "whitespace-nowrap transition-colors duration-fast motion-reduce:transition-none " +
+  "whitespace-nowrap transition-[color,background-color,border-color,transform] " +
+  "duration-fast ease-standard motion-reduce:transition-none active:scale-[0.98] " +
   "disabled:cursor-not-allowed disabled:opacity-55";
 
 /**
