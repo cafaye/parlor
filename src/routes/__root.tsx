@@ -1,6 +1,7 @@
 import { HeadContent, Outlet, Scripts, createRootRoute } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
+import { ShellFooter } from "@/components/shell/footer";
 import { ShellHeader } from "@/components/shell/header";
 import { Providers } from "@/app/providers";
 
@@ -81,6 +82,7 @@ function RootComponent() {
     <Providers>
       <ShellHeader />
       <Outlet />
+      <ShellFooter />
     </Providers>
   );
 }

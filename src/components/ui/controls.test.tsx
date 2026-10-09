@@ -348,3 +348,27 @@ describe("shadcn structure adoption", () => {
     expect(document.querySelector('label[data-slot="label"]')).toHaveTextContent("Email");
   });
 });
+
+/**
+ * The two things the site surfaces asked of the one button: the inversion
+ * it makes on an ink plane, and the press it acknowledges. Both are
+ * asserted by class because jsdom computes no styles — the token the
+ * variant chose is the part this component owns.
+ */
+describe("Button's ink variant and press", () => {
+  it("wears the inversion on an ink plane, not the app accent", () => {
+    render(<Button variant="ink">Create account</Button>);
+
+    const button = screen.getByRole("button", { name: "Create account" });
+    expect(button.className).toContain("bg-neutral-50");
+    expect(button.className).toContain("text-neutral-950");
+  });
+
+  it("acknowledges the press with a scale on the transform transition", () => {
+    render(<Button>Save</Button>);
+
+    const button = screen.getByRole("button", { name: "Save" });
+    expect(button.className).toContain("active:scale-[0.98]");
+    expect(button.className).toContain("transform");
+  });
+});

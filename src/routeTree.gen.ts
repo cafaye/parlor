@@ -14,10 +14,12 @@ import { Route as AdminRouteImport } from './routes/admin'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as HealthzRouteImport } from './routes/healthz'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as ReadyzRouteImport } from './routes/readyz'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as TermsRouteImport } from './routes/terms'
 import { Route as VerifyEmailRouteImport } from './routes/verify-email'
 import { Route as AccountsIndexRouteImport } from './routes/accounts/index'
 import { Route as AccountsAccountIdRouteImport } from './routes/accounts/$accountId'
@@ -52,6 +54,11 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ReadyzRoute = ReadyzRouteImport.update({
   id: '/readyz',
   path: '/readyz',
@@ -70,6 +77,11 @@ const ResetPasswordRoute = ResetPasswordRouteImport.update({
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
   getParentRoute: () => rootRouteImport,
 } as any)
 const VerifyEmailRoute = VerifyEmailRouteImport.update({
@@ -120,10 +132,12 @@ export interface FileRoutesByFullPath {
   '/forgot-password': typeof ForgotPasswordRoute
   '/healthz': typeof HealthzRoute
   '/login': typeof LoginRoute
+  '/privacy': typeof PrivacyRoute
   '/readyz': typeof ReadyzRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
+  '/terms': typeof TermsRoute
   '/verify-email': typeof VerifyEmailRouteWithChildren
   '/accounts/$accountId': typeof AccountsAccountIdRoute
   '/invitations/$token': typeof InvitationsTokenRoute
@@ -139,10 +153,12 @@ export interface FileRoutesByTo {
   '/forgot-password': typeof ForgotPasswordRoute
   '/healthz': typeof HealthzRoute
   '/login': typeof LoginRoute
+  '/privacy': typeof PrivacyRoute
   '/readyz': typeof ReadyzRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
+  '/terms': typeof TermsRoute
   '/accounts/$accountId': typeof AccountsAccountIdRoute
   '/invitations/$token': typeof InvitationsTokenRoute
   '/v1/$': typeof V1SplatRoute
@@ -158,10 +174,12 @@ export interface FileRoutesById {
   '/forgot-password': typeof ForgotPasswordRoute
   '/healthz': typeof HealthzRoute
   '/login': typeof LoginRoute
+  '/privacy': typeof PrivacyRoute
   '/readyz': typeof ReadyzRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
+  '/terms': typeof TermsRoute
   '/verify-email': typeof VerifyEmailRouteWithChildren
   '/accounts/$accountId': typeof AccountsAccountIdRoute
   '/invitations/$token': typeof InvitationsTokenRoute
@@ -179,10 +197,12 @@ export interface FileRouteTypes {
     | '/forgot-password'
     | '/healthz'
     | '/login'
+    | '/privacy'
     | '/readyz'
     | '/register'
     | '/reset-password'
     | '/settings'
+    | '/terms'
     | '/verify-email'
     | '/accounts/$accountId'
     | '/invitations/$token'
@@ -198,10 +218,12 @@ export interface FileRouteTypes {
     | '/forgot-password'
     | '/healthz'
     | '/login'
+    | '/privacy'
     | '/readyz'
     | '/register'
     | '/reset-password'
     | '/settings'
+    | '/terms'
     | '/accounts/$accountId'
     | '/invitations/$token'
     | '/v1/$'
@@ -216,10 +238,12 @@ export interface FileRouteTypes {
     | '/forgot-password'
     | '/healthz'
     | '/login'
+    | '/privacy'
     | '/readyz'
     | '/register'
     | '/reset-password'
     | '/settings'
+    | '/terms'
     | '/verify-email'
     | '/accounts/$accountId'
     | '/invitations/$token'
@@ -236,10 +260,12 @@ export interface RootRouteChildren {
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   HealthzRoute: typeof HealthzRoute
   LoginRoute: typeof LoginRoute
+  PrivacyRoute: typeof PrivacyRoute
   ReadyzRoute: typeof ReadyzRoute
   RegisterRoute: typeof RegisterRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SettingsRoute: typeof SettingsRoute
+  TermsRoute: typeof TermsRoute
   VerifyEmailRoute: typeof VerifyEmailRouteWithChildren
   AccountsAccountIdRoute: typeof AccountsAccountIdRoute
   InvitationsTokenRoute: typeof InvitationsTokenRoute
@@ -285,6 +311,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/readyz': {
       id: '/readyz'
       path: '/readyz'
@@ -311,6 +344,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/verify-email': {
@@ -392,10 +432,12 @@ const rootRouteChildren: RootRouteChildren = {
   ForgotPasswordRoute: ForgotPasswordRoute,
   HealthzRoute: HealthzRoute,
   LoginRoute: LoginRoute,
+  PrivacyRoute: PrivacyRoute,
   ReadyzRoute: ReadyzRoute,
   RegisterRoute: RegisterRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SettingsRoute: SettingsRoute,
+  TermsRoute: TermsRoute,
   VerifyEmailRoute: VerifyEmailRouteWithChildren,
   AccountsAccountIdRoute: AccountsAccountIdRoute,
   InvitationsTokenRoute: InvitationsTokenRoute,

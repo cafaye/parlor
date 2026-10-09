@@ -88,6 +88,24 @@ import { describe, expect, it } from "vitest";
 const EXCLUDED = [/\.test\.tsx?$/, /\.stories\.tsx?$/, /\.d\.ts$/];
 
 /**
+ * The exclusion the second test's own policy prescribes: a file that is a
+ * Client Component for a reason that is not a hook.
+ *
+ * `components/shadcn/tabs.tsx` composes Base UI's tab family. `Root`
+ * provides the context its `Tab`s and `Panel`s consume, so the family must
+ * be ONE client module for the context to flow — with the directive
+ * stripped, all panels mount, the active state never moves, and no click
+ * lands. The directive there is the boundary, not a marker for browser
+ * needs, which is the case the second test describes under "a component
+ * that is a client one only because it hands a callback to a child".
+ *
+ * One file, named. Not a category exemption for `components/shadcn`: the
+ * badge and the separator in that directory are genuinely hook-free and
+ * genuinely unmarked, and the check still covers them.
+ */
+const BOUNDARY_ONLY = ["components/shadcn/tabs.tsx"];
+
+/**
  * Directories the rule does not apply to, and why each one is a real exclusion
  * rather than an escape hatch.
  *
@@ -360,6 +378,7 @@ describe("the server/client boundary", () => {
       const source = readFileSync(file, "utf8");
       if (hooksCalled(source).length > 0) continue;
       if (!hasUseClient(source)) continue;
+      if (BOUNDARY_ONLY.some((rel) => file.endsWith(rel))) continue;
       offenders.push(file.slice(SRC.length + 1));
     }
 
