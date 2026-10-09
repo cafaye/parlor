@@ -54,9 +54,13 @@ describe("landing page", () => {
     // customer entry point is gone.
     renderWithRouter(<Home />);
 
+    // Scoped to our own routes: the promise at stake is "no link to a screen
+    // this build does not serve". An external URL mentioning billing is not
+    // that and must not be blocked (user decision, 2026-10-09: tests do not
+    // police pricing).
     const hrefs = Array.from(document.querySelectorAll("a")).map((a) => a.getAttribute("href") ?? "");
 
-    expect(hrefs.filter((href) => /billing/i.test(href))).toEqual([]);
+    expect(hrefs.filter((href) => /^\/billing/i.test(href))).toEqual([]);
   });
 
   it("links nowhere near the customer list, which is not shippable unscoped", () => {
@@ -79,7 +83,10 @@ describe("landing page", () => {
     // The five subscription states and their actions need a
     // `/v1/subscriptions*` contract, which billing-04 is landing in parallel and
     // which is not on master. A link here would be a promise this build cannot
-    // keep.
-    expect(hrefs.filter((href) => /subscri|billing\/checkout|upgrade/i.test(href))).toEqual([]);
+    // keep — so the ban is on our own unshipped routes, not on pricing words
+    // and not on external payment links (user decision, 2026-10-09).
+    expect(
+      hrefs.filter((href) => /^\/(subscri|billing\/checkout|checkout|upgrade|pricing)/i.test(href)),
+    ).toEqual([]);
   });
 });
