@@ -21,9 +21,10 @@ audit behind this statement is [docs/parlor-website-audit.md](docs/parlor-websit
 **What remains true about parlor: the code is free.** This repository stays
 public — its history, branches and code remain readable by anyone, free of
 charge, and nothing here is being deleted. What you may do with it is set by
-[LICENSE](LICENSE), not by this README: access alone grants no general
-permission, and rights beyond viewing exist only where a separate written
-Cafaye agreement expressly grants them.
+[LICENSE](LICENSE), not by this README: parlor is licensed under the
+Business Source License 1.1 (SPDX `BUSL-1.1`), which lets you copy, modify,
+create derivative works and redistribute it, and which becomes Apache-2.0 on
+2030-10-10.
 
 **Where to go instead:** [cafaye/website](https://github.com/cafaye/website) —
 for the product, its screens, and every screen still to come.
@@ -43,8 +44,8 @@ This is a **template**, not a platform-as-a-service dependency.
   management — arrives as code in your repo, not as a runtime dependency.
 
 What you may do with this code is set by [LICENSE](LICENSE), not by this
-README: access alone grants no general permission, and rights beyond viewing
-exist only where a separate written Cafaye agreement expressly grants them.
+README: parlor is licensed under the Business Source License 1.1
+(SPDX `BUSL-1.1`), which becomes Apache-2.0 on 2030-10-10.
 
 ## What is here today
 
@@ -783,11 +784,13 @@ rules, and the health-surface contracts. Long-running commands get `timeout N`.
 
 ## License
 
-Copyright (c) 2026 Cafaye. All rights reserved. See [LICENSE](LICENSE):
-this repository is Cafaye proprietary property, and access alone grants no
-general permission to use, copy, modify, or redistribute it. Rights beyond
-viewing exist only where a separate written Cafaye agreement expressly grants
-them. Third-party components remain under their own licenses and notices —
-see `package.json` / `package-lock.json` and the notices preserved in source.
-`package.json` marks this package `UNLICENSED` (npm's marker for proprietary
-packages) to say the same thing where tooling reads it.
+[Business Source License 1.1](LICENSE), SPDX `BUSL-1.1`. Licensor `Cafaye`,
+Licensed Work `parlor`, Change Date `2030-10-10`, Change Licence `Apache-2.0`,
+no Additional Use Grant. In plain terms, and as a summary rather than a grant:
+you may copy, modify, create derivative works and redistribute parlor, and on
+the Change Date the licence becomes Apache-2.0. Production use requires a
+commercial licence from Cafaye or an Additional Use Grant — `LICENSE` is the
+authority and this paragraph is a reading of it. Third-party components remain
+under their own licenses and notices — see `package.json` /
+`package-lock.json` and the notices preserved in source. Both of those
+manifests record `BUSL-1.1`, so tooling reads the same grant the file states.

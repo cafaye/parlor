@@ -6,6 +6,28 @@ All notable changes to parlor are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **`LICENSE` is a Business Source License 1.1, and both manifests say
+  `BUSL-1.1`** (OPS-D2 puts the services under BSL: free to run, free to
+  self-host, never to offer a competing service). `LICENSE` is the
+  SPDX-registered BUSL-1.1 text with Licensor `Cafaye`, Licensed Work
+  `parlor`, Change Date `2030-10-10`, Change Licence `Apache-2.0` and no
+  Additional Use Grant — the licence's Covenants of Licensor forbid
+  modifying the text any other way, so the grant is the standard one and the
+  wording is identical across the four services except the Licensed Work
+  name. `package.json` moves `"license": "UNLICENSED"` →
+  `"license": "BUSL-1.1"`, and `package-lock.json`'s root entry moves
+  `"license": "MIT"` → `"license": "BUSL-1.1"`, which is the fix worth
+  naming: the lockfile still carried the kit-18 MIT grant that
+  `2724d10` had already replaced, so the two manifests disagreed with each
+  other as well as with the file. `README.md`'s two "access alone grants no
+  general permission" paragraphs and its License section now describe the
+  grant that exists. The old-grant entries further down this section are
+  left as the dated record they are — this entry is the current one and it
+  is first for that reason. No source, test or CI file is touched, and
+  nothing in `tests/` or `bin/` reads the licence field.
+
 ### Fixed
 
 - **A refused account delete closes the confirmation and says so in the
