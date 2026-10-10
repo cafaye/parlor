@@ -1,0 +1,331 @@
+# tenancy.yml — what parlor declares about its own account boundary.
+#
+# Checked by cafaye/core's contract harness:
+#
+#     bash /Users/kaka/Code/any/moon/cafaye/core/harness/bin/tenancy-check .
+#
+# ## THE ANSWER IS AN HONEST ZERO, AND IT IS MEASURED RATHER THAN ASSUMED
+#
+# PARLOR HOLDS NO CUSTOMER ROWS OF ITS OWN. It is a TypeScript app shell — a
+# browser client plus a server-side forwarder — over Identity, Gateway,
+# Courier and Billing. Rows live in those services. There is no database in
+# this repository, and that is a fact measured four ways rather than a
+# belief:
+#
+#   * `find . -name '*.sql' -not -path './node_modules/*'` returns NOTHING.
+#     No migration, no schema, no seed, no query.
+#   * No driver is imported anywhere in `src/` — no `pg`, `postgres`,
+#     `mysql`, `sqlite`, `mongoose`, `redis`, `prisma`, `drizzle` or `kysely`
+#     in `package.json` either.
+#   * `config/deploy.yml` carries no accessories block and no `DATABASE_URL`,
+#     and the reason is written into the file where kit's template would have
+#     put the postgres block.
+#   * `src/lib/identity.ts` and `src/lib/billing.ts` are HTTP clients that
+#     transcribe the services' wire contracts. Nothing in this tree queries.
+#
+# So `accountScoped: false` with an empty enumeration is the truth rather than
+# an omission, and it is CHECKED in both directions: an account-scoped
+# statement appearing in the declared sources is `tenancy.honest-zero`, a
+# FAILURE, and a policy appearing in the declared DDL sources is
+# `tenancy.rls-undeclared`, a FAILURE.
+#
+# ## WHY THE LAST PACKET TO LOOK AT THIS SAID "CORE CANNOT CHECK IT", AND WHY
+# ## THAT IS NO LONGER TRUE
+#
+# `REPORT-parlor-tenant-proof.md` §4 records, honestly, why it did NOT write
+# this file: *"its checker is SQL-shaped: it reads `create policy`, `alter
+# table … row level security` and `protect_table(...)` calls … so a
+# `tenancy.yml` here would be a declaration core cannot check."* That was
+# true of the checker as it then stood, and writing an unverifiable
+# declaration would indeed have been worse than none.
+#
+# Core has shipped the thing that was missing. **D47** added
+# `scope.nonRowSites`, the honest-zero arm, and with it a service whose key
+# appears only where it is not a row scope — a verified token claim, a
+# docstring, a vendored schema — can name each such site with its reason and
+# the zero becomes checkable in a language a SQL scanner cannot read. The
+# check still fails for any site not named, so this is not an escape hatch:
+# the declaration vouches for what it can see and the zero is still caught
+# leaving. `gateway` — a service of the same shape, holding no rows and
+# forwarding on a verified principal — declares the same zero today and runs
+# **0 failures, 2 warnings** on it. That is the target this file is written
+# to, and the run is reproduced in the packet report.
+#
+# ## WHAT THE KEY IS DOING IN THIS TREE, SITE BY SITE
+#
+# The declared key is `account_id` — the fleet's tenancy vocabulary and the
+# claim and column name Identity's rows are actually scoped by. It appears on
+# **19 lines** across `src` and `e2e`. Ten of them the scanner reads and are
+# vouched for below; the other nine live under
+# `src/app/invitations/[token]/`, a path the schema cannot express, and are
+# named individually in THE SOURCES section. Every one of the 19 is one of
+# four non-row shapes:
+#
+#   1. **Type declarations transcribed from Identity's `json:` tags.**
+#      `Membership.account_id` and `Invitation.account_id` in
+#      `src/lib/identity.ts`. The file's own header says the tenancy shapes
+#      are transcribed from `identity/internal/httpapi/accounts.go`, not
+#      invented: a field declaration names a column on the WIRE, and reaches
+#      no row here.
+#   2. **Test fixtures copying those shapes.** `aMembership`,
+#      `aMembershipAsTheServiceSendsIt` and `anInvitation` in
+#      `src/test/support/tenancy.ts` (whose own header says every shape is
+#      copied out of the handler), the two request-level fixtures in
+#      `src/lib/identity.test.ts`, and the eight scripted identity-client
+#      stubs in `invitation-screen.test.tsx`. A fixture is data a test feeds
+#      to a stub, not a predicate.
+#   3. **One screen reading the field off a response to build a navigation
+#      target.** `invitation-screen.tsx:197` turns the account on an accepted
+#      invitation into a route parameter. It is a URL, and Identity decides
+#      what that URL is allowed to reach.
+#   4. **One security test that carries a HOSTILE `account_id`.**
+#      `upstream.test.ts:1386` puts another account's id in a request BODY to
+#      prove the forwarder does not let a caller move the destination. That is
+#      the forwarder's own boundary test asserting the opposite of a scope.
+#
+# The 20th line of that shape, `e2e/account-admin.e2e.spec.ts:33`, is prose —
+# a comment recording that Identity's admin audit route is deliberately not
+# rendered by this app. It is named, because the declared sources include
+# `e2e` and an unnamed site would be a failure rather than a shrug.
+#
+# Note that `src` also spells the account as `accountId` — a route segment, a
+# function parameter, a cache-key half, a generated route tree — on 196 lines.
+# That is the source-language rendering of the same key, not a fourth
+# vocabulary, and the two places it carries real weight are the React Query
+# cache and the forwarder's route table, both argued for immediately below.
+# The checker reads one declared key at a time, so `account_id` is the one
+# declared and `accountId` is stated here rather than vouched for 196 times.
+#
+# ## THE TWO PLACES PARLOR'S OWN ACCOUNT HANDLING LIVES, AND WHY NEITHER IS A
+# ## ROW STORE
+#
+# This is the question a reader will actually ask, so it is answered here
+# rather than left to be discovered in a source file.
+#
+#   * **`src/lib/accounts.ts` — the React Query cache.** Its three key
+#     factories (`accountsKey`, `accountKey`, `membersKey`) are account-keyed,
+#     and the file's own header says why: the token is part of every key so
+#     that an account list cached under a constant key would not be served to
+#     whoever signed in next. This is a **client-side memo of rows the
+#     caller's own credential already fetched**, not a store parlor owns and
+#     not a place a caller can name another account. The rows arrive from
+#     Identity, which refuses the cross-account read; the cache's job is to
+#     not re-serve them to a second user of the same browser. That is a
+#     real property and it is guarded by `src/lib/accounts.test.tsx` — 12
+#     tests, including the two that go red when either half of a key is
+#     dropped — but it is a cache-correctness property about the caller's own
+#     browser, not a boundary over customer data. `REPORT-parlor-tenant-proof.md`
+#     §2 records the nine breakages observed red.
+#   * **`src/lib/upstream.ts` — the forwarder's `ROUTES` allow-list.** Seven
+#     of its entries carry a `:accountId` segment, value-matched as a uuid
+#     and substituted verbatim into the upstream URL. The account is
+#     **selected by the caller and forwarded**; it is never read off a row
+#     here, so there is nothing on this side of the socket for a caller to
+#     reach that is not already Identity's to refuse. `upstream.test.ts`
+#     holds the four arms — substitution, credential swapping, refusal
+#     swallowing, wildcard value checks — plus the no-widening arm whose
+#     hostile body is site 16 above.
+#
+# Both are named here because a zero that only says "nothing is scoped" is a
+# zero nobody checked against the two files where the account plainly
+# appears.
+#
+# ## THE SOURCES, AND WHY THEY ARE ENUMERATED RATHER THAN `src`
+#
+# `scope.sources` lists **every path under `src` and `e2e` that
+# `schemas/tenant-isolation.schema.json` can express**, and the reason it is a
+# list rather than the single directory `src` is a limitation in that schema,
+# not a preference for a narrow scan.
+#
+# `nonRowSites[].file`, `enforced.file` and `negative.cases[].file` all share
+# `PATH_PATTERN` — `^[A-Za-z0-9._-]+/[A-Za-z0-9._/-]+$` — which admits no `[`
+# and no `]`. TanStack Start (like Next.js, SvelteKit and Remix) puts the route
+# parameter in the DIRECTORY NAME, so this repository's three parameterised
+# routes live at `src/app/accounts/[accountId]/`,
+# `src/app/invitations/[token]/` and `src/app/v1/[...path]/`. **None of those
+# paths can be written in a declaration, and a site cannot be vouched for under
+# a file name that cannot be written.** Declaring the parent `src` would leave
+# the 9 key-carrying lines inside `src/app/invitations/[token]/` unvouchable,
+# which is `tenancy.honest-zero`, a FAILURE, with no legal way to name them.
+#
+# So the choice was between a scan of `src` that cannot reach 0 failures and a
+# scan of everything the schema can name. The second was chosen, and it is
+# **not** an unexamined hole:
+#
+#   * The exclusion is exactly `src/app/invitations/[token]/` — the only
+#     bracketed path in the repository that carries the key at all. The other
+#     two bracketed trees carry it nowhere.
+#   * Those 9 lines are enumerated in this header: the eight scripted
+#     identity-client stubs in `invitation-screen.test.tsx` at 83, 99, 124, 136,
+#     163, 169, 355 and 438, and the one line in `invitation-screen.tsx` at 197
+#     that turns an accepted invitation's account into a route parameter. All
+#     nine are the same two non-row shapes as the ten vouched for below — a
+#     fixture and a navigation target.
+#   * `tests/tenancy-declaration.test.ts` is the ratchet that keeps this from
+#     becoming a silent hole: it walks `src` and `e2e`, works out which files
+#     the schema can name, and fails if a key-carrying file is ever outside both
+#     the declared sources and the one named exception. The day the bracketed
+#     exception stops being exactly what it is today, that test goes red rather
+#     than the scan quietly covering less.
+#
+# This is a core schema defect — a routing convention the declaration format
+# cannot express — and it belongs to TG-B1's surface, not to this repository.
+# It is reported in the packet report and in the handoff rather than worked
+# around silently.
+#
+# `src/lib` — the identity and billing clients, the React Query store, the
+# forwarder and all their tests — is where 7 of the 10 vouched sites live. The
+# remaining entries are every other directory and file under `src` the schema
+# can name, so the only uncovered paths in the repository are the three
+# bracketed ones and a binary asset. `e2e` is named because the key appears in
+# it once and a source list that omits a tree carrying the key is a scan that
+# reads less than the truth. Outside those two trees the key appears in prose
+# only — `README.md`, the `REPORT-*.md` and `HANDOFF-*.md` files,
+# `CHANGELOG.md` and the legacy `account_scope.yml` — and prose is not source.
+#
+# ## THE SUNSET NOTE, DECLARED RATHER THAN LEFT TO BE DISCOVERED
+#
+# The fleet is consolidating on `website` as the one customer-facing frontend:
+# `30e73c4` and `9e7f978` on this branch record the audit that found every
+# screen family already present there and nothing left to move, and the
+# sunset note that keeps parlor's code public and free. That does not change
+# what parlor holds today — which is nothing — so this file declares the
+# smaller truth rather than a forecast. If the consolidation completes, this
+# declaration retires with the tree rather than needing a rewrite.
+#
+# ## THE LEGACY FILE, AND WHAT EACH COVERS
+#
+# `account_scope.yml` is still at the root and is still checked by
+# `core/harness/bin/account-scope-check .`. It is a DIFFERENT format asking a
+# different question: does each mounted route RESOLVE an account. This file
+# asks whether this service can reach another account's ROWS. Both are
+# honest, neither supersedes the other, and the legacy checker's retirement
+# is a decision for a different packet. Note that the legacy file's
+# `src/app/...` paths predate the TanStack Start move to `src/routes/` and are
+# themselves now stale.
+#
+# ## THE DATABASE HALF
+#
+# There is no migration in this repository and therefore no DDL to read, so
+# `databaseEnforced: false` with an empty table list is the truth rather than
+# an omission — and it is checked the same way: a policy, an `enable` bit or a
+# `force` bit anywhere in the declared DDL sources is `tenancy.rls-undeclared`,
+# a FAILURE.
+#
+# `rls.sources` names `src` and deliberately does NOT name `e2e`, and the
+# reason is measured rather than a preference. `e2e/docker-compose.yml`
+# quotes the SIBLING's boundary — `select cafaye.protect_table('account_users')`,
+# `ALTER TABLE … DISABLE ROW LEVEL SECURITY` — in the comments that explain
+# the whole-stack tier to its next reader. Naming it would earn
+# `tenancy.rls-unreadable` and a sentence claiming parlor's own database half
+# is not proven closed, which would be a false claim about a service with no
+# database. The DDL sources are therefore exactly the tree where parlor's own
+# DDL would live if it ever wrote any, and the day it does this file goes red
+# rather than silent.
+version: 1
+service: parlor
+
+accountScoped: false
+
+scope:
+  # Declared even though nothing is scoped by it, and the reason is the
+  # warning it earns: a key that finds nothing cannot prove a service has no
+  # scoping, so the checker says "I found nothing" rather than "there is
+  # nothing". `tenancy.scope-key-unused` is the honest form of that here —
+  # parlor has no SQL, so no statement can carry the key, and that is the
+  # claim rather than a gap.
+  key: account_id
+  # Every path under `src` and `e2e` the schema's PATH_PATTERN can express.
+  # The one bracket-shaped tree that is therefore absent is argued for in the
+  # header, and `tests/tenancy-declaration.test.ts` holds the hole shut.
+  sources:
+    - src/app/accounts
+    - src/app/admin
+    - src/app/forgot-password
+    - src/app/healthz
+    - src/app/login
+    - src/app/page.test.tsx
+    - src/app/providers.tsx
+    - src/app/readyz
+    - src/app/register
+    - src/app/reset-password
+    - src/app/settings
+    - src/app/v1
+    - src/app/verify-email
+    - src/components
+    - src/lib
+    - src/routes
+    - src/router.tsx
+    - src/routeTree.gen.ts
+    - src/start.ts
+    - src/styles
+    - src/test
+    - src/vite-env.d.ts
+    - e2e
+  # Every key-carrying site the scanner reads, each with the reason it is not
+  # a row scope. The check FAILS for any site not named here, so this list is
+  # the enumeration and not a courtesy.
+  nonRowSites:
+    # --- the wire-contract type declarations --------------------------------
+    - file: src/lib/identity.ts
+      line: 286
+      reason: the account_id field of the Membership type, transcribed from the json tag on identity's membershipResponse — a wire shape, not a predicate
+    - file: src/lib/identity.ts
+      line: 310
+      reason: the account_id field of the Invitation type, transcribed from the json tag on identity's invitationResponse — a wire shape, not a predicate
+    # --- the fixtures that copy those shapes --------------------------------
+    - file: src/test/support/tenancy.ts
+      line: 55
+      reason: a test fixture — aMembership copies identity's membershipResponse field for field, so a screen is asserted against what the service writes
+    - file: src/test/support/tenancy.ts
+      line: 73
+      reason: the JSDoc explaining that identity's member list sends an empty account id — prose about a service-side bug, not a scope
+    - file: src/test/support/tenancy.ts
+      line: 88
+      reason: a test fixture — aMembershipAsTheServiceSendsIt records identity's empty account_id, which is the shape the account screen has to survive
+    - file: src/test/support/tenancy.ts
+      line: 101
+      reason: a test fixture — anInvitation copies identity's invitationResponse; the account on it is data a screen renders, never a predicate
+    - file: src/lib/identity.test.ts
+      line: 1351
+      reason: the request-level aMembership fixture, asserting the same membershipResponse shape at the HTTP boundary rather than through a screen
+    - file: src/lib/identity.test.ts
+      line: 1361
+      reason: the request-level anInvitation fixture, asserting invitationResponse including the one-time token that nothing here may store
+    # --- the screen that turns the field into a route parameter -------------
+    # `src/app/invitations/[token]/invitation-screen.tsx:197` and the eight
+    # scripted-client stubs in `invitation-screen.test.tsx` (83, 99, 124, 136,
+    # 163, 169, 355, 438) are the SAME two shapes — a navigation target built
+    # from the account on an accepted invitation, and the fixtures a stub
+    # resolves to. They are not listed here because the schema's PATH_PATTERN
+    # cannot write a path containing `[`; see THE SOURCES above, which names
+    # every one of the nine lines individually instead.
+    # --- the forwarder's own security test ----------------------------------
+    - file: src/lib/upstream.test.ts
+      line: 1386
+      reason: a hostile request BODY carrying another account's id, asserting the forwarder does not let it move the destination — the opposite of a scope
+    # --- the one prose site in e2e -------------------------------------------
+    - file: e2e/account-admin.e2e.spec.ts
+      line: 33
+      reason: a comment recording that identity's admin audit route is not rendered by this app — prose about a route this tree does not mount
+
+# Empty, because it is empty. Legal only because `accountScoped` is false; a
+# service that says `true` and lists nothing is the same omission wearing a
+# declaration, and the schema refuses that one. The account-keyed surfaces this
+# service DOES have — the React Query cache in `src/lib/accounts.ts` and the
+# `:accountId` segments in `src/lib/upstream.ts` — are argued for in the header
+# above rather than declared here, because neither reads a row this service
+# owns and neither is a place a caller can name another account.
+entryPoints: []
+
+# The database half, and the same argument. Parlor has no tables, no roles and
+# no policies, so `databaseEnforced: false` with an empty list is the truth
+# rather than an omission — and it is CHECKED: a policy, an enable bit or a
+# force bit anywhere in `src` is `tenancy.rls-undeclared`, a FAILURE. `e2e` is
+# deliberately not named here, for the measured reason in the header: it quotes
+# the sibling's DDL, and naming it would claim a boundary parlor does not have.
+rls:
+  databaseEnforced: false
+  sources:
+    - src
+  tables: []
