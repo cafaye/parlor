@@ -245,6 +245,7 @@ scope:
     - src/app/healthz
     - src/app/login
     - src/app/page.test.tsx
+    - src/app/page.tsx
     - src/app/providers.tsx
     - src/app/readyz
     - src/app/register
@@ -308,6 +309,10 @@ scope:
     - file: e2e/account-admin.e2e.spec.ts
       line: 33
       reason: a comment recording that identity's admin audit route is not rendered by this app — prose about a route this tree does not mount
+    # --- the ratchet test, which spells the key it guards ---------------------
+    - file: src/test/tenancy-declaration.test.ts
+      line: 48
+      reason: the ratchet's own KEY constant — the test that holds the bracketed exception shut has to name the key it searches for
 
 # Empty, because it is empty. Legal only because `accountScoped` is false; a
 # service that says `true` and lists nothing is the same omission wearing a
