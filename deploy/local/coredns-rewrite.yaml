@@ -9,43 +9,66 @@
 # `*.svc.cafaye.test` is what a pod calls when it means to reach a sibling.
 #
 # WHY A `coredns-custom` ConfigMap AND NOT AN EDIT TO THE `Corefile`.
-# The cluster's own Corefile already carries the hook this uses:
+# The cluster's own Corefile carries two import hooks:
 #
 #   .:53 {
-#       ...
-#       loadbalance
-#       import /etc/coredns/custom/*.override     <-- spliced in here
-#       forward . /etc/resolv.conf
+#       ... kubernetes ... forward . /etc/resolv.conf
 #   }
+#   import /etc/coredns/custom/*.override      <-- spliced INTO :53
+#   import /etc/coredns/custom/*.server         <-- added as a NEW server
 #
 # and the CoreDNS Deployment mounts `coredns-custom` at `/etc/coredns/custom`
-# with `optional: true`. Three consequences, all of them the reason this file
-# exists:
+# with `optional: true`. This file uses the `.server` hook, and THAT is a
+# measured decision rather than a preference — see "PLACEMENT" below. Three
+# consequences, all of them the reason this file exists at all:
 #
 #   1. It is ADDITIVE. It cannot lose a line a cluster operator wrote. Patching
-#      the `Corefile` data key directly rewrites the whole thing, and a
-#      `kubectl apply` of a full Corefile is a delete of whatever the cluster
-#      grew since the file was written — on k3s that Corefile carries
-#      `pods insecure`, the `NodeHosts` mount and the forward target, none of
-#      which this packet should be able to clobber.
+#      the `Corefile` data key rewrites the whole thing, and a `kubectl apply`
+#      of a full Corefile is a delete of whatever the cluster grew since the
+#      file was written — on k3s that Corefile carries `pods insecure`, the
+#      `NodeHosts` mount and the forward target, none of which this packet
+#      should be able to clobber.
 #   2. It is the mechanism the cluster offers. The ConfigMap does not exist on
 #      a fresh cluster (measured: `kubectl -n kube-system get configmap
 #      coredns-custom` → NotFound, and CoreDNS logs
-#      `No files matching import glob pattern: /etc/coredns/custom/*.override`
+#      `No files matching import glob pattern: /etc/coredns/custom/*.server`
 #      on every reload). Creating it is what the optional mount is for.
-#   3. The file's NAME carries the meaning: a ConfigMap key ending in
-#      `.override` is spliced INTO the `.:53` server block, so the body below
-#      is plugin directives and not a second server block. A key without the
-#      suffix would be silently ignored by the import glob, and a `*.server`
-#      key would start a whole new server on a port nobody publishes.
+#   3. The file's NAME carries the meaning: a `.server` key becomes a whole new
+#      server block, an `.override` key is spliced into the existing `.:53`.
+#      A key with no recognised suffix is silently ignored by the import glob.
 #
-# WHAT THE REWRITE ACTUALLY SAYS, and the assumption it rests on.
+# PLACEMENT, AND THE DEFECT IT FIXES. The first draft of this file used the
+# `.override` hook and DID NOT WORK, which is worth writing down because it
+# looked fine: the directive was syntactically valid, the import glob stopped
+# warning, and `kubernetes.default.svc.cluster.local` still resolved. What the
+# `.override` did was splice the `rewrite` INTO `.:53` AFTER the `kubernetes`
+# plugin and BEFORE `forward . /etc/resolv.conf`. The kubernetes plugin, asked
+# about `probe.svc.cafaye.test`, sees a name outside its `cluster.local` zone,
+# passes it on, and the `rewrite` then rewrites the ALREADY-TRAVELLED query —
+# so the kubernetes plugin never sees the rewritten name and the request goes
+# to `/etc/resolv.conf`, where the public answer for `*.cluster.local` is
+# NXDOMAIN. The symptom was `server can't find probe.svc.cafaye.test:
+# NXDOMAIN` even with the correct directive in place, which reads exactly like
+# "the service does not exist".
 #
-#   rewrite name regex (.*)\.svc\.cafaye\.test ${1}.${1}.svc.cluster.local
+# Giving the internal zone its OWN server block (`svc.cafaye.test:53`) puts the
+# `rewrite` before `kubernetes` in that block, so the plugin chain sees
+# `probe.probe.svc.cluster.local` and answers from the cluster. Both forms were
+# measured against a live `probe` Service (namespace `probe`, Service `probe`,
+# `probe.probe.svc.cluster.local` → 10.43.241.11):
+#
+#   .override, exact rewrite      -> NXDOMAIN (wrong: rewritten after kubernetes)
+#   .override, regex {1}           -> NXDOMAIN (wrong: same reason)
+#   .server,   exact rewrite      -> 10.43.241.11  (correct)
+#   .server,   regex {1}          -> 10.43.241.11  (correct)  <- what ships
+#
+# THE REWRITE ITSELF, and the assumption it rests on.
+#
+#   rewrite name regex (.*)\.svc\.cafaye\.test {1}.{1}.svc.cluster.local
 #
 # `identity.svc.cafaye.test` becomes `identity.identity.svc.cluster.local`.
 # The doubled label is NOT a typo, and it is the whole design:
-# `${1}` is the service name, and the cluster's own `kubernetes` plugin needs
+# `{1}` is the service name, and the cluster's `kubernetes` plugin needs
 # `<service>.<namespace>.svc.cluster.local` to answer a query, so the
 # namespace has to come from somewhere. It comes from the service's own name,
 # because the fleet's shape is one service per namespace NAMED AFTER THE
@@ -62,17 +85,24 @@
 # Nothing in this fleet runs there, so the suffix form would resolve every
 # name to NXDOMAIN while looking exactly right.
 #
-# WHY NOT one rewrite line per service (`identity.svc.cafaye.test ->
-# identity.identity.svc.cluster.local`, repeated). It would work today and it
-# is four lines per service in a file nobody edits when a service is added,
-# which is how a local zone goes stale and a pod resolves a name that no
-# longer exists. The regex form is one line that stays true as long as the
+# WHY NOT one rewrite line per service. It would work today and it is four
+# lines per service in a file nobody edits when a service is added, which is
+# how a local zone goes stale and a pod resolves a name that no longer exists.
+# The regex form is one line that stays true as long as the
 # one-service-per-namespace shape holds, and when that shape changes the
-# failure is loud: the name stops resolving, which is the same answer it
-# would give if the line were missing.
+# failure is loud: the name stops resolving, which is the same answer it would
+# give if the line were missing.
 #
-# AND THE PROPERTY THE PLAN ASKS FOR — "and only there". This file lives in
-# the cluster's kube-system namespace. Nothing on a Mac resolver, a phone or
+# THE CAPTURE-GROUP SPELLING IS `{1}`, NOT `${1}`. Both were applied and only
+# one resolved. `${1}` produced no CoreDNS error and no log line — it silently
+# produced a rewritten name the kubernetes plugin could not answer, which is
+# the same NXDOMAIN as a missing rule. CoreDNS's rewrite plugin documents
+# `{1}` for `rewrite name regex`; the `${}` form is Go's `os.Expand` syntax
+# and is not what the plugin reads. A typo that is indistinguishable from a
+# missing service is why this paragraph exists.
+#
+# AND THE PROPERTY THE PLAN ASKS FOR — "and only there". This file lives in the
+# cluster's kube-system namespace. Nothing on a Mac resolver, a phone or
 # another machine ever sees it: `*.svc.cafaye.test` is not a public name, and
 # the EDGE names (`api.cafaye.test` and the rest) are NOT rewritten by this
 # file — they resolve from the host's own `/etc/hosts`, or from the ingress
@@ -82,7 +112,7 @@
 # THE ONE THING THIS FILE DOES NOT DO: it does not make the rewrite survive a
 # cluster rebuild. The cluster is disposable and this file is committed, and
 # `kubectl apply -f deploy/local/coredns-rewrite.yaml` re-creates it. Applying
-# writes the file; the kubelet then syncs the volume and CoreDNS's own
+# writes the ConfigMap; the kubelet then syncs the volume and CoreDNS's own
 # `reload 30` picks the import up, but the guaranteed path is
 # `kubectl -n kube-system rollout restart deployment coredns`.
 apiVersion: v1
@@ -91,6 +121,18 @@ metadata:
   name: coredns-custom
   namespace: kube-system
 data:
-  cafaye-svc.override: |
-    # The internal zone. One line, for the reason in deploy/local/README.md.
-    rewrite name regex (.*)\.svc\.cafaye\.test ${1}.${1}.svc.cluster.local
+  # The internal zone's own server block. `forward . /etc/resolv.conf` is the
+  # fallback a fresh cluster's Corefile uses, restated here so this block is
+  # complete on its own: a server block that cannot forward answers SERVFAIL
+  # rather than passing the query on, and the `kubernetes` plugin handles every
+  # name that should resolve from the cluster in any case.
+  cafaye-svc.server: |
+    svc.cafaye.test:53 {
+        errors
+        rewrite name regex (.*)\.svc\.cafaye\.test {1}.{1}.svc.cluster.local
+        kubernetes cluster.local in-addr.arpa ip6.arpa {
+          pods insecure
+          fallthrough in-addr.arpa ip6.arpa
+        }
+        forward . /etc/resolv.conf
+    }
