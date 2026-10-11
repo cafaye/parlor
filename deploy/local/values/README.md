@@ -32,7 +32,7 @@ be able to see it here.
 1. **`ingress.host`** → the `.test` name from PLAN-names-urls-rollout §1's URL
    map. **The chart's own default host is not edited.** parlor's stays
    `app.cafaye.com` ("the Parlor chart default only; never a product face"),
-   gateway's stays `gateway.cafaye.com`. The default is the reference shape;
+   gateway's stays `api.cafaye.com`. The default is the reference shape;
    the local deployment overrides it, which is what a values file is for.
 2. **`ingress.clusterIssuer`** → `cafaye-test-ca`, and NOT the
    `letsencrypt-prod` the charts name. This is deliberate failure: on a local
