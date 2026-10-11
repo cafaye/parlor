@@ -1051,7 +1051,7 @@ components:
       properties:
         type:
           type: string
-          description: 'Stable URI: `https://errors.cafaye.com/<code>`.'
+          description: 'Stable URI: `https://docs.cafaye.com/errors/<code>`.'
           format: uri
         title:
           type: string
@@ -1135,7 +1135,7 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
           example:
-            type: https://errors.cafaye.com/upstream_unavailable
+            type: https://docs.cafaye.com/errors/upstream_unavailable
             title: The service is not reachable.
             status: 502
             detail: The upstream could not be reached. Quote the trace id when reporting this.
@@ -1152,7 +1152,7 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
           example:
-            type: https://errors.cafaye.com/payload_too_large
+            type: https://docs.cafaye.com/errors/payload_too_large
             title: The request body is too large.
             status: 413
             detail: The request body is over the ceiling. Quote the trace id when reporting this.
@@ -1168,7 +1168,7 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
           example:
-            type: https://errors.cafaye.com/billing_not_configured
+            type: https://docs.cafaye.com/errors/billing_not_configured
             title: Billing is not configured.
             status: 503
             detail: This deployment has no billing service. Quote the trace id when reporting this.
@@ -1183,7 +1183,7 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
           example:
-            type: https://errors.cafaye.com/idempotency_key_reused
+            type: https://docs.cafaye.com/errors/idempotency_key_reused
             title: The idempotency key was reused.
             status: 409
             detail: That key was already used for a different request body.

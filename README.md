@@ -305,28 +305,28 @@ builds it, and then checks that the tree still says what CI assumes about it. If
 it is green, your checkout is sound, the tree compiles *and* the gate is the
 gate.
 
-`mise run stack` is `caf dev -registry caf.dev.json -port 3000`, and it is the
+`mise run stack` is `cafe dev -registry caf.dev.json -port 3000`, and it is the
 task to reach for whenever you are touching sign in, registration, accounts or
 invitations — everything in `src/lib/identity.ts` and `src/lib/auth.tsx`.
 `npm run dev` on its own starts `vite dev` with **nothing behind it**, so every
 authenticated route fails against an origin that is not there.
 
-The catalog is committed because `caf` ships none, and it says why in its own
+The catalog is committed because `cafe` ships none, and it says why in its own
 docs: an image reference guessed by a CLI is a reference that pulls the wrong
 thing. Two facts in it are load-bearing rather than conventional, and both are
 argued at the line in `caf.dev.json`:
 
 - **`-port 3000` is not a preference.** This app declares no `exposes.api`, so
-  `caf dev` cannot tell that a Vite/TanStack Start app serves HTTP and publishes
+  `cafe dev` cannot tell that a Vite/TanStack Start app serves HTTP and publishes
   no host port for it. Without the flag the stack comes up fine and the browser
   cannot reach it.
-- **parlor is deliberately not an entry in its own catalog.** `caf dev` builds
+- **parlor is deliberately not an entry in its own catalog.** `cafe dev` builds
   the project service from this repository's Dockerfile *unless* the catalog
   names it, in which case it runs `image:` instead. Adding a self-entry would
   replace the Dockerfile with a pull of an image that does not exist.
 
 The stack task does not migrate — migrations are a deploy step in every cafaye
-service — so against the database `caf` provisions, a first registration
+service — so against the database `cafe` provisions, a first registration
 returns `500 relation "users" does not exist` while `/readyz` reports healthy.
 Both are correct. `./bin/e2e` runs the migrations and is the tier that proves
 the integration.
