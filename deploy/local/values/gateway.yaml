@@ -1,6 +1,6 @@
 # Local (`cafaye-local`) values for the gateway chart. The `.test` front door.
 #
-# The chart's own `charts/gateway/values.yaml` names `gateway.cafaye.com` and
+# The chart's own `charts/gateway/values.yaml` names `api.cafaye.com` and
 # `letsencrypt-prod` — the launch shape. This file changes the host and the
 # issuer for the local cluster and nothing else; the chart keeps its default
 # for production. See deploy/local/values/README.md for the key-name table.

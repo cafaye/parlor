@@ -35,7 +35,7 @@ real DNS (PLAN-names-urls-rollout §3 L8).
 **`values.local.yaml`** holds the `.test` host overrides the local
 deployment applies with `-f`. The charts' own `values.yaml` defaults are
 untouched: the chart's default host (`app.cafaye.com` for parlor,
-`gateway.cafaye.com` for gateway) stays the reference shape, per
+`api.cafaye.com` for gateway) stays the reference shape, per
 PLAN-names-urls-rollout §1's URL map — `app.cafaye.com` is "the Parlor chart
 default only; never a product face".
 
