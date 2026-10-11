@@ -8,6 +8,24 @@ All notable changes to parlor are recorded here. The format follows
 
 ### Changed
 
+- **Every RFC 9457 error `type` URI is `https://docs.cafaye.com/errors/<code>`**
+  (PLAN-names-urls-rollout §3 L3 retires `errors.cafaye.com`). The base moved
+  and every slug stayed the last segment, so core's harness rule
+  `openapi.problem-code-matches-type` (type slug == `code`) keeps holding and
+  nothing about the contract changed: same statuses, same bodies, same codes.
+  14 references across 8 files — `openapi/v1.yaml`'s `Problem.type`
+  description and the four response examples parlor authors itself
+  (`upstream_unavailable`, `payload_too_large`, `billing_not_configured`,
+  `idempotency_key_reused`), `src/lib/upstream.ts`'s `problem()`,
+  `src/app/v1/[...path]/route.ts`'s `notFound()`, and the five test files
+  that stub those envelopes. The two references in
+  `REPORT-parlor-oauth-callback-01.md` and `REPORT-parlor-profile-v1-01.md`
+  stay as they were written: each is a transcript of what a running identity
+  answered at the time, and a record edited to match a later configuration is
+  no longer a record. `README.md` now prints the CLI as `cafe …` (§3 L1's docs
+  rule); `caf.dev.json` is a file this repository commits and keeps its name,
+  and `mise.toml`'s `tasks.stack.run` still invokes the binary that exists.
+
 - **`LICENSE` is a Business Source License 1.1, and both manifests say
   `BUSL-1.1`** (OPS-D2 puts the services under BSL: free to run, free to
   self-host, never to offer a competing service). `LICENSE` is the
