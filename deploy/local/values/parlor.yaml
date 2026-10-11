@@ -1,0 +1,32 @@
+# Local (`cafaye-local`) values for the parlor chart — the web front.
+#
+# The chart's default host stays `app.cafaye.com`, which PLAN §1's URL map
+# keeps as "the Parlor chart default only; never a product face". Locally the
+# front is `cafaye.test`, per the same map, so the local deployment overrides
+# the host and the generated file is not edited.
+image:
+  repository: cafaye/parlor
+  tag: k8s-local
+  # `Never`: `bin/local-cluster` imported this image into the cluster with
+  # `k3d image import`. ghcr.io is unreachable from a dev cluster and is not
+  # where this image is.
+  pullPolicy: Never
+
+ingress:
+  enabled: true
+  className: traefik
+  # §1's URL map: cafaye.test is the website/parlor front.
+  host: cafaye.test
+  clusterIssuer: cafaye-test-ca
+  tls: true
+  path: /
+  pathType: Prefix
+
+# Name only. Created out of band; the chart never carries a credential.
+secretName: parlor-secrets
+
+# The BFF's own /v1/* surface forwards to identity at IDENTITY_URL. The
+# forwarder's two addresses are RUN-TIME variables (see AGENTS.md, "Deploying
+# to Cloudflare Workers" — they are deliberately not in the client bundle), so
+# a local deployment sets them in the secret, not here.
+namespace: parlor

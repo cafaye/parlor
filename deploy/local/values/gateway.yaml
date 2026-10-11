@@ -1,0 +1,63 @@
+# Local (`cafaye-local`) values for the gateway chart. The `.test` front door.
+#
+# The chart's own `charts/gateway/values.yaml` names `gateway.cafaye.com` and
+# `letsencrypt-prod` — the launch shape. This file changes the host and the
+# issuer for the local cluster and nothing else; the chart keeps its default
+# for production. See deploy/local/values/README.md for the key-name table.
+image:
+  repository: cafaye/gateway
+  tag: k8s-local
+  # `Never`: the image is in the cluster's containerd store because
+  # `bin/local-cluster` ran `k3d image import cafaye/gateway:k8s-local`. A
+  # pull from ghcr.io would both fail (no credential on a dev cluster) and
+  # defeat the point of a locally built image.
+  pullPolicy: Never
+
+replicaCount: 1
+
+ingress:
+  enabled: true
+  className: traefik
+  # §1's URL map: api.cafaye.test is gateway.
+  host: api.cafaye.test
+  # `cafaye-test-ca`, the local self-signed ClusterIssuer
+  # (`deploy/local/clusterissuer-cafaye-test.yaml`). The chart's default names
+  # `letsencrypt-prod`, which this cluster does not have — see the file's own
+  # comment on why the name is a contract.
+  clusterIssuer: cafaye-test-ca
+  tls:
+    enabled: true
+    secretName: gateway-tls
+
+env:
+  PORT: "8080"
+  # The local cluster's identity, reached two ways on purpose: JWKS over the
+  # EDGE (the same origin a browser would use, because that is the host the
+  # issuer's `iss` claim is checked against), and sessions by in-cluster
+  # Service name (`http://identity:8080` — inside a cluster `localhost` is
+  # gateway itself). Production's `https://identity.cafaye.com` becomes
+  # `http://auth.cafaye.test` here, which is the whole reason the `.test` URL
+  # map is exercised at all: one hop is a public-looking issuer check and the
+  # other is a service discovery, and the chart carries both.
+  IDENTITY_ISSUER: "http://auth.cafaye.test"
+  IDENTITY_URL: "http://identity:8080"
+  GATEWAY_CLIENT_ID: "gateway"
+  IDENTITY_JWKS_TTL_MS: "300000"
+  RATE_LIMIT_REQUESTS: "600"
+  RATE_LIMIT_WINDOW_MS: "60000"
+  # Traefik appends one hop behind the edge, locally the same as production.
+  TRUSTED_PROXIES: "1"
+  # Unchanged from the chart: the in-cluster pantry address is the same name.
+  ROUTE_TABLE: '{"/v1/pantry":{"baseUrl":"http://pantry:8080","public":true},"/v1/pantry-writes":{"baseUrl":"http://pantry:8080","principal":["sub"]}}'
+  ASSERTION_TTL_MS: "120000"
+  ASSERTION_SIGNING_KEY_FILE: "/etc/gateway/assertion/signing.pem"
+
+# Names only — the secrets are created out of band by `bin/local-cluster`,
+# never rendered here. `gateway-secrets` must carry REDIS_URL and
+# ASSERTION_SIGNING_KEY, or the pod does not start at all (the chart's
+# required-secretKeyRef design: a deployment cannot forget Redis).
+secrets:
+  redisUrlSecretName: gateway-secrets
+  redisUrlSecretKey: REDIS_URL
+  assertionKeySecretName: gateway-secrets
+  assertionKeySecretKey: ASSERTION_SIGNING_KEY
