@@ -40,7 +40,18 @@ env:
   # map is exercised at all: one hop is a public-looking issuer check and the
   # other is a service discovery, and the chart carries both.
   IDENTITY_ISSUER: "http://auth.cafaye.test"
-  IDENTITY_URL: "http://identity:8080"
+  # MEASURED. The chart's default is `http://identity:8080` and its comment says
+  # it "must match identity's own chart (release `identity` in this namespace)".
+  # That comment describes a SINGLE-NAMESPACE deployment, and the fleet is not
+  # one: every generated chart carries `namespace: identity` and deploys one
+  # Service per namespace named after the service. So the address that resolves
+  # from the gateway namespace is `identity.identity.svc.cluster.local`, and
+  # `http://identity:8080` fails DNS with "Could not resolve host" — which
+  # gateway reports as `{"identity":"unavailable"}` on /readyz rather than as a
+  # crash, so a chart default that cannot work looks like a dependency outage.
+  # Measured: `curl http://identity:8080/healthz` from a pod in `gateway` →
+  # curl (6) Could not resolve host.
+  IDENTITY_URL: "http://identity.identity.svc.cluster.local:8080"
   GATEWAY_CLIENT_ID: "gateway"
   IDENTITY_JWKS_TTL_MS: "300000"
   RATE_LIMIT_REQUESTS: "600"
