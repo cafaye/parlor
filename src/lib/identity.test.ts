@@ -52,7 +52,7 @@ const problem = (
   json(
     status,
     {
-      type: `https://errors.cafaye.com/${fields.code}`,
+      type: `https://docs.cafaye.com/errors/${fields.code}`,
       title: fields.title,
       status,
       detail: fields.detail,

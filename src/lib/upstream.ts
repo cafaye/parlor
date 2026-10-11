@@ -899,7 +899,7 @@ function problem(
   extra: { headers?: Record<string, string> } = {},
 ): Response {
   return Response.json(
-    { type: `https://errors.cafaye.com/${code}`, title, status, code },
+    { type: `https://docs.cafaye.com/errors/${code}`, title, status, code },
     {
       status,
       headers: {

@@ -42,7 +42,7 @@ const json = (status: number, body: unknown) =>
 
 const problem = (status: number, code: string, detail: string, extra: Record<string, unknown> = {}) =>
   json(status, {
-    type: `https://errors.cafaye.com/${code}`,
+    type: `https://docs.cafaye.com/errors/${code}`,
     title: code,
     status,
     detail,

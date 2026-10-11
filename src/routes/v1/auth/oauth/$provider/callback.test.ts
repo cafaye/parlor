@@ -67,7 +67,7 @@ import { Route } from "./callback";
  * `{"title": "No such route.", "code": "not_found"}` with no `detail`, no
  * `instance` and no `trace_id`; the observed body was
  *
- *   {"type": "https://errors.cafaye.com/not_found", "title": "Not found",
+ *   {"type": "https://docs.cafaye.com/errors/not_found", "title": "Not found",
  *    "detail": "no route matches this request",
  *    "instance": "/v1/auth/oauth/github/callback", "trace_id": "..."}
  *
