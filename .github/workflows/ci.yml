@@ -68,6 +68,10 @@ jobs:
   prime:
     name: bin/prime
     runs-on: ubuntu-latest
+    # 15, and not GitHub's 360-minute default: a hung job burns billing hours.
+    # npm ci plus the vitest gate is minutes, so 15 is a ceiling a healthy run
+    # never reaches.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -110,6 +114,9 @@ jobs:
   build:
     name: typecheck + build
     runs-on: ubuntu-latest
+    # 20, and not GitHub's 360-minute default: typecheck plus two full builds
+    # (worker and node) — the slowest job in this file, still minutes.
+    timeout-minutes: 20
     env:
       # The BFF means the client bundle contains no service address, so a build
       # needs none of these. They are declared anyway, to `.invalid` names, for
