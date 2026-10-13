@@ -153,7 +153,7 @@ describe("operator/users search", () => {
     expect(user satisfies OperatorUser | undefined).toEqual(row);
   });
 
-  it("never sends an empty query to the wire", async () => {
+  it("never sends an empty query to the wire", () => {
     const { transport, calls } = stubTransport(() => json(200, { users: [] }));
     const client = createOperatorClient({ transport });
 

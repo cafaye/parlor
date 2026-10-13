@@ -189,8 +189,10 @@ let provider: BasicTracerProvider | null = null;
 export function install(): void {
   if (provider) return;
   if (!enabled()) {
-    // One line, on the disabled path only, and never a per-span warning.
-    console.info(`telemetry off (${noOpReason()}); spans stay in-process`);
+    // One line, on the disabled path only, and never a per-span warning. To
+    // stdout, not `console.warn`: this reports a chosen state, and kit's
+    // `no-console` allows only warn/error, which would move it to stderr.
+    process.stdout.write(`telemetry off (${noOpReason()}); spans stay in-process\n`);
     return;
   }
 

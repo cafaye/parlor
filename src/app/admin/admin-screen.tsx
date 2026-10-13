@@ -155,7 +155,7 @@ function OperatorConsole({ token }: { token: string }) {
       else await operator.enableUser(token, id);
       return kind;
     },
-    onSuccess: (kind, _variables, _context) => {
+    onSuccess: (kind) => {
       acting.current = false;
       setConfirm(null);
       setNotice({

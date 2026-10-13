@@ -100,11 +100,6 @@ function splitEntry(text: string): { key: string; value: string } {
   return { key: match[1], value: match[2] ?? "" };
 }
 
-/** Is this line a mapping entry (`key: value` or `key:`) rather than prose? */
-function isMappingEntry(text: string): boolean {
-  return /^[^:]+:\s/.test(text) || /^[^:]+:$/.test(text);
-}
-
 /** A scalar: plain, single-quoted, double-quoted, or a flow sequence. */
 function parseScalar(text: string): YamlNode {
   if (text.startsWith("[")) {
@@ -203,7 +198,11 @@ function parseBlock(lines: Line[], start: number, indent: number): [YamlNode, nu
         !lines[pos].text.startsWith("- ") &&
         !MAPPING_ENTRY.test(lines[pos].text)
       ) {
-        map[key] = `${String(map[key])} ${lines[pos].text}`;
+        // A plain scalar folds onto continuation lines with a space. Anything
+        // else here is a construct this parser does not fold, so it is
+        // serialized explicitly rather than via `String()` (`[object Object]`).
+        const prior = map[key];
+        map[key] = `${typeof prior === "string" ? prior : JSON.stringify(prior)} ${lines[pos].text}`;
         pos += 1;
       }
     }
@@ -317,7 +316,7 @@ describe("the document and the allow-list agree", () => {
       const expected = entry.pathParams.sort();
       const actual = operation.pathParams.sort();
       if (JSON.stringify(expected) !== JSON.stringify(actual)) {
-        mismatches.push(`${entry.method} ${entry.path}: table ${expected} vs document ${actual}`);
+        mismatches.push(`${entry.method} ${entry.path}: table ${expected.join(", ")} vs document ${actual.join(", ")}`);
       }
     }
     expect(mismatches).toEqual([]);
@@ -331,7 +330,7 @@ describe("the document and the allow-list agree", () => {
       const expected = entry.queryParams.sort();
       const actual = operation.queryParams.sort();
       if (JSON.stringify(expected) !== JSON.stringify(actual)) {
-        mismatches.push(`${entry.method} ${entry.path}: table ${expected} vs document ${actual}`);
+        mismatches.push(`${entry.method} ${entry.path}: table ${expected.join(", ")} vs document ${actual.join(", ")}`);
       }
     }
     expect(mismatches).toEqual([]);
@@ -343,7 +342,7 @@ describe("the document and the allow-list agree", () => {
       const operation = documented.get(`${entry.method} ${entry.path}`);
       if (!operation) continue;
       if (JSON.stringify(operation.tags) !== JSON.stringify([entry.upstream])) {
-        mismatches.push(`${entry.method} ${entry.path}: table ${entry.upstream} vs document ${operation.tags}`);
+        mismatches.push(`${entry.method} ${entry.path}: table ${entry.upstream} vs document ${operation.tags.join(", ")}`);
       }
     }
     expect(mismatches).toEqual([]);

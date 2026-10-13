@@ -206,7 +206,10 @@ function stubDependencyFetch(overrides: {
   vi.stubGlobal(
     "fetch",
     vi.fn((input: RequestInfo | URL) => {
-      const url = String(input);
+      // A real string conversion, not `String(input)`: a `Request` stringifies
+      // to `[object Request]` under `String()`, while `.url` is the address the
+      // stub was asked to record.
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       calls.push(url);
       const failure = url.includes("billing") ? overrides.billing : overrides.identity;
       if (failure instanceof Error) return Promise.reject(failure);

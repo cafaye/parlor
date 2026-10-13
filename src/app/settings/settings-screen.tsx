@@ -174,7 +174,7 @@ export function SettingsScreen() {
       <MfaSection />
       <SessionsPanel token={token} />
       <SessionPanel email={session.user.email} />
-      <DeleteAccountPanel token={token} />
+      <DeleteAccountPanel />
     </div>
   );
 }
@@ -668,7 +668,7 @@ function failureState(thrown: unknown): ResendState {
  * the caller merely belongs to never blocks them.
  * ---------------------------------------------------------------------------
  */
-function DeleteAccountPanel({ token }: { token: string }) {
+function DeleteAccountPanel() {
   const { forgetSession } = useAuth();
   const router = useNavigation();
   const accounts = useAccounts();

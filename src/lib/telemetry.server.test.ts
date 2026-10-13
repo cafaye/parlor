@@ -132,7 +132,7 @@ describe("1. the no-op path", () => {
     await shutdown();
   });
 
-  it("builds no provider when a per-signal exporter is none", async () => {
+  it("builds no provider when a per-signal exporter is none", () => {
     process.env.OTEL_TRACES_EXPORTER = "none";
     expect(enabled()).toBe(false);
     expect(noOpReason()).toBe("OTEL_TRACES_EXPORTER=none");
@@ -140,7 +140,7 @@ describe("1. the no-op path", () => {
     expect(installed()).toBe(false);
   });
 
-  it("covers ALL THREE signals, not just traces", async () => {
+  it("covers ALL THREE signals, not just traces", () => {
     // The failure this guards: a no-op that only covers traces is a service
     // that still phones home for metrics, discovered by a customer's invoice.
     for (const name of ["OTEL_TRACES_EXPORTER", "OTEL_METRICS_EXPORTER", "OTEL_LOGS_EXPORTER"]) {
@@ -183,7 +183,7 @@ describe("1. the no-op path", () => {
     await shutdown();
   });
 
-  it("is idempotent: a second install does not fight the first", async () => {
+  it("is idempotent: a second install does not fight the first", () => {
     process.env.OTEL_SDK_DISABLED = "true";
     install();
     install();
@@ -218,7 +218,7 @@ describe("2. the server span", () => {
 
     const spans = exporter.getFinishedSpans();
     expect(spans).toHaveLength(1);
-    const span = spans[0]!;
+    const span = spans[0];
     expect(span.name).toBe("parlor.request");
     // core's grammar, asserted as a pattern rather than as a constant, so a
     // rename that stops matching the schema fails here.
@@ -235,10 +235,10 @@ describe("2. the server span", () => {
       new Request("http://parlor.test/accounts/8f2c1e40-1111-2222-3333-444455556666"),
       () => Promise.resolve(new Response("ok", { status: 200 })),
     );
-    const attributes = exporter.getFinishedSpans()[0]!.attributes;
+    const attributes = exporter.getFinishedSpans()[0].attributes;
     expect(attributes["http.route"]).toBe("/accounts/{accountId}");
     // And nothing anywhere in the span carries the concrete id.
-    expect(JSON.stringify(exporter.getFinishedSpans()[0]!.attributes)).not.toContain(
+    expect(JSON.stringify(exporter.getFinishedSpans()[0].attributes)).not.toContain(
       "8f2c1e40",
     );
   });
@@ -248,7 +248,7 @@ describe("2. the server span", () => {
     await traceRequest(new Request("http://parlor.test/v1/session", { method: "POST" }), () =>
       Promise.resolve(new Response("", { status: 201 })),
     );
-    const attributes = exporter.getFinishedSpans()[0]!.attributes;
+    const attributes = exporter.getFinishedSpans()[0].attributes;
     // core's traces.schema.json $defs.tracesAttributes, as a list. `url.path`
     // and `url.full` are absent from core's list for the cardinality reason, and
     // a query string is caller text by another name.
@@ -273,7 +273,7 @@ describe("2. the server span", () => {
     await traceRequest(new Request("http://parlor.test/login"), () =>
       Promise.resolve(new Response("ok", { status: 200 })),
     );
-    const resource = exporter.getFinishedSpans()[0]!.resource.attributes;
+    const resource = exporter.getFinishedSpans()[0].resource.attributes;
     expect(resource["service.name"]).toBe("parlor");
     expect(resource["service.version"]).toBe("0.1.0");
     expect(resource["deployment.environment"]).toBe("staging");
@@ -285,7 +285,7 @@ describe("2. the server span", () => {
     await traceRequest(new Request("http://parlor.test/v1/probe/abc"), () =>
       Promise.resolve(new Response("nope", { status: 502 })),
     );
-    const span = exporter.getFinishedSpans()[0]!;
+    const span = exporter.getFinishedSpans()[0];
     expect(span.status.code).toBe(SpanStatusCode.ERROR);
     expect(span.attributes["error.type"]).toBe("dependency_unavailable");
     expect(span.attributes["otel.status_code"]).toBe("ERROR");
@@ -299,7 +299,7 @@ describe("2. the server span", () => {
     await traceRequest(new Request("http://parlor.test/v1/me"), () =>
       Promise.resolve(new Response("", { status: 401 })),
     );
-    const span = exporter.getFinishedSpans()[0]!;
+    const span = exporter.getFinishedSpans()[0];
     // A 401 is not an error span: the caller presented a bad token. Filing it
     // as ERROR would page somebody about an expired cookie.
     expect(span.status.code).toBe(SpanStatusCode.OK);
@@ -314,7 +314,7 @@ describe("2. the server span", () => {
         Promise.reject(new Error("boom")),
       ),
     ).rejects.toThrow("boom");
-    const span = exporter.getFinishedSpans()[0]!;
+    const span = exporter.getFinishedSpans()[0];
     expect(span.status.code).toBe(SpanStatusCode.ERROR);
     expect(span.attributes["error.type"]).toBe("internal_error");
   });
@@ -348,7 +348,7 @@ describe("3. W3C trace context", () => {
       }),
       () => Promise.resolve(new Response("ok", { status: 200 })),
     );
-    const span = exporter.getFinishedSpans()[0]!;
+    const span = exporter.getFinishedSpans()[0];
     expect(span.spanContext().traceId).toBe(INBOUND.traceId);
     // The parent is the CALLER's span id; the span's own id is this hop's.
     // `parentSpanContext`, not `parentSpanId`: SDK 2.x replaced the flat field.
@@ -370,7 +370,7 @@ describe("3. W3C trace context", () => {
       }),
       () => Promise.resolve(new Response("ok", { status: 200 })),
     );
-    expect(exporter.getFinishedSpans()[0]!.spanContext().traceId).toBe(INBOUND.traceId);
+    expect(exporter.getFinishedSpans()[0].spanContext().traceId).toBe(INBOUND.traceId);
   });
 
   it("starts a NEW trace when traceparent is missing", async () => {
@@ -378,7 +378,7 @@ describe("3. W3C trace context", () => {
     await traceRequest(new Request("http://parlor.test/login"), () =>
       Promise.resolve(new Response("ok", { status: 200 })),
     );
-    const span = exporter.getFinishedSpans()[0]!;
+    const span = exporter.getFinishedSpans()[0];
     expect(span.spanContext().traceId).not.toBe(INBOUND.traceId);
     expect(span.parentSpanContext).toBeUndefined();
   });
@@ -404,7 +404,7 @@ describe("3. W3C trace context", () => {
       () => Promise.resolve(new Response("ok", { status: 200 })),
     );
     expect(response.status).toBe(200);
-    const span = exporter.getFinishedSpans()[0]!;
+    const span = exporter.getFinishedSpans()[0];
     expect(span.spanContext().traceId).not.toBe(INBOUND.traceId);
     expect(span.status.code).toBe(SpanStatusCode.OK);
   });
@@ -417,7 +417,7 @@ describe("3. W3C trace context", () => {
       }),
       () => Promise.resolve(new Response("ok", { status: 200 })),
     );
-    expect(exporter.getFinishedSpans()[0]!.spanContext().traceId).not.toBe(INBOUND.traceId);
+    expect(exporter.getFinishedSpans()[0].spanContext().traceId).not.toBe(INBOUND.traceId);
   });
 
   it("matches the header case-insensitively (§3.2.1)", async () => {
@@ -428,17 +428,17 @@ describe("3. W3C trace context", () => {
       }),
       () => Promise.resolve(new Response("ok", { status: 200 })),
     );
-    expect(exporter.getFinishedSpans()[0]!.spanContext().traceId).toBe(INBOUND.traceId);
+    expect(exporter.getFinishedSpans()[0].spanContext().traceId).toBe(INBOUND.traceId);
   });
 
   it("injects a traceparent on an outbound fetch, carrying the span given to it", async () => {
     const exporter = installTracerForTest();
     const seen: string[] = [];
     const original = globalThis.fetch;
-    globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) => {
+    globalThis.fetch = (_input: RequestInfo | URL, init?: RequestInit) => {
       seen.push(new Headers(init?.headers).get("traceparent") ?? "");
       return Promise.resolve(new Response("", { status: 200 }));
-    }) as typeof fetch;
+    };
     try {
       await traceRequest(new Request("http://parlor.test/v1/me"), () =>
         // The span context is threaded in explicitly, NOT read from
@@ -478,10 +478,10 @@ describe("3. W3C trace context", () => {
     const exporter = installTracerForTest();
     const seen: string[] = [];
     const original = globalThis.fetch;
-    globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) => {
+    globalThis.fetch = (_input: RequestInfo | URL, init?: RequestInit) => {
       seen.push(new Headers(init?.headers).get("traceparent") ?? "<none>");
       return Promise.resolve(new Response("", { status: 200 }));
-    }) as typeof fetch;
+    };
     try {
       await tracedFetch("http://identity.internal/v1/me", undefined);
     } finally {
@@ -502,7 +502,7 @@ describe("3. W3C trace context", () => {
       }),
       () => Promise.resolve(new Response("ok", { status: 200 })),
     );
-    expect(exporter.getFinishedSpans()[0]!.spanContext().traceId).toBe(INBOUND.traceId);
+    expect(exporter.getFinishedSpans()[0].spanContext().traceId).toBe(INBOUND.traceId);
   });
 });
 
@@ -521,14 +521,14 @@ describe("the route template table", () => {
     expect(routeTemplate(pathname)).toBe(expected);
   });
 
-  it("covers every route in the generated tree, so a new route cannot go dark", async () => {
+  it("covers every route in the generated tree, so a new route cannot go dark", () => {
     // The failure this guards: a route added to `src/routes/` and missing here
     // emits `unmatched` forever, which reads exactly like a broken exporter.
     const tree = readFileSync(join(import.meta.dirname, "..", "routeTree.gen.ts"), "utf8");
     const generated = [
       ...new Set(
         [...tree.matchAll(/fullPath: '([^']+)'/g)].map((match) =>
-          match[1]!.replace(/\$$/, "{path}").replace(/\$([A-Za-z0-9]+)/g, "{$1}"),
+          match[1].replace(/\$$/, "{path}").replace(/\$([A-Za-z0-9]+)/g, "{$1}"),
         ),
       ),
     ];

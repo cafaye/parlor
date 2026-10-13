@@ -273,7 +273,7 @@ describe("system-admin navigation", () => {
     expect(screen.queryByRole("link", { name: "System admin" })).toBeNull();
   });
 
-  it("hides the console from a signed-out visitor without asking", async () => {
+  it("hides the console from a signed-out visitor without asking", () => {
     const operator = stubOperator({
       me: vi.fn(() => Promise.reject(new Error("must not be called"))),
     });

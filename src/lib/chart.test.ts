@@ -116,7 +116,7 @@ describe("chart content", () => {
   });
 
   it("never floats the image tag on `latest`", () => {
-    const tag = capture(/^  tag: "?([^"\s]+)"?$/m, valuesYaml);
+    const tag = capture(/^ {2}tag: "?([^"\s]+)"?$/m, valuesYaml);
     expect(tag).not.toBeNull();
     expect(tag).not.toBe("latest");
   });
