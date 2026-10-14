@@ -214,12 +214,12 @@ authority — flagged as such.
 - **`chart/README.md:22` and `chart/values.yaml:16`** — both say "the substrate
   is closed source and a pull-based system needs somewhere to pull from". Both
   sentences are **generated output**: they are emitted by
-  `caf/internal/gen/chart.go:190` (the values.yaml comment) and
-  `caf/internal/gen/chart.go:552` (the chart README sentence), and the same
+  `cafe/internal/gen/chart.go:190` (the values.yaml comment) and
+  `cafe/internal/gen/chart.go:552` (the chart README sentence), and the same
   text is live in `courier`, `identity` and `website`'s charts too. Hand-editing
-  here would be undone by the next `caf gen chart` and would drift four repos
+  here would be undone by the next `cafe gen chart` and would drift four repos
   apart — the exact trap `REPORT-fleet-license-specs.md` records from the
-  vendored-spec brief. The fix is one line each in `caf`, which is source code
+  vendored-spec brief. The fix is one line each in `cafe`, which is source code
   in a repository I do not own. **Manager's call, one-line change, fixes all
   four.*
 - **`openapi/v1.yaml:147-156`** — the `info:` block carries no `licence` field.

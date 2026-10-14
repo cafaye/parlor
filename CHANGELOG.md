@@ -166,7 +166,7 @@ All notable changes to parlor are recorded here. The format follows
 
 - **parlor's Helm chart, and the Ingress that makes `app.cafaye.com`
   reach it** (`worker/parlor-w86b-chart`, absorbing the old `m93`).
-  `caf gen chart` wrote six files from `cafaye.yml` — `Chart.yaml`,
+  `cafe gen chart` wrote six files from `cafaye.yml` — `Chart.yaml`,
   `values.yaml`, and the Deployment/Service/Ingress templates — and
   `values.yaml` turns the Ingress on: `enabled: true`, `host:
   app.cafaye.com` (the host the fleet's own fixtures name —
@@ -188,7 +188,7 @@ All notable changes to parlor are recorded here. The format follows
   container port matches the Dockerfile's `EXPOSE` (3000 = 3000; the
   generator's `LanguagePort("typescript")` agrees with the image).
   Two generator defects were worked around here and reported to the
-  caf packet rather than fixed: the emitted `Chart.yaml` description
+  cafe packet rather than fixed: the emitted `Chart.yaml` description
   is unquoted and contains `app:`, which makes `helm` refuse the
   chart outright ("mapping values are not allowed in this context") —
   quoted here; and the generator no longer emits
@@ -577,17 +577,17 @@ All notable changes to parlor are recorded here. The format follows
   Suite 755 → 798, and `gate.yml`'s floor moved in the same commit. Three files
   new: `src/lib/social.ts`, two components under `src/components/social/`, and
   `src/routes/v1/auth/oauth/$provider/callback.tsx`.
-- **Two gate checks that run on every commit with no caf and no container
-  runtime: the local stack's catalog is one `caf dev` can believe, and the
+- **Two gate checks that run on every commit with no cafe and no container
+  runtime: the local stack's catalog is one `cafe dev` can believe, and the
   lockfile's `file:` dependencies name bytes npm can actually produce.** Both
   guard against defects that were real in this fleet, and both are found in CI
   rather than at `mise run stack`, which is the moment a developer is looking
   at something else.
 
-  **`caf.dev.json` is readable by caf.** `caf` already refuses a catalog it
+  **`caf.dev.json` is readable by caf.** `cafe` already refuses a catalog it
   cannot believe — and refuses it well, naming every unknown key and the service
   it is in rather than stopping at the first. What it cannot do is run on a CI
-  runner with no caf and no Docker, which is exactly where a per-commit check
+  runner with no cafe and no Docker, which is exactly where a per-commit check
   belongs. Three of the four invariants are re-stated from `dev.Entry`'s own
   comments and need no schema copy: an entry's `name` must equal the key it is
   filed under (so a document cannot run billing's image as identity), `image`
@@ -597,10 +597,10 @@ All notable changes to parlor are recorded here. The format follows
 
   The fourth does need the key list, and it is a second copy — so the drift is
   pointed at rather than hidden. It is `dev.Entry` and `dev.Healthcheck` as of
-  caf `31e77e6`, with `git -C ../caf show 31e77e6:internal/dev/registry.go`
-  named as the authority. **If caf grows a field this check fails loudly**, and
+  cafe `31e77e6`, with `git -C ../cafe show 31e77e6:internal/dev/registry.go`
+  named as the authority. **If cafe grows a field this check fails loudly**, and
   that direction is deliberate: a false FAIL costs a minute, and the false PASS
-  it replaces is the defect class this gate exists for — caf used to drop a
+  it replaces is the defect class this gate exists for — cafe used to drop a
   misspelled key in silence and then tell a developer their catalog was missing
   something it plainly contained.
 
@@ -650,55 +650,55 @@ All notable changes to parlor are recorded here. The format follows
   `required: true`, which made that failure a contradiction with the manifest
   rather than a surprise.
 
-  caf refuses to run a local stack without a service catalog, and states why in
+  cafe refuses to run a local stack without a service catalog, and states why in
   its own package doc: "an image reference guessed by a CLI is a reference that
   pulls the wrong thing". So `caf.dev.json` is committed, and each non-obvious
   value in it carries an `x-` key saying where it came from. The four that are
   load-bearing rather than conventional:
 
-  - **parlor is deliberately NOT an entry in its own catalog.** `caf dev`
+  - **parlor is deliberately NOT an entry in its own catalog.** `cafe dev`
     resolves the project service from the catalog when the catalog has it and
     from the repository's own Dockerfile when it does not — and an entry makes
-    caf render `image:` instead of `build:`. Adding `parlor` here would silently
+    cafe render `image:` instead of `build:`. Adding `parlor` here would silently
     replace this repository's Dockerfile with a pull of an image that does not
     exist. A generated service needs no self-entry; this is the trap the
     `x-self` key exists to prevent.
   - **`-port 3000` in `mise run stack` is not a preference.** `cafaye.yml`
     declares no `exposes.api` (for the reason given in that file: this app
     ships no OpenAPI document, and writing one would be a second copy of the
-    router that drifts), so `caf dev` cannot tell a Next.js app serves HTTP and
+    router that drifts), so `cafe dev` cannot tell a Next.js app serves HTTP and
     leaves its host port unpublished. Measured both ways: with `-port 3000` the
     rendered document gives parlor `ports: ["3000:3000"]` and `GET /` answers
     200 from a browser; without it, the only `ports:` in the whole file is
-    identity's `8080:8080` and parlor has no host binding at all. caf names this
+    identity's `8080:8080` and parlor has no host binding at all. cafe names this
     rather than inventing a URL — `no published port (reached by service name
     on the stack network)` — which is true, and useless to a browser. The
-    container port is not this flag's concern; caf derives that from `language`
+    container port is not this flag's concern; cafe derives that from `language`
     and only rewrites the host end.
   - **`publish: true` on identity is what makes the browser path work.**
     `src/lib/identity.ts:34` defaults `NEXT_PUBLIC_IDENTITY_URL` to
     `http://localhost:8080` and the browser calls identity directly, so a
     compose service name would be unreachable by construction. Without this the
     sign-in button fails on a connection error that names no service at all.
-  - **`startPeriod`, not `start_period`.** caf's catalog is JSON with its own
-    spelling, and caf refuses a key it does not model rather than ignoring it —
+  - **`startPeriod`, not `start_period`.** cafe's catalog is JSON with its own
+    spelling, and cafe refuses a key it does not model rather than ignoring it —
     so identity's own compose spelling fails the stack instead of being quietly
     dropped. Verified: the rendered `caf.dev.compose.yaml` contains
     `start_period: 5s`, so the translation happens and the key was accepted.
 
   billing is deliberately absent. `cafaye.yml` declares it `required: false`,
-  which caf treats as soft, so the stack starts without it and prints why:
+  which cafe treats as soft, so the stack starts without it and prints why:
   `skipped billing: optional dependency, and the local registry does not know
   how to run it`. Adding it would start a service that is not going out on
   launch day.
 
   `caf.dev.compose.yaml` is gitignored and `caf.dev.json` is not, and the
-  asymmetry is the point: caf prints "Do not edit: every run rewrites this
+  asymmetry is the point: cafe prints "Do not edit: every run rewrites this
   file", so committing the render is committing a generated artifact that is a
   merge conflict waiting to happen, while a catalog nobody commits is a catalog
   that only exists on the machine that wrote it.
 
-  **Proven, not asserted.** `caf dev -registry caf.dev.json -port 3000 -dry-run`
+  **Proven, not asserted.** `cafe dev -registry caf.dev.json -port 3000 -dry-run`
   renders a four-service stack — `parlor` with `build: {context: ., dockerfile:
   Dockerfile}` and `ports: ["3000:3000"]`, `identity` published on 8080, plus
   `postgres` and `redis` — with `DATABASE_URL =
@@ -713,7 +713,7 @@ All notable changes to parlor are recorded here. The format follows
   **What this task does not do, stated rather than discovered later:** it does
   not migrate. Migrations are a deploy step in every cafaye service, by policy
   (`e2e/docker-compose.yml:39-42`), so nothing in this stack migrates on boot.
-  Against the database caf provisions, a first registration returns `500
+  Against the database cafe provisions, a first registration returns `500
   relation "users" does not exist` while `/readyz` reports healthy — both are
   correct. `./bin/e2e` runs the migrations and is the tier that proves the
   integration end to end.
@@ -1204,16 +1204,16 @@ All notable changes to parlor are recorded here. The format follows
 ### Fixed
 
 - **`bin/prime` was green on the machine that produced the TanStack migration
-  and red on every machine without `caf`, because two of the three `gate.yml`
+  and red on every machine without `cafe`, because two of the three `gate.yml`
   proof floors were counts of what happened to run rather than counts of what
   the repository declares.** Measured on this tree before the fix, one variable:
 
       environment                ci-shape-checks       check-self-test
-      caf + shellcheck + docker     46 passed, 0 skipped   50 breakages, exit 0
-      caf absent                    45 passed, 1 skipped   49 breakages, exit 1
-      caf and docker absent         44 passed, 2 skipped   —
+      cafe + shellcheck + docker     46 passed, 0 skipped   50 breakages, exit 0
+      cafe absent                    45 passed, 1 skipped   49 breakages, exit 1
+      cafe and docker absent         44 passed, 2 skipped   —
 
-  Three checks in `tests/validate-ci.sh` are gated on `caf`, `shellcheck` and
+  Three checks in `tests/validate-ci.sh` are gated on `cafe`, `shellcheck` and
   `docker`; none of the three is something this repository requires, and each
   prints SKIP rather than PASS when its tool is absent. So `46` was a
   measurement of one fully-loaded machine. It was red on every machine that is
@@ -1238,10 +1238,10 @@ All notable changes to parlor are recorded here. The format follows
   'ci-shape-checks' reported 46 and the declaration's floor is 47`.
 
 - **A gate check called `skip`, which is not a function — exit 127 on every
-  machine without `caf`, with no FAIL, no tally and no proof line.**
+  machine without `cafe`, with no FAIL, no tally and no proof line.**
   `tests/validate-ci.sh` defines `skipped()`; `skip` is the counter variable
   (`skip=0`). Bash looked for a program named `skip`, found none, and died on
-  the line that used it — inside the branch that runs only when `caf` is ABSENT,
+  the line that used it — inside the branch that runs only when `cafe` is ABSENT,
   which is why the machine that wrote it was green and every CI runner was not.
   There is now a check that every tally-shaped command in that file names a
   defined function, and it is STATIC because the dynamic answer cannot exist: a
@@ -1254,13 +1254,13 @@ All notable changes to parlor are recorded here. The format follows
   app: App Router shell"), which YAML reads as a nested mapping, and the document
   stops there:
 
-      $ caf dev --dry-run
-      caf: caf dev: INVALID cafaye.yml: invalid YAML: [21:14] mapping value is
+      $ cafe dev --dry-run
+      cafe: cafe dev: INVALID cafaye.yml: invalid YAML: [21:14] mapping value is
       not allowed in this context
 
   In a template this is worse than in a service. The whole point of the template
   is that the next repository starts from something that works, and this one
-  shipped a manifest `caf dev`, `caf contract`, `caf deploy` and `caf env` all
+  shipped a manifest `cafe dev`, `cafe contract`, `cafe deploy` and `cafe env` all
   refused to open.
 
   It survived because **nothing in CI parses the manifest as YAML**. Every check
@@ -1552,7 +1552,7 @@ All notable changes to parlor are recorded here. The format follows
 
   Added because this is the **third repository in this batch** where a floor and
   a second copy of that floor drifted apart. In `billing` the copy sat inside a
-  case that reported a green while proving nothing. In `caf` the merge itself
+  case that reported a green while proving nothing. In `cafe` the merge itself
   made the floor wrong, and correcting it turned the self-test's stand-in red
   because the stand-in carried its own `432`. Here the copy is in five `printf`
   fixtures and one `sed` edit, and every failure mode is loud rather than
