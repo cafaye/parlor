@@ -455,7 +455,7 @@ dist/server/index.mjs                                       705.09 kB │ gzip: 
 
 ✓ built in 377ms
 ==> tests/validate-ci.sh --self-test
-PASS  cafaye.yml is a document caf can open (asked caf, not line-matched)
+PASS  cafaye.yml is a document cafe can open (asked cafe, not line-matched)
 PASS  ci.yml exists
 PASS  calls kit's reusable workflow at the documented path
 PASS  no call to the unreachable kit path
@@ -497,7 +497,7 @@ PASS  no NEXT_PUBLIC_ variable reaches the browser (Dockerfile, src/)
 PASS  every node base image in the Dockerfile carries the pin (22.22.2, 2 lines)
 PASS  bin/deploy-config is executable
 PASS  caf.dev.json exists
-PASS  every entry in caf.dev.json is one caf dev can believe
+PASS  every entry in caf.dev.json is one cafe dev can believe
 PASS  every file: dependency's integrity matches the tarball it names (0 to check)
 PASS  shellcheck -S warning clean on tests/validate-ci.sh
 PASS  the provenance verifier refuses a foreign or inherited stamp (12 assertions)

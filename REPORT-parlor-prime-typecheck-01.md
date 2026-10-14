@@ -352,6 +352,6 @@ This is the part a successor should read twice.
     check-self-test     51 ->  52    (measured: "self_test: 52 breakages declared, 52 proven able to fail, 0 unprovable on this machine")
 
 The self-test reported `0 unprovable` because this machine has all three optional
-axes (`caf`, `shellcheck`, `docker` with a live daemon). On a CI runner it reads
+axes (`cafe`, `shellcheck`, `docker` with a live daemon). On a CI runner it reads
 `52 declared, 51 proven, 1 unprovable` — which is the point of flooring the
 declared total, and the reason `52` is the number in `gate.yml`.

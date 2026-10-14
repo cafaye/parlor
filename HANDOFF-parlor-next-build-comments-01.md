@@ -236,6 +236,6 @@ was already declared, above `gate.yml`'s floor of 727. Everything else in the
 diff is a comment line, `bin/prime`'s changed lines included (all `#`).
 
 The gate's `47 passed` and `52 proven` are the *passed* figures on a machine
-where `caf`, `shellcheck` and `docker` are all present. Per `AGENTS.md` those
+where `cafe`, `shellcheck` and `docker` are all present. Per `AGENTS.md` those
 two numbers are machine-dependent; the declared totals are what mean the same
 thing everywhere.

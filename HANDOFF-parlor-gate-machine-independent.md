@@ -12,7 +12,7 @@ named here rather than left as a green tick nobody can vouch for.
 |---|---|---|
 | tally line | `46 passed, 0 failed, 0 skipped` | `47 checks declared, 47 passed, 0 failed, 0 skipped` |
 | self-test line | `self_test: 50 breakages, every check proven able to fail` | `self_test: 51 breakages declared, 51 proven able to fail, 0 unprovable on this machine` |
-| environment handling | a skip counted as neither | `breakage_axis` + `axis_available` over `caf`, `shellcheck`, `docker`; an absent axis prints `UNPROVABLE` and is counted separately |
+| environment handling | a skip counted as neither | `breakage_axis` + `axis_available` over `cafe`, `shellcheck`, `docker`; an absent axis prints `UNPROVABLE` and is counted separately |
 | regression check for the `skip` typo | none | `every tally helper this file calls is a defined function`, plus the breakage `a-tally-helper-that-is-not-a-function` |
 
 **`gate.yml` (the declaration).** Only the two affected proofs; nothing
@@ -31,10 +31,10 @@ escape in either, both `$`-anchored or anchored hard enough that the earlier
 
 | environment | checks tally | self-test | `--self-test` exit |
 |---|---|---|---|
-| `caf` + `shellcheck` + `docker` | `47 checks declared, 47 passed, 0 failed, 0 skipped` | `51 declared, 51 proven, 0 unprovable` | 0 |
-| no `caf` | `47 checks declared, 46 passed, 0 failed, 1 skipped` | `51 declared, 50 proven, 1 unprovable (named above)` | 0 |
-| no `caf`, no `docker` | `47 checks declared, 45 passed, 0 failed, 2 skipped` | `51 declared, 50 proven, 1 unprovable` | 0 |
-| no `caf`, no `docker`, no `shellcheck` | `47 checks declared, 44 passed, 0 failed, 3 skipped` | `51 declared, 50 proven, 1 unprovable` | 0 |
+| `cafe` + `shellcheck` + `docker` | `47 checks declared, 47 passed, 0 failed, 0 skipped` | `51 declared, 51 proven, 0 unprovable` | 0 |
+| no `cafe` | `47 checks declared, 46 passed, 0 failed, 1 skipped` | `51 declared, 50 proven, 1 unprovable (named above)` | 0 |
+| no `cafe`, no `docker` | `47 checks declared, 45 passed, 0 failed, 2 skipped` | `51 declared, 50 proven, 1 unprovable` | 0 |
+| no `cafe`, no `docker`, no `shellcheck` | `47 checks declared, 44 passed, 0 failed, 3 skipped` | `51 declared, 50 proven, 1 unprovable` | 0 |
 
 **47 on all four. That is the whole claim.**
 
@@ -42,8 +42,8 @@ escape in either, both `$`-anchored or anchored hard enough that the earlier
 phases, running the real `bin/prime` end to end:
 
 ```
-gate-check --prove                    (caf on PATH)   exit 0, 0 failures
-gate-check --prove                    (caf off PATH)  exit 0, 0 failures
+gate-check --prove                    (cafe on PATH)   exit 0, 0 failures
+gate-check --prove                    (cafe off PATH)  exit 0, 0 failures
 ```
 
 The two `gate.requirement-unproven` warnings each run are the documented,
@@ -57,7 +57,7 @@ deleted thing differing.
 1. **One check deleted** (the whole `bin/e2e is executable` block, out of
    `tests/validate-ci.sh`). The real gate tally on that tree reads
    `46 checks declared, 45 passed, 0 failed, 1 skipped` — and note that `45
-   passed` is *also* what the intact tree reads on a caf-less machine, which is
+   passed` is *also* what the intact tree reads on a cafe-less machine, which is
    precisely the collision the old floor could not see past.
 
    ```
@@ -80,7 +80,7 @@ deleted thing differing.
 - **Neither floor was lowered.** `46 → 45` and `50 → 49` are the edits that buy
   a green CI and they are a floor that can no longer notice a check going
   missing. `gate.yml`'s own rule is "recorded here rather than quietly absorbed".
-- **`manifest_parses` still asks `caf` and still refuses to fall back.** The
+- **`manifest_parses` still asks `cafe` and still refuses to fall back.** The
   header at `tests/validate-ci.sh:169` is right about why: a hand-rolled YAML
   parse answers "is this valid YAML", not "can the consumer read this".
 - **The unprovable breakage is not skipped and not passed.** It is printed on its

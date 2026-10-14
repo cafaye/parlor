@@ -427,7 +427,7 @@ in the repository. The format, the checker and the reasoning are `core`'s —
   that is load-bearing rather than a phrasing.** `ci-shape-checks` reads the
   first number on `48 checks declared, …` — the sum of passed, failed and
   skipped — and `check-self-test` reads `self_test: 54 breakages declared, …`.
-  Three checks in `tests/validate-ci.sh` are gated on `caf`, `shellcheck` and
+  Three checks in `tests/validate-ci.sh` are gated on `cafe`, `shellcheck` and
   `docker`, none of which this repository requires, and each prints SKIP rather
   than PASS when the tool is absent. A floor on the PASSED count is therefore a
   measurement of one fully-loaded machine, it is red on every machine that is
@@ -439,7 +439,7 @@ in the repository. The format, the checker and the reasoning are `core`'s —
   total was 46). Never lower these two floors to accommodate a
   missing tool; the sum is the number that means the same thing everywhere.
 - **A self-test breakage declares the ENVIRONMENT AXIS it needs.** `breakage_axis`
-  in `tests/validate-ci.sh` maps a breakage name to `caf`, `shellcheck`, `docker`
+  in `tests/validate-ci.sh` maps a breakage name to `cafe`, `shellcheck`, `docker`
   or `-`, and `axis_available` mirrors the gate's own condition for that tool. A
   breakage whose axis is absent is printed as `UNPROVABLE`, counted separately,
   and **never counted as proven** — it is in the declared total the floor reads,

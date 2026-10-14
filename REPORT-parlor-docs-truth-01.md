@@ -20,7 +20,7 @@ faebf96  README/AGENTS: the numbers both documents quote about the gate are year
 ## The gate
 
 `bash tests/validate-ci.sh` — **47 checks declared, 47 passed, 0 failed,
-0 skipped** on this machine (it has `caf`, `shellcheck` and a reachable docker
+0 skipped** on this machine (it has `cafe`, `shellcheck` and a reachable docker
 daemon, so nothing printed SKIP).
 
 `./bin/prime` — **exit 0**, once, at the end. Steps and their results:
@@ -59,9 +59,9 @@ run by hand.
    end" → ordinary React on TanStack Start + Vite.
 3. README "`npm run dev` on its own starts a Next.js server" → `vite dev`. Same
    claim in the command table: "`npm run dev  # Next.js alone`".
-4. README's `caf.dev.json` note: "`caf dev` cannot tell that a **Next.js app**
+4. README's `caf.dev.json` note: "`cafe dev` cannot tell that a **Next.js app**
    serves HTTP". The argument is unchanged and still true — `mise.toml`'s
-   `[tasks.stack]` runs `caf dev -registry caf.dev.json -port 3000` and this
+   `[tasks.stack]` runs `cafe dev -registry caf.dev.json -port 3000` and this
    repository declares no `exposes.api`.
 
 **The routing model — AGENTS.md's, because AGENTS.md is what every agent reads.**
@@ -215,7 +215,7 @@ run by hand.
 | `/healthz` → `{"status":"ok"}`, `/readyz` → `{"status":"ok","deps":"none"}`, both `no-store` | `src/app/healthz/route.ts`, `src/app/readyz/route.ts` |
 | `formatMoney` reads the currency exponent from `Intl`, and is the only division | `src/lib/money.ts` lines 57–77 |
 | identity is the one service with no `healthcheck:` and a `FINDING` in its own block | `e2e/docker-compose.yml` line 253 |
-| `mise run stack` = `caf dev -registry caf.dev.json -port 3000`; `mise run deploy:config` = `./bin/deploy-config` | `mise.toml` lines 34, 70 |
+| `mise run stack` = `cafe dev -registry caf.dev.json -port 3000`; `mise run deploy:config` = `./bin/deploy-config` | `mise.toml` lines 34, 70 |
 | `gate.yml`'s `miseTask: prime` resolves to `./bin/prime` | `gate.yml` line 34 + `mise.toml` `[tasks.prime]` |
 | AGENTS.md's `breakage_axis` / `axis_available` exist and mirror the gate's own conditions | `tests/validate-ci.sh` lines 1484–1513 |
 | `docs/design-system.md` has **no** false present-tense claim | read in full: no framework names at all; the four measured decisions, the component contracts, the four migration recipes and the "deliberately not here" list all line up with `src/components/ui/` |
