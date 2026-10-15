@@ -61,9 +61,18 @@ service:
 # kit's /up healthcheck was. The services the fleet exposes (gateway,
 # parlor) turn the knob on in their values commit; identity and
 # courier stay internal. **parlor's values commit turns it on**: the
-# host is `app.cafaye.com`, the host the fleet's own fixtures name
+# hosts are `app.cafaye.com` (the product), `cafaye.com` (apex) and
+# `www.cafaye.com` — the host the fleet's own fixtures name
 # (`billing/test/fixtures/stripe/checkout.session.completed*.json`
-# carries `https://app.cafaye.com/welcome`).
+# carries `https://app.cafaye.com/welcome`) plus the apex and www
+# that serve the marketing landing and the `/box/install` front door.
+# That front door is `curl -fsSL https://cafaye.com/box/install | bash`
+# — every doc, the `/box` page and `cafe box init` print it — and it
+# must never 301 away again. The apex A records previously pointed at
+# an old Hetzner host (now manifold-studio.net, expired cert) rather
+# than Contabo where the product runs; fixing DNS alone is not enough
+# — Contabo's Ingress must accept those hosts or Traefik 404s. See
+# fix/apex-hosts.
 #
 # The edge is Traefik, k3s's default ingress controller, with
 # cert-manager in front of it (DEPLOYMENT.md:28 — "Ingress + TLS |
@@ -76,6 +85,18 @@ service:
 ingress:
   enabled: true
   className: traefik
+  hosts:
+    - app.cafaye.com
+    - cafaye.com
+    - www.cafaye.com
+  # `host` (singular) is the legacy spelling — kept for back-compat so
+  # an existing values file with `host: app.cafaye.com` and no `hosts`
+  # still renders a single-host Ingress. When `hosts` is non-empty it
+  # takes precedence and `host` is ignored; the template falls back to
+  # `host` only when `hosts` is absent or empty, then fails if both are
+  # empty. New deploys should set `hosts`; `host` remains as a
+  # deprecated alias and will be removed when no tracked values file
+  # uses it.
   host: app.cafaye.com
   clusterIssuer: letsencrypt-prod
   tls: true
