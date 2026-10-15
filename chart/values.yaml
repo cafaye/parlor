@@ -21,6 +21,35 @@
 image:
   repository: ghcr.io/cafaye/parlor
   tag: "0.1.0"
+  # The digest of the image this chart names — the ONE image name that cannot
+  # move, and the half a tag-pinned chart was missing.
+  #
+  # WHAT WRITES IT: the publish workflow, on a `push: true` run, from the image
+  # job's build output (`needs.image.outputs.digest`), handed down by
+  # `publish.reusable.yml` — the only party that knows both the image and the
+  # chart — and written into this file by `chart.reusable.yml`'s `pin the image
+  # by digest` step BEFORE `helm package`. It is derived, never typed, and the
+  # step REFUSES anything that is not `sha256:<64 lowercase hex>` so a digest a
+  # human pasted cannot become a chart.
+  #
+  # WHY IT EXISTS: the tag above is MUTABLE — the image job republishes `0.1.0`
+  # on every push to master — so a chart that pinned the image by tag rendered a
+  # Deployment that was textually IDENTICAL before and after a build. Argo's
+  # diff reported `Synced`, rolled nothing, and `imagePullPolicy: IfNotPresent`
+  # re-served the node's stale copy on every restart. Measured
+  # (`roll-c5-image-digest`, gateway): the registry's `ghcr.io/cafaye/gateway:
+  # 0.1.0` held `sha256:c264…37165` while the node ran `sha256:8e60…e79b`, six
+  # hours after the fix was merged and published. A DIGEST cannot move, so a new
+  # build is a textual diff Argo ROLLS — the whole point of this field.
+  #
+  # THE TEMPLATE renders `repository@digest` when this is set and falls back to
+  # `repository:tag` when it is empty, so a chart that has not adopted the field
+  # still renders. THIS COMMITTED VALUE IS WHAT A FRESH CLONE RENDERS: the
+  # publish step REPLACES it on every `push: true` run, and packages the chart
+  # as committed when the digest input is empty (a `push: false` run, or a chart
+  # the composer could not hand a digest). It is the digest of this repository's
+  # current published image, read from the registry.
+  digest: "sha256:fa7fa7958ad35d228a6e387d7e8bb5eb9b69a14e4d15d457c9a6fb92bdf4945f"
   pullPolicy: IfNotPresent
 
 # The read-only pull secret on the box, created once, out of band:

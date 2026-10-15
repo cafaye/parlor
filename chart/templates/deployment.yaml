@@ -30,7 +30,29 @@ spec:
         - name: {{ .Values.imagePullSecrets }}
       containers:
         - name: parlor
+          # THE IMAGE NAME THAT REACHES THE POD. `image.digest` is written by
+          # the publish workflow from the image job's build output (see the
+          # comment above it in values.yaml) and is the ONE name that cannot
+          # move: the tag is republished on every master push, so a chart that
+          # pinned the tag alone rendered textually IDENTICAL before and after
+          # a build, Argo diffed `Synced`, and the box kept the old image. A
+          # digest is rendered when set; an EMPTY digest falls back to
+          # `repository:tag` so a chart that has not adopted the field — and a
+          # `push: false` run, which pins nothing — renders exactly as before.
+          # A non-empty value that is not `sha256:<64 lowercase hex>` is
+          # REFUSED rather than rendered: `repository@nonsense` is a pin that
+          # fails at image-pull with nothing naming this template, and
+          # silently dropping back to the mutable tag is the measured defect
+          # wearing a digest's clothes. The publish step refuses the same
+          # shape before `helm package`, so this is a second, later guard.
+          {{- if .Values.image.digest }}
+          {{- if not (regexMatch "^sha256:[0-9a-f]{64}$" .Values.image.digest) }}
+          {{- fail (printf "caf gen chart: image.digest is %q, not sha256:<64 lowercase hex> — the publish workflow derives this from the image job's build output and refuses a malformed one, so a value here is a hand-edit. A chart that renders repository@nonsense looks pinned and fails at image-pull with nothing naming this template; a silent fallback to the mutable tag is the stale-image defect this field exists to close. Unset image.digest to render repository:tag." .Values.image.digest) }}
+          {{- end }}
+          image: "{{ .Values.image.repository }}@{{ .Values.image.digest }}"
+          {{- else }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          {{- end }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: http

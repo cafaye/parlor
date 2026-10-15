@@ -804,10 +804,26 @@ gate:
     # single-host Ingress — plus the three host/TLS count checks. The
     # remaining +6 were already on the tree before this packet and the floor
     # had not caught up; this commit reconciles to the measured green.
-    # Measured on this tree: `npm test` -> `Tests  1106 passed (1106)`, 48 files.
+    # IT IS 1109 BY THE NEXT ACCOUNT. 1106 -> 1109, a +3 in
+    # `src/lib/chart.test.ts`, the digest-pin packet: the image name reaches the
+    # pod by DIGEST (`repository@sha256:<64 hex>` when `image.digest` is set),
+    # the EMPTY-digest back-compat render (`repository:tag`), and the REFUSAL of
+    # a non-empty value that is not `sha256:<64 lowercase hex>` (a template
+    # `fail`, the template-side version of kit's non-zero exit). The three are
+    # here because the failure each guards is invisible in a rendered string:
+    # the tag is republished on every master push, so a tag-pinned chart renders
+    # a Deployment textually IDENTICAL before and after a build — Argo diffs
+    # `Synced`, rolls nothing, and the box keeps the old image while the
+    # registry holds the new one. That is the measured defect
+    # (`roll-c5-image-digest`, gateway) this packet closes, and the digest is
+    # the one image name that cannot move. The digest-set and malformed cases
+    # were shown red before green by breaking the template (see the packet
+    # report); blanking the committed digest turns the tag-fallback assertion
+    # red.
+    # Measured on this tree: `npm test` -> `Tests  1109 passed (1109)`, 48 files.
     - id: suite
       match: '^[ ]*Tests[ ]+([0-9]+)[ ]+passed(?![ ]*\|)'
-      minimum: 1106
+      minimum: 1109
     # The tally `tests/validate-ci.sh` prints, which is the second half of this
     # gate: the checks that the tree still has the shape CI assumes — one
     # runtime pin, `npm ci` and not `npm install`, the gate command, the
