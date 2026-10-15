@@ -60,19 +60,25 @@ service:
 # Ingress with no host is a silent misroute — the class of defect
 # kit's /up healthcheck was. The services the fleet exposes (gateway,
 # parlor) turn the knob on in their values commit; identity and
-# courier stay internal. **parlor's values commit turns it on**: the
-# hosts are `app.cafaye.com` (the product), `cafaye.com` (apex) and
-# `www.cafaye.com` — the host the fleet's own fixtures name
-# (`billing/test/fixtures/stripe/checkout.session.completed*.json`
-# carries `https://app.cafaye.com/welcome`) plus the apex and www
-# that serve the marketing landing and the `/box/install` front door.
-# That front door is `curl -fsSL https://cafaye.com/box/install | bash`
-# — every doc, the `/box` page and `cafe box init` print it — and it
-# must never 301 away again. The apex A records previously pointed at
-# an old Hetzner host (now manifold-studio.net, expired cert) rather
-# than Contabo where the product runs; fixing DNS alone is not enough
-# — Contabo's Ingress must accept those hosts or Traefik 404s. See
-# fix/apex-hosts.
+# courier stay internal. **parlor's values commit turns it on**:
+# parlor is the app shell at `app.cafaye.com` — the host the fleet's
+# own fixtures name (`billing/test/fixtures/stripe/checkout.session.
+# completed*.json` carries `https://app.cafaye.com/welcome`) — and
+# that is its ONE host.
+#
+# The apex (`cafaye.com`) and `www.cafaye.com` belong to
+# `cafaye/website`: the marketing landing, `/box`, and the
+# `/box/install` front door (`curl -fsSL https://cafaye.com/box/
+# install | bash`). The website deploys to the cluster with exactly
+# those two hosts and certs already issued. Two Ingresses claiming
+# one host is a silent misroute — Traefik picks one and nobody knows
+# which — so parlor must not claim them. Parlor held them briefly in
+# `28b3156` as a stopgap while the apex had no server; that stopgap
+# is now reverted.
+#
+# The template's multi-host shape (`hosts` list, one TLS secret per
+# host) stays: it is correct, and the website uses the same shape.
+# Only the values change.
 #
 # The edge is Traefik, k3s's default ingress controller, with
 # cert-manager in front of it (DEPLOYMENT.md:28 — "Ingress + TLS |
@@ -87,8 +93,6 @@ ingress:
   className: traefik
   hosts:
     - app.cafaye.com
-    - cafaye.com
-    - www.cafaye.com
   # `host` (singular) is the legacy spelling — kept for back-compat so
   # an existing values file with `host: app.cafaye.com` and no `hosts`
   # still renders a single-host Ingress. When `hosts` is non-empty it

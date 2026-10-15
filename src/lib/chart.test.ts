@@ -156,28 +156,29 @@ describe("helm template against the committed values", () => {
     const ingress = rendered.slice(rendered.indexOf("kind: Ingress"));
     const document = ingress.slice(0, ingress.indexOf("---", 5));
 
-    // The hosts the fleet's own fixtures name plus the apex+www that serve
-    // the marketing landing and the /box/install front door:
-    // billing/test/fixtures/stripe/checkout.session.completed*.json
-    // carries `https://app.cafaye.com/welcome`; cafaye.com and
-    // www.cafaye.com carry the front door `curl | bash` lands on.
+    // Parlor's one host is app.cafaye.com — the host the fleet's own
+    // fixtures name (billing/test/fixtures/stripe/
+    // checkout.session.completed*.json carries
+    // `https://app.cafaye.com/welcome`). The apex (cafaye.com) and www
+    // belong to cafaye/website, which deploys with exactly those two
+    // hosts; two Ingresses claiming one host is a silent misroute, so
+    // parlor claims only its own.
     expect(document).toContain("host: app.cafaye.com");
-    expect(document).toContain("host: cafaye.com");
-    expect(document).toContain("host: www.cafaye.com");
+    expect(document).not.toContain("host: cafaye.com");
+    expect(document).not.toContain("host: www.cafaye.com");
     expect(document).toContain("ingressClassName: traefik");
     expect(document).toContain(
       "cert-manager.io/cluster-issuer: letsencrypt-prod",
     );
-    // `spec.tls` — one entry per host, one secret per host (Traefik pattern),
-    // without it there is no TLS: a secret nothing writes.
+    // `spec.tls` — one entry, one secret (Traefik pattern); without it
+    // there is no TLS: a secret nothing writes.
     expect(document).toContain("tls:");
     expect(document).toContain("secretName: parlor-tls-app-cafaye-com");
-    expect(document).toContain("secretName: parlor-tls-cafaye-com");
-    expect(document).toContain("secretName: parlor-tls-www-cafaye-com");
-    // Exactly three hosts and three TLS entries — a host dropped from the
-    // list is a front door that 404s at Traefik with no matching route.
-    expect((document.match(/secretName: parlor-tls-/g) ?? []).length).toBe(3);
-    expect((document.match(/- host: /g) ?? []).length).toBe(3);
+    // Exactly one host and one TLS entry — a second host claimed here is
+    // a host the website already serves, and Traefik picks one Ingress
+    // with nobody knowing which.
+    expect((document.match(/secretName: parlor-tls-/g) ?? []).length).toBe(1);
+    expect((document.match(/- host: /g) ?? []).length).toBe(1);
   });
 
   it("RED CONTROL: ingress.enabled=false emits no Ingress at all", () => {
