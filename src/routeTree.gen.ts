@@ -23,6 +23,10 @@ import { Route as TermsRouteImport } from './routes/terms'
 import { Route as VerifyEmailRouteImport } from './routes/verify-email'
 import { Route as AccountsIndexRouteImport } from './routes/accounts/index'
 import { Route as AccountsAccountIdRouteImport } from './routes/accounts/$accountId'
+import { Route as BillingChargesRouteImport } from './routes/billing/charges'
+import { Route as BillingCheckoutRouteImport } from './routes/billing/checkout'
+import { Route as BillingPlansRouteImport } from './routes/billing/plans'
+import { Route as BillingSubscriptionsRouteImport } from './routes/billing/subscriptions'
 import { Route as InvitationsTokenRouteImport } from './routes/invitations/$token'
 import { Route as V1SplatRouteImport } from './routes/v1/$'
 import { Route as VerifyEmailIndexRouteImport } from './routes/verify-email.index'
@@ -99,6 +103,26 @@ const AccountsAccountIdRoute = AccountsAccountIdRouteImport.update({
   path: '/accounts/$accountId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BillingChargesRoute = BillingChargesRouteImport.update({
+  id: '/billing/charges',
+  path: '/billing/charges',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BillingCheckoutRoute = BillingCheckoutRouteImport.update({
+  id: '/billing/checkout',
+  path: '/billing/checkout',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BillingPlansRoute = BillingPlansRouteImport.update({
+  id: '/billing/plans',
+  path: '/billing/plans',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BillingSubscriptionsRoute = BillingSubscriptionsRouteImport.update({
+  id: '/billing/subscriptions',
+  path: '/billing/subscriptions',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const InvitationsTokenRoute = InvitationsTokenRouteImport.update({
   id: '/invitations/$token',
   path: '/invitations/$token',
@@ -140,6 +164,10 @@ export interface FileRoutesByFullPath {
   '/terms': typeof TermsRoute
   '/verify-email': typeof VerifyEmailRouteWithChildren
   '/accounts/$accountId': typeof AccountsAccountIdRoute
+  '/billing/charges': typeof BillingChargesRoute
+  '/billing/checkout': typeof BillingCheckoutRoute
+  '/billing/plans': typeof BillingPlansRoute
+  '/billing/subscriptions': typeof BillingSubscriptionsRoute
   '/invitations/$token': typeof InvitationsTokenRoute
   '/v1/$': typeof V1SplatRoute
   '/verify-email/confirm': typeof VerifyEmailConfirmRoute
@@ -160,6 +188,10 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRoute
   '/terms': typeof TermsRoute
   '/accounts/$accountId': typeof AccountsAccountIdRoute
+  '/billing/charges': typeof BillingChargesRoute
+  '/billing/checkout': typeof BillingCheckoutRoute
+  '/billing/plans': typeof BillingPlansRoute
+  '/billing/subscriptions': typeof BillingSubscriptionsRoute
   '/invitations/$token': typeof InvitationsTokenRoute
   '/v1/$': typeof V1SplatRoute
   '/verify-email/confirm': typeof VerifyEmailConfirmRoute
@@ -182,6 +214,10 @@ export interface FileRoutesById {
   '/terms': typeof TermsRoute
   '/verify-email': typeof VerifyEmailRouteWithChildren
   '/accounts/$accountId': typeof AccountsAccountIdRoute
+  '/billing/charges': typeof BillingChargesRoute
+  '/billing/checkout': typeof BillingCheckoutRoute
+  '/billing/plans': typeof BillingPlansRoute
+  '/billing/subscriptions': typeof BillingSubscriptionsRoute
   '/invitations/$token': typeof InvitationsTokenRoute
   '/v1/$': typeof V1SplatRoute
   '/verify-email/confirm': typeof VerifyEmailConfirmRoute
@@ -205,6 +241,10 @@ export interface FileRouteTypes {
     | '/terms'
     | '/verify-email'
     | '/accounts/$accountId'
+    | '/billing/charges'
+    | '/billing/checkout'
+    | '/billing/plans'
+    | '/billing/subscriptions'
     | '/invitations/$token'
     | '/v1/$'
     | '/verify-email/confirm'
@@ -225,6 +265,10 @@ export interface FileRouteTypes {
     | '/settings'
     | '/terms'
     | '/accounts/$accountId'
+    | '/billing/charges'
+    | '/billing/checkout'
+    | '/billing/plans'
+    | '/billing/subscriptions'
     | '/invitations/$token'
     | '/v1/$'
     | '/verify-email/confirm'
@@ -246,6 +290,10 @@ export interface FileRouteTypes {
     | '/terms'
     | '/verify-email'
     | '/accounts/$accountId'
+    | '/billing/charges'
+    | '/billing/checkout'
+    | '/billing/plans'
+    | '/billing/subscriptions'
     | '/invitations/$token'
     | '/v1/$'
     | '/verify-email/confirm'
@@ -268,6 +316,10 @@ export interface RootRouteChildren {
   TermsRoute: typeof TermsRoute
   VerifyEmailRoute: typeof VerifyEmailRouteWithChildren
   AccountsAccountIdRoute: typeof AccountsAccountIdRoute
+  BillingChargesRoute: typeof BillingChargesRoute
+  BillingCheckoutRoute: typeof BillingCheckoutRoute
+  BillingPlansRoute: typeof BillingPlansRoute
+  BillingSubscriptionsRoute: typeof BillingSubscriptionsRoute
   InvitationsTokenRoute: typeof InvitationsTokenRoute
   V1SplatRoute: typeof V1SplatRoute
   AccountsIndexRoute: typeof AccountsIndexRoute
@@ -374,6 +426,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AccountsAccountIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/billing/charges': {
+      id: '/billing/charges'
+      path: '/billing/charges'
+      fullPath: '/billing/charges'
+      preLoaderRoute: typeof BillingChargesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/billing/checkout': {
+      id: '/billing/checkout'
+      path: '/billing/checkout'
+      fullPath: '/billing/checkout'
+      preLoaderRoute: typeof BillingCheckoutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/billing/plans': {
+      id: '/billing/plans'
+      path: '/billing/plans'
+      fullPath: '/billing/plans'
+      preLoaderRoute: typeof BillingPlansRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/billing/subscriptions': {
+      id: '/billing/subscriptions'
+      path: '/billing/subscriptions'
+      fullPath: '/billing/subscriptions'
+      preLoaderRoute: typeof BillingSubscriptionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/invitations/$token': {
       id: '/invitations/$token'
       path: '/invitations/$token'
@@ -440,6 +520,10 @@ const rootRouteChildren: RootRouteChildren = {
   TermsRoute: TermsRoute,
   VerifyEmailRoute: VerifyEmailRouteWithChildren,
   AccountsAccountIdRoute: AccountsAccountIdRoute,
+  BillingChargesRoute: BillingChargesRoute,
+  BillingCheckoutRoute: BillingCheckoutRoute,
+  BillingPlansRoute: BillingPlansRoute,
+  BillingSubscriptionsRoute: BillingSubscriptionsRoute,
   InvitationsTokenRoute: InvitationsTokenRoute,
   V1SplatRoute: V1SplatRoute,
   AccountsIndexRoute: AccountsIndexRoute,

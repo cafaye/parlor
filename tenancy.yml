@@ -55,8 +55,10 @@
 #
 # The declared key is `account_id` — the fleet's tenancy vocabulary and the
 # claim and column name Identity's rows are actually scoped by. It appears on
-# **19 lines** across `src` and `e2e`. Ten of them the scanner reads and are
-# vouched for below; the other nine live under
+# **25 lines** across `src` and `e2e`. Sixteen of them the scanner reads and
+# are vouched for below — twelve identity's and four from the billing client,
+# which transcribes another service's account column the same way; the other
+# nine live under
 # `src/app/invitations/[token]/`, a path the schema cannot express, and are
 # named individually in THE SOURCES section. Every one of the 19 is one of
 # four non-row shapes:
@@ -241,6 +243,7 @@ scope:
   sources:
     - src/app/accounts
     - src/app/admin
+    - src/app/billing
     - src/app/forgot-password
     - src/app/healthz
     - src/app/login
@@ -293,6 +296,32 @@ scope:
     - file: src/lib/identity.test.ts
       line: 1361
       reason: the request-level anInvitation fixture, asserting invitationResponse including the one-time token that nothing here may store
+    # --- the billing wire shapes, and the fixtures that copy them -------------
+    # The same two non-row shapes as identity's, from the other client: a field
+    # declaration transcribed from billing's openapi, and a fixture that copies
+    # it. `Subscription.account_id` and `Charge.account_id` exist because
+    # billing's contract puts the account on both rows — billing is the service
+    # that scopes by it, and this client never reads one off a response to
+    # decide anything. The two guard lines are the checks that refuse a
+    # malformed one, which is the same transcription being checked.
+    - file: src/lib/billing.ts
+      line: 133
+      reason: the account_id field of the Subscription type, transcribed from components.schemas.Subscription in billing's openapi/v1.yaml — a wire shape, not a predicate
+    - file: src/lib/billing.ts
+      line: 189
+      reason: the account_id field of the Charge type, transcribed from components.schemas.Charge in billing's openapi/v1.yaml — a wire shape, not a predicate
+    - file: src/lib/billing.ts
+      line: 559
+      reason: the isSubscription guard's field check — the guard refuses a response whose account_id is not a string, which is checking the transcription rather than acting on it
+    - file: src/lib/billing.ts
+      line: 608
+      reason: the isCharge guard's field check — the same check on the Charge transcription
+    - file: src/test/support/billing.ts
+      line: 121
+      reason: a test fixture — aSubscription copies billing's Subscription contract field for field, so a screen is asserted against what the service writes
+    - file: src/test/support/billing.ts
+      line: 179
+      reason: a test fixture — aCharge copies billing's Charge contract; the account on it is data a screen renders, never a predicate
     # --- the screen that turns the field into a route parameter -------------
     # `src/app/invitations/[token]/invitation-screen.tsx:197` and the eight
     # scripted-client stubs in `invitation-screen.test.tsx` (83, 99, 124, 136,

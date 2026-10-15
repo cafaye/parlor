@@ -88,6 +88,7 @@ export function aPlan(overrides: Partial<Plan> = {}): Plan {
     price: { amount_minor: 1900, currency: "USD" },
     interval: "month",
     trial_days: 14,
+    entitlements: { features: ["Unlimited projects"], limits: { projects: 10 } },
     active: true,
     created_at: "2026-09-01T10:00:00Z",
     updated_at: "2026-09-01T10:00:00Z",

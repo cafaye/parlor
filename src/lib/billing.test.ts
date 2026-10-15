@@ -62,6 +62,7 @@ const aPlan = (overrides: Record<string, unknown> = {}) => ({
   price: { amount_minor: 1900, currency: "USD" },
   interval: "month",
   trial_days: 14,
+  entitlements: { features: [], limits: {} },
   active: true,
   created_at: "2026-09-01T10:00:00Z",
   updated_at: "2026-09-01T10:00:00Z",

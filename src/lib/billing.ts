@@ -38,11 +38,18 @@ import { isMoney, type Money } from "@/lib/money";
 export type Interval = "month" | "year" | "one_time";
 
 /**
+ * What a plan grants: an object with at most two members, so a reader never has
+ * to ask whether a key it does not know is one it should honour. A limit is a
+ * count, never an amount.
+ */
+export type PlanEntitlements = { features: string[]; limits: Record<string, number> };
+
+/**
  * A plan: a catalogue row.
  *
- * `processor_product_id` and `processor_price_id` are always null in v0 — "this
- * build makes no Stripe call" — and are kept as nullable rather than dropped so
- * the type still matches when that changes.
+ * `processor_product_id` and `processor_price_id` are null until a Stripe
+ * price exists for the plan — a plan with none cannot be bought, and a screen
+ * must not offer it.
  */
 export type Plan = {
   id: string;
@@ -53,6 +60,12 @@ export type Plan = {
   price: Money;
   interval: Interval;
   trial_days: number;
+  /**
+   * What buying this plan grants: a closed `{features, limits}` object. It is
+   * required on the wire, so a plan without one is a malformed plan — the guard
+   * says so rather than defaulting it to empty.
+   */
+  entitlements: PlanEntitlements;
   active: boolean;
   created_at: string;
   updated_at: string;
@@ -621,9 +634,23 @@ export function isPlan(value: unknown): value is Plan {
     typeof record.interval === "string" &&
     INTERVALS.includes(record.interval) &&
     typeof record.trial_days === "number" &&
+    isPlanEntitlements(record.entitlements) &&
     typeof record.active === "boolean" &&
     typeof record.created_at === "string" &&
     typeof record.updated_at === "string"
+  );
+}
+
+function isPlanEntitlements(value: unknown): value is PlanEntitlements {
+  const record = asRecord(value);
+  if (!record) return false;
+  if (!Array.isArray(record.features)) return false;
+  const limits = asRecord(record.limits);
+  if (!limits) return false;
+
+  return (
+    record.features.every((entry) => typeof entry === "string") &&
+    Object.values(limits).every((entry) => typeof entry === "number")
   );
 }
 
