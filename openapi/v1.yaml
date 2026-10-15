@@ -900,6 +900,214 @@ paths:
   # forwarder answers these routes with a distinct 503 rather than dialing
   # anything, and the screens branch on that code.
   # -------------------------------------------------------------------------
+  /v1/subscriptions:
+    get:
+      tags: [billing]
+      summary: List subscriptions.
+      description: >-
+        Forwards to billing's `GET /v1/subscriptions`. This account's
+        subscriptions; the service scopes it by the token's account.
+        Cursor-paginated; the response body is billing's contract.
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+        "503":
+          $ref: '#/components/responses/BillingNotConfigured'
+    post:
+      tags: [billing]
+      summary: Start a subscription (production door).
+      description: >-
+        Forwards to billing's `POST /v1/subscriptions`. The 201 is a hosted
+        Checkout session and **no subscription exists yet**: the row arrives
+        when the processor's webhook says one does, so a screen must not
+        report a subscription after this call. The response body is billing's
+        contract.
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+        "503":
+          $ref: '#/components/responses/BillingNotConfigured'
+  /v1/subscriptions/{id}:
+    get:
+      tags: [billing]
+      summary: Read one subscription.
+      description: >-
+        Forwards to billing's `GET /v1/subscriptions/{id}`. Scoped by the
+        token's account; another account's is a 404.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+        "503":
+          $ref: '#/components/responses/BillingNotConfigured'
+  /v1/subscriptions/{id}/cancel:
+    post:
+      tags: [billing]
+      summary: Ask the processor to cancel.
+      description: >-
+        Forwards to billing's `POST /v1/subscriptions/{id}/cancel`. The
+        subscription is not canceled by the response — its status changes
+        when the processor's webhook says it did.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+        "503":
+          $ref: '#/components/responses/BillingNotConfigured'
+  /v1/subscriptions/{id}/change_plan:
+    post:
+      tags: [billing]
+      summary: Ask the processor to move the subscription to another plan.
+      description: >-
+        Forwards to billing's `POST /v1/subscriptions/{id}/change_plan`. The
+        response carries the timing decision — an upgrade takes effect now,
+        a downgrade at the renewal — and not a moved row.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+        "503":
+          $ref: '#/components/responses/BillingNotConfigured'
+  /v1/subscriptions/{id}/entitlements:
+    get:
+      tags: [billing]
+      summary: What this subscription grants.
+      description: >-
+        Forwards to billing's `GET /v1/subscriptions/{id}/entitlements`. A
+        canceled subscription grants nothing.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+        "503":
+          $ref: '#/components/responses/BillingNotConfigured'
+  /v1/subscriptions/{id}/upcoming_invoice:
+    get:
+      tags: [billing]
+      summary: What the next invoice will charge.
+      description: >-
+        Forwards to billing's `GET /v1/subscriptions/{id}/upcoming_invoice`.
+        The processor's own projection, in integer minor units.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+        "503":
+          $ref: '#/components/responses/BillingNotConfigured'
+  /v1/subscriptions/{id}/payment_method:
+    post:
+      tags: [billing]
+      summary: A portal URL for changing a card.
+      description: >-
+        Forwards to billing's `POST /v1/subscriptions/{id}/payment_method`.
+        The answer is the processor's own URL; no payment method is stored
+        by this app or by billing.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+        "503":
+          $ref: '#/components/responses/BillingNotConfigured'
+  /v1/checkouts:
+    post:
+      tags: [billing]
+      summary: Start a subscription (development door).
+      description: >-
+        Forwards to billing's `POST /v1/checkouts`. Completes against billing's
+        fake processor, so the reply IS a subscription — unlike
+        `POST /v1/subscriptions`. Answers 404 in a deployment billing has not
+        enabled it in, which is why this door is behind its own client method
+        and not the production one's.
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+        "503":
+          $ref: '#/components/responses/BillingNotConfigured'
+  /v1/charges:
+    get:
+      tags: [billing]
+      summary: List this account's charges.
+      description: >-
+        Forwards to billing's `GET /v1/charges`. This account's money history,
+        newest first, cursor-paginated. The receipt itself is the HTML page at
+        `GET /v1/charges/{id}`, which parlor links to rather than fetches.
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "2XX":
+          $ref: '#/components/responses/UpstreamSuccess'
+        "502":
+          $ref: '#/components/responses/UpstreamUnavailable'
+        "503":
+          $ref: '#/components/responses/BillingNotConfigured'
   /v1/plans:
     get:
       tags: [billing]

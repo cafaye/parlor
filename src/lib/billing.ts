@@ -17,13 +17,13 @@
  * cafaye client surface, it authenticates by signature over the raw body
  * rather than by token, and the contract says it must never grow a token check.
  *
- * There is no `/v1/subscriptions` here or anywhere else in the document. The
- * `info.description` lists subscriptions among the things billing is *for*, and
- * the next sentence scopes this build to "customers, plans, and one Stripe
- * webhook endpoint". So a plan here is a catalogue row — a thing that can be
- * bought, at a price, on a cadence — and nothing on the wire records which plan
- * a customer is on. Any screen that said "you are subscribed to X" would be
- * inventing an endpoint.
+ * The subscription paths are here, as of billing 2.4.0: the production checkout
+ * (`POST /v1/subscriptions`, which returns a Checkout session and writes
+ * nothing — the row arrives on the processor's webhook), the reads, the two
+ * mutations, the upcoming-invoice projection, and the portal URL. `/v1/
+ * webhooks/stripe` is the one path this client deliberately does not speak: it
+ * is not a cafaye client surface and authenticates by signature over the raw
+ * body rather than by token.
  *
  * Like `src/lib/identity.ts`, the transport is a parameter rather than `fetch`,
  * and billing has its own error type because it is a different service with its
@@ -105,6 +105,127 @@ export type Page = {
 export type PlanPage = { data: Plan[]; page: Page };
 export type CustomerPage = { data: Customer[]; page: Page };
 
+/** The subscription statuses this service stores, and the only five. */
+export type SubscriptionStatus = "trialing" | "active" | "past_due" | "canceled" | "unpaid";
+
+/**
+ * One account, on one plan, for one billing period at a time.
+ *
+ * `status` is the processor's statement and nothing else: this service stores
+ * what the processor reports and does not correct it. A subscription does not
+ * have a price of its own — `price` is the plan's.
+ */
+export type Subscription = {
+  id: string;
+  account_id: string;
+  plan_id: string;
+  plan_slug: string;
+  customer_id: string;
+  processor_subscription_id: string;
+  status: SubscriptionStatus;
+  price: Money;
+  current_period_start: string | null;
+  current_period_end: string | null;
+  cancel_at_period_end: boolean;
+  canceled_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SubscriptionPage = { data: Subscription[]; page: Page };
+
+/** What a plan grants, and whether this subscription is granting it. */
+export type Entitlements = {
+  subscription_id: string;
+  plan_id: string;
+  plan_slug: string;
+  status: SubscriptionStatus;
+  granted: boolean;
+  features: string[];
+  limits: Record<string, number>;
+};
+
+/**
+ * The processor's projection of the next invoice.
+ *
+ * Every figure is the processor's own except `tax`, which the service derives
+ * from the two processor totals for display. Nothing here is persisted.
+ */
+export type InvoiceLineItem = {
+  description: string;
+  period: { start: string; end: string };
+  quantity: number;
+  unit_amount: number;
+  amount: number;
+  currency: string;
+};
+
+export type InvoicePreview = {
+  subscription_id: string;
+  period_end: string;
+  currency: string;
+  line_items: InvoiceLineItem[];
+  subtotal: number;
+  tax: number;
+  total: number;
+};
+
+/** What a customer was charged. */
+export type Charge = {
+  id: string;
+  account_id: string;
+  customer_id: string;
+  subscription_id: string | null;
+  processor_charge_id: string;
+  amount: number;
+  currency: string;
+  description: string | null;
+  paid_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ChargePage = { data: Charge[]; page: Page };
+
+/** The body of `POST /v1/subscriptions` and `POST /v1/checkouts`. */
+export type CheckoutRequest = {
+  customer_id: string;
+  plan_id: string;
+  quantity?: number;
+};
+
+/**
+ * The production door's 201: a hosted Checkout session, and no subscription
+ * exists yet — the row arrives when the processor's webhook says one does.
+ */
+export type CheckoutSession = {
+  checkout_session_id: string;
+  checkout_url: string;
+  customer_id: string;
+  plan_id: string;
+};
+
+/** The body of `POST /v1/subscriptions/{id}/cancel`. */
+export type CancelRequest = { at_period_end: boolean };
+
+/** The body of `POST /v1/subscriptions/{id}/change_plan`. */
+export type ChangePlanRequest = { plan_id: string };
+
+/** Whether a plan change takes effect now or at the renewal, and on what terms. */
+export type PlanChangeDecision = {
+  plan_id: string;
+  effective: "immediately" | "period_end";
+  proration: "always_invoice" | "none";
+};
+
+export type SubscriptionWithPlanChange = Subscription & { plan_change: PlanChangeDecision };
+
+/** The body of `POST /v1/subscriptions/{id}/payment_method`. */
+export type PaymentMethodRequest = { return_url: string };
+
+/** The processor's own portal URL, for one visit. */
+export type PaymentMethodUrl = { payment_method_url: string };
+
 /** One `{field, code}` pair out of a 422. */
 export type FieldError = { field: string; code: string };
 
@@ -147,6 +268,30 @@ export type BillingClient = {
    * generated per call.
    */
   createCustomer: (input: CustomerCreate, idempotencyKey?: string) => Promise<Customer>;
+  listSubscriptions: (options?: { cursor?: string; limit?: number }) => Promise<SubscriptionPage>;
+  getSubscription: (id: string) => Promise<Subscription>;
+  getEntitlements: (id: string) => Promise<Entitlements>;
+  getUpcomingInvoice: (id: string) => Promise<InvoicePreview>;
+  /**
+   * The production door. Returns a Checkout session; **no subscription is
+   * created by this request**, so a screen must not say "you are subscribed"
+   * after a 201 — the row arrives on the processor's webhook.
+   */
+  startSubscriptionCheckout: (input: CheckoutRequest, idempotencyKey?: string) => Promise<CheckoutSession>;
+  cancelSubscription: (id: string, input: CancelRequest, idempotencyKey?: string) => Promise<Subscription>;
+  changeSubscriptionPlan: (
+    id: string,
+    input: ChangePlanRequest,
+    idempotencyKey?: string,
+  ) => Promise<SubscriptionWithPlanChange>;
+  /**
+   * The development door. Completes against the fake processor, so the reply
+   * IS a subscription — unlike `startSubscriptionCheckout`. Answers 404 where
+   * the deployment has not enabled it.
+   */
+  completeCheckout: (input: CheckoutRequest, idempotencyKey?: string) => Promise<Subscription>;
+  listCharges: (options?: { cursor?: string; limit?: number }) => Promise<ChargePage>;
+  createPaymentMethodUrl: (id: string, input: PaymentMethodRequest, idempotencyKey?: string) => Promise<PaymentMethodUrl>;
 };
 
 /**
@@ -232,6 +377,38 @@ export function createBillingClient(
         // through its retry is exactly the caller who needs one minted for it.
         // The parameter stays, so a caller retrying a *specific* intent can hold
         // one key across both attempts.
+        headers: { "Idempotency-Key": idempotencyKey ?? newIdempotencyKey() },
+      }),
+    listSubscriptions: (query) => send(transport, `${base}/v1/subscriptions${queryString(query)}`, "GET"),
+    getSubscription: (id) => send(transport, `${base}/v1/subscriptions/${encodeURIComponent(id)}`, "GET"),
+    getEntitlements: (id) =>
+      send(transport, `${base}/v1/subscriptions/${encodeURIComponent(id)}/entitlements`, "GET"),
+    getUpcomingInvoice: (id) =>
+      send(transport, `${base}/v1/subscriptions/${encodeURIComponent(id)}/upcoming_invoice`, "GET"),
+    startSubscriptionCheckout: (input, idempotencyKey) =>
+      send(transport, `${base}/v1/subscriptions`, "POST", {
+        body: input,
+        headers: { "Idempotency-Key": idempotencyKey ?? newIdempotencyKey() },
+      }),
+    cancelSubscription: (id, input, idempotencyKey) =>
+      send(transport, `${base}/v1/subscriptions/${encodeURIComponent(id)}/cancel`, "POST", {
+        body: input,
+        headers: { "Idempotency-Key": idempotencyKey ?? newIdempotencyKey() },
+      }),
+    changeSubscriptionPlan: (id, input, idempotencyKey) =>
+      send(transport, `${base}/v1/subscriptions/${encodeURIComponent(id)}/change_plan`, "POST", {
+        body: input,
+        headers: { "Idempotency-Key": idempotencyKey ?? newIdempotencyKey() },
+      }),
+    completeCheckout: (input, idempotencyKey) =>
+      send(transport, `${base}/v1/checkouts`, "POST", {
+        body: input,
+        headers: { "Idempotency-Key": idempotencyKey ?? newIdempotencyKey() },
+      }),
+    listCharges: (query) => send(transport, `${base}/v1/charges${queryString(query)}`, "GET"),
+    createPaymentMethodUrl: (id, input, idempotencyKey) =>
+      send(transport, `${base}/v1/subscriptions/${encodeURIComponent(id)}/payment_method`, "POST", {
+        body: input,
         headers: { "Idempotency-Key": idempotencyKey ?? newIdempotencyKey() },
       }),
   };
@@ -356,6 +533,76 @@ const OWNER_TYPES: readonly string[] = ["User", "Account"];
 
 function isStringOrNull(value: unknown): boolean {
   return value === null || typeof value === "string";
+}
+
+const SUBSCRIPTION_STATUSES: readonly string[] = ["trialing", "active", "past_due", "canceled", "unpaid"];
+
+export function isSubscription(value: unknown): value is Subscription {
+  const record = asRecord(value);
+  if (!record) return false;
+
+  return (
+    typeof record.id === "string" &&
+    typeof record.account_id === "string" &&
+    typeof record.plan_id === "string" &&
+    typeof record.plan_slug === "string" &&
+    typeof record.customer_id === "string" &&
+    typeof record.processor_subscription_id === "string" &&
+    typeof record.status === "string" &&
+    SUBSCRIPTION_STATUSES.includes(record.status) &&
+    isMoney(record.price) &&
+    isStringOrNull(record.current_period_start) &&
+    isStringOrNull(record.current_period_end) &&
+    typeof record.cancel_at_period_end === "boolean" &&
+    isStringOrNull(record.canceled_at) &&
+    typeof record.created_at === "string" &&
+    typeof record.updated_at === "string"
+  );
+}
+
+export function isInvoicePreview(value: unknown): value is InvoicePreview {
+  const record = asRecord(value);
+  if (!record) return false;
+  if (!Array.isArray(record.line_items)) return false;
+
+  return (
+    typeof record.subscription_id === "string" &&
+    typeof record.period_end === "string" &&
+    typeof record.currency === "string" &&
+    typeof record.subtotal === "number" &&
+    typeof record.tax === "number" &&
+    typeof record.total === "number" &&
+    record.line_items.every((line) => {
+      const row = asRecord(line);
+      return (
+        row !== null &&
+        typeof row.description === "string" &&
+        typeof row.quantity === "number" &&
+        typeof row.unit_amount === "number" &&
+        typeof row.amount === "number" &&
+        typeof row.currency === "string"
+      );
+    })
+  );
+}
+
+export function isCharge(value: unknown): value is Charge {
+  const record = asRecord(value);
+  if (!record) return false;
+
+  return (
+    typeof record.id === "string" &&
+    typeof record.account_id === "string" &&
+    typeof record.customer_id === "string" &&
+    isStringOrNull(record.subscription_id) &&
+    typeof record.processor_charge_id === "string" &&
+    typeof record.amount === "number" &&
+    typeof record.currency === "string" &&
+    isStringOrNull(record.description) &&
+    isStringOrNull(record.paid_at) &&
+    typeof record.created_at === "string" &&
+    typeof record.updated_at === "string"
+  );
 }
 
 export function isPlan(value: unknown): value is Plan {

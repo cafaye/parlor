@@ -529,6 +529,16 @@ export const ROUTES: readonly Route[] = [
   { method: "GET", path: ["customers"], upstream: "billing", query: ["cursor", "limit"] },
   { method: "POST", path: ["customers"], upstream: "billing" },
   { method: "GET", path: ["customers", ":id"], upstream: "billing" },
+  { method: "GET", path: ["subscriptions"], upstream: "billing", query: ["cursor", "limit"] },
+  { method: "POST", path: ["subscriptions"], upstream: "billing" },
+  { method: "GET", path: ["subscriptions", ":id"], upstream: "billing" },
+  { method: "POST", path: ["subscriptions", ":id", "cancel"], upstream: "billing" },
+  { method: "POST", path: ["subscriptions", ":id", "change_plan"], upstream: "billing" },
+  { method: "GET", path: ["subscriptions", ":id", "entitlements"], upstream: "billing" },
+  { method: "GET", path: ["subscriptions", ":id", "upcoming_invoice"], upstream: "billing" },
+  { method: "POST", path: ["subscriptions", ":id", "payment_method"], upstream: "billing" },
+  { method: "POST", path: ["checkouts"], upstream: "billing" },
+  { method: "GET", path: ["charges"], upstream: "billing", query: ["cursor", "limit"] },
 ];
 
 /** What kind of wildcard a `:name` in a route path is. */
