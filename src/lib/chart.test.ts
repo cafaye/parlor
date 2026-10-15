@@ -22,6 +22,14 @@
  * - The image tag is never `latest`. A floating tag is a deploy that
  *   changes when somebody else pushes; the pull-based loop exists so that
  *   what runs is exactly what the values commit said.
+ * - The image NAME reaches the pod by DIGEST when `image.digest` is set, and
+ *   falls back to `repository:tag` when it is empty. This is the pin that makes
+ *   a republish a textual diff Argo rolls: the tag is republished on every
+ *   master push, so a tag-pinned chart rendered a Deployment that was
+ *   identical before and after a build, Argo diffed `Synced`, and the box kept
+ *   the old image. A non-empty digest that is not `sha256:<64 hex>` is
+ *   REFUSED (`fail`), not rendered as `repository@nonsense` and not silently
+ *   dropped back to the mutable tag.
  * - The readiness path is `/readyz`, the fleet's contract, baked into the
  *   template rather than left as a value.
  * - The container port matches reality: the Dockerfile's `EXPOSE` and the
@@ -95,6 +103,20 @@ function helmTemplate(args: string[] = []): string {
 function capture(pattern: RegExp, text: string): string | null {
   const match = pattern.exec(text);
   return match ? match[1] : null;
+}
+
+/**
+ * The container's `image:` line as `helm template` renders it, quotes stripped.
+ * The chart names exactly one image, so the first match is the one — and the
+ * throw (rather than a null return) is what makes a template that stopped
+ * emitting an image a red test rather than a silently-passing one.
+ */
+function renderedImage(rendered: string): string {
+  const image = capture(/^ +image: "([^"]+)"$/m, rendered);
+  if (image === null) {
+    throw new Error(`no container image: line in the rendered output:\n${rendered}`);
+  }
+  return image;
 }
 
 describe("chart content", () => {
@@ -213,6 +235,71 @@ describe("helm template against the committed values", () => {
     const document = ingress.slice(0, ingress.indexOf("---", 5));
     expect(document).toContain("host: legacy.example.com");
     expect(document).toContain("secretName: parlor-tls-legacy-example-com");
+  });
+});
+
+// --- the image digest, the pin Argo can see --------------------------------
+//
+// The tag is MUTABLE: the image job republishes `0.1.0` on every push to
+// master, so a chart that pinned the image by tag rendered a Deployment that
+// was textually IDENTICAL before and after a build — Argo diffed `Synced`,
+// rolled nothing, and `imagePullPolicy: IfNotPresent` kept the box on the old
+// image. `image.digest` is the name that cannot move, written by the publish
+// workflow from the image job's build output before `helm package`, and the
+// template must render it as `repository@digest` for a republish to be a diff
+// Argo rolls. The empty-digest and malformed-digest branches are the other
+// half: the committed value must keep a fresh clone rendering, and a value
+// that is not a digest must not become one.
+
+describe("the image digest — the pin Argo can see", () => {
+  // Read the three facts out of values.yaml rather than restating them: what
+  // is asserted is that the TEMPLATE composes them the way the pin needs, not
+  // that somebody typed the registry path twice.
+  const repository = capture(/^ {2}repository: "?([^"\s]+)"?$/m, valuesYaml);
+  const tag = capture(/^ {2}tag: "?([^"\s]+)"?$/m, valuesYaml);
+  const digest = capture(/^ {2}digest: "?([^"\s]+)"?$/m, valuesYaml);
+
+  it("renders repository@digest when image.digest is set — a republish is a diff Argo rolls", () => {
+    // The committed digest is the pin a FRESH CLONE renders; the publish step
+    // replaces it with the freshly-built digest before `helm package`. Its
+    // shape is asserted too, because a malformed committed value is now
+    // REFUSED by the template and this test would fail with the template's own
+    // message rather than a mystery.
+    expect(digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+    const image = renderedImage(helmTemplate());
+    expect(image).toBe(`${repository}@${digest}`);
+    // The tag must NOT be in the name: `repository:tag` pulls by the mutable
+    // label, which is exactly the half of the name this field exists to stop
+    // using. A `repository:tag` template fails this line and the one above.
+    expect(image).not.toContain(`:${tag}`);
+  });
+
+  it("falls back to repository:tag when image.digest is empty — the committed-tag path a chart that has not adopted the field renders", () => {
+    // A chart that has not adopted the field, and a `push: false` run (which
+    // pinned nothing), both render exactly as before this packet.
+    const image = renderedImage(helmTemplate(["--set", "image.digest="]));
+    expect(image).toBe(`${repository}:${tag}`);
+  });
+
+  it("REFUSES a non-empty digest that is not sha256:<64 lowercase hex> — it never renders repository@nonsense", () => {
+    // The template cannot write kit's non-zero exit, so `fail` is its refusal:
+    // the render aborts with a message naming this file. Both tempting
+    // alternatives are defects — `repository@not-a-digest` is a pin that dies
+    // at image-pull naming nothing here, and silently dropping back to the
+    // mutable tag is the stale-image defect wearing a digest's clothes. The
+    // four shapes are what a hand-edit or a bad merge produces: a bare word, a
+    // truncated digest, an UPPERCASE digest (the registry grammar is lowercase
+    // hex), and the wrong algorithm.
+    for (const bad of [
+      "not-a-digest",
+      "sha256:abc",
+      `sha256:${"A".repeat(64)}`,
+      `md5:${"0".repeat(64)}`,
+    ]) {
+      expect(() => helmTemplate(["--set", `image.digest=${bad}`])).toThrow(
+        /not sha256:<64 lowercase hex>/,
+      );
+    }
   });
 });
 
