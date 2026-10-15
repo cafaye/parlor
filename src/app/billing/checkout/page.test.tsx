@@ -53,6 +53,8 @@ describe("the checkout screen", () => {
     expect(billing.startSubscriptionCheckout).toHaveBeenCalledWith({
       customer_id: "cus_mine",
       plan_id: aPlan().id,
+      success_url: `${window.location.origin}/billing/subscriptions`,
+      cancel_url: `${window.location.origin}/billing/checkout?plan=team`,
     });
     // And the screen does NOT say "subscribed": the production door writes no
     // row, so the row's arrival is the processor's news.

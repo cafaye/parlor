@@ -60,7 +60,19 @@ export function CheckoutScreen({ planSlug }: { planSlug?: string }) {
         setFailure("This account has no billing customer yet, so there is nobody to bill.");
         return;
       }
-      setSession(await billing.startSubscriptionCheckout({ customer_id: mine.id, plan_id: plan.id }));
+      // The return URLs are absolute and this app's own: Stripe requires
+      // `success_url` on a hosted session, and the page a buyer lands on
+      // after paying is this app's subscriptions screen — not a URL the
+      // billing service may invent.
+      const origin = window.location.origin;
+      setSession(
+        await billing.startSubscriptionCheckout({
+          customer_id: mine.id,
+          plan_id: plan.id,
+          success_url: `${origin}/billing/subscriptions`,
+          cancel_url: `${origin}/billing/checkout?plan=${encodeURIComponent(plan.slug)}`,
+        }),
+      );
     } catch {
       setFailure("The checkout could not be started. Nothing was charged.");
     } finally {

@@ -200,11 +200,24 @@ export type Charge = {
 
 export type ChargePage = { data: Charge[]; page: Page };
 
-/** The body of `POST /v1/subscriptions` and `POST /v1/checkouts`. */
+/**
+ * The body of `POST /v1/subscriptions`.
+ *
+ * `success_url` is REQUIRED because Stripe requires it on a hosted Checkout
+ * Session: the live recording caught this service sending a session without
+ * one and Stripe refusing it outright, so the door could not open until the
+ * field arrived. It is the caller's URL — the page a buyer lands on is the
+ * app's — and `cancel_url` defaults to it at the service.
+ *
+ * `POST /v1/checkouts` (the development door) ignores both: its checkout
+ * completes in the request, so there is no page to return to.
+ */
 export type CheckoutRequest = {
   customer_id: string;
   plan_id: string;
   quantity?: number;
+  success_url?: string;
+  cancel_url?: string;
 };
 
 /**
