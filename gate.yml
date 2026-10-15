@@ -792,9 +792,22 @@ gate:
     # inversion on an ink plane, and the press scale on the transform
     # transition). A floor that goes up with no account of what it bought is a
     # floor nobody trusts, so this is what the 36 bought.
+    # IT IS 1106 BY THE NEXT ACCOUNT. 1099 -> 1106, a +7 net in
+    # `src/lib/chart.test.ts`, the apex-hosts packet: the Ingress now carries
+    # three hosts (`app.cafaye.com`, `cafaye.com`, `www.cafaye.com`) with one
+    # TLS entry and one `secretName` per host (Traefik pattern,
+    # `parlor-tls-<host>`), `hosts:` (list) with `host:` kept as a deprecated
+    # singular fallback, and the empty-host guard moved to `hosts`+`host`.
+    # The three assertions turned one guard test into two — the
+    # silent-misroute guard now fails on `hosts: []` + empty `host`, and a
+    # new back-compat test proves the legacy singular still renders a
+    # single-host Ingress — plus the three host/TLS count checks. The
+    # remaining +6 were already on the tree before this packet and the floor
+    # had not caught up; this commit reconciles to the measured green.
+    # Measured on this tree: `npm test` -> `Tests  1106 passed (1106)`, 48 files.
     - id: suite
       match: '^[ ]*Tests[ ]+([0-9]+)[ ]+passed(?![ ]*\|)'
-      minimum: 1099
+      minimum: 1106
     # The tally `tests/validate-ci.sh` prints, which is the second half of this
     # gate: the checks that the tree still has the shape CI assumes — one
     # runtime pin, `npm ci` and not `npm install`, the gate command, the

@@ -156,17 +156,28 @@ describe("helm template against the committed values", () => {
     const ingress = rendered.slice(rendered.indexOf("kind: Ingress"));
     const document = ingress.slice(0, ingress.indexOf("---", 5));
 
-    // The host the fleet's own fixtures name:
+    // The hosts the fleet's own fixtures name plus the apex+www that serve
+    // the marketing landing and the /box/install front door:
     // billing/test/fixtures/stripe/checkout.session.completed*.json
-    // carries `https://app.cafaye.com/welcome`.
+    // carries `https://app.cafaye.com/welcome`; cafaye.com and
+    // www.cafaye.com carry the front door `curl | bash` lands on.
     expect(document).toContain("host: app.cafaye.com");
+    expect(document).toContain("host: cafaye.com");
+    expect(document).toContain("host: www.cafaye.com");
     expect(document).toContain("ingressClassName: traefik");
     expect(document).toContain(
       "cert-manager.io/cluster-issuer: letsencrypt-prod",
     );
-    // `spec.tls` — without it there is no TLS: a secret nothing writes.
+    // `spec.tls` — one entry per host, one secret per host (Traefik pattern),
+    // without it there is no TLS: a secret nothing writes.
     expect(document).toContain("tls:");
-    expect(document).toContain("secretName: parlor-tls");
+    expect(document).toContain("secretName: parlor-tls-app-cafaye-com");
+    expect(document).toContain("secretName: parlor-tls-cafaye-com");
+    expect(document).toContain("secretName: parlor-tls-www-cafaye-com");
+    // Exactly three hosts and three TLS entries — a host dropped from the
+    // list is a front door that 404s at Traefik with no matching route.
+    expect((document.match(/secretName: parlor-tls-/g) ?? []).length).toBe(3);
+    expect((document.match(/- host: /g) ?? []).length).toBe(3);
   });
 
   it("RED CONTROL: ingress.enabled=false emits no Ingress at all", () => {
@@ -176,13 +187,31 @@ describe("helm template against the committed values", () => {
     expect(rendered).not.toContain("kind: Ingress");
   });
 
-  it("RED CONTROL: enabled with an empty host fails the template", () => {
+  it("RED CONTROL: enabled with empty hosts (and empty legacy host) fails the template", () => {
     // An Ingress with no host is a silent misroute — the class of defect
     // kit's /up healthcheck was. The template `fail`s rather than
-    // rendering something that looks fine.
-    expect(() => helmTemplate(["--set", "ingress.host="])).toThrow(
-      /an Ingress with no host is a silent misroute/,
-    );
+    // rendering something that looks fine. `hosts` is the new shape; `host`
+    // is the deprecated singular that the template falls back to when
+    // `hosts` is empty, so both must be empty to trigger the guard.
+    expect(() =>
+      helmTemplate(["--set-json", "ingress.hosts=[]", "--set", "ingress.host="]),
+    ).toThrow(/an Ingress with no host is a silent misroute/);
+  });
+
+  it("legacy host still renders a single-host Ingress when hosts is empty", () => {
+    // Back-compat: an existing values file with `host: app.cafaye.com` and no
+    // `hosts` still renders. Proved able to fail: deleting the fallback
+    // turns this green path into the silent-misroute failure above.
+    const rendered = helmTemplate([
+      "--set-json",
+      "ingress.hosts=[]",
+      "--set",
+      "ingress.host=legacy.example.com",
+    ]);
+    const ingress = rendered.slice(rendered.indexOf("kind: Ingress"));
+    const document = ingress.slice(0, ingress.indexOf("---", 5));
+    expect(document).toContain("host: legacy.example.com");
+    expect(document).toContain("secretName: parlor-tls-legacy-example-com");
   });
 });
 
