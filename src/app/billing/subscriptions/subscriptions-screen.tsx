@@ -105,9 +105,12 @@ function SubscriptionRow({ subscription, onChange }: { subscription: Subscriptio
     setBusy(true);
     setError(null);
     try {
-      // A path on this origin, because the processor redirects here afterwards
-      // and billing refuses anything that could be an open redirect.
-      setPortal(await billing.createPaymentMethodUrl(subscription.id, { return_url: "/billing/subscriptions" }));
+      // An absolute URL on this origin, the same shape the checkout sends as
+      // `success_url`: the processor redirects the browser here afterwards and
+      // refuses a relative path (`Not a valid URL` — measured against the live
+      // API, 2026-10-16, where the portal could never open).
+      const origin = window.location.origin;
+      setPortal(await billing.createPaymentMethodUrl(subscription.id, { return_url: `${origin}/billing/subscriptions` }));
     } catch {
       setError("The payment portal could not be opened.");
     } finally {
