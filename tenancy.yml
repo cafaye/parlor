@@ -343,10 +343,10 @@ scope:
       line: 8
       reason: the Account type, transcribed from identity's wire contract — a wire shape, not a predicate
     - file: src/lib/billing-token.server.ts
-      line: 153
+      line: 151
       reason: the outbound exchange body's account_id — the name identity verifies against its own memberships and then signs into the token billing reads. A field this app sends, never one it guards
     - file: src/lib/billing-token.server.ts
-      line: 191
+      line: 189
       reason: the call helper's body parameter type — the same exchange body's shape, declared once so the mint and the helper agree on it
     - file: src/test/support/billing.ts
       line: 121
