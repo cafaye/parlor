@@ -255,9 +255,14 @@ export type PaymentMethodUrl = { payment_method_url: string };
 /** One `{field, code}` pair out of a 422. */
 export type FieldError = { field: string; code: string };
 
-/** The body of `POST /v1/customers`. `owner` and `processor` are required. */
+/**
+ * The body of `POST /v1/customers`. `processor` is the only required field,
+ * and `owner` is deliberately NOT a property: since billing 2.0.0 the owner is
+ * the caller's account — the `account_id` the BFF minted the token for — so a
+ * body can only ever create a customer for the account it was sent as.
+ * `CustomerOwner` stays for the RESPONSE, which still carries `owner`.
+ */
 export type CustomerCreate = {
-  owner: CustomerOwner;
   processor: string;
   email?: string | null;
   metadata?: Record<string, unknown>;
@@ -399,6 +404,20 @@ export const BILLING_BASE_URL = "";
 const fetchTransport: BillingTransport = async ({ url, method, headers, body }) =>
   fetch(url, { method, headers, body, credentials: "same-origin" });
 
+/**
+ * The `account` the page's own URL names, or null when it names none.
+ *
+ * String-splitting rather than `URLSearchParams`, because the only question
+ * here is "which value does this exact key hold" and the URL is this app's
+ * own — the value is validated where it is used (the BFF's uuid check and
+ * identity's membership check), so this function does not repeat either.
+ */
+function selectedAccountFromUrl(): string | null {
+  if (typeof window === "undefined") return null;
+  const match = window.location.search.match(/(?:^|[?&])account=([^&]*)/);
+  return match === null || match[1] === "" ? null : decodeURIComponent(match[1]);
+}
+
 export function createBillingClient(
   options: { baseUrl?: string; transport?: BillingTransport; token?: string | null } = {},
 ): BillingClient {
@@ -418,6 +437,19 @@ export function createBillingClient(
   const transport: BillingTransport = (request) => {
     const headers = { ...request.headers };
     if (options.token) headers.Authorization = `Bearer ${options.token}`;
+
+    // THE ACTING ACCOUNT, read from the page's OWN URL at call time rather
+    // than captured when the client was built. The URL is the selector —
+    // `?account=<uuid>` on every billing screen — so a person who switches
+    // accounts has switched it for the next request without this client
+    // needing to be rebuilt, and a deep link to somebody's billing page
+    // carries the account with it. Absent means the caller's personal
+    // account, which is the exchange's own default; the BFF validates the
+    // value's shape and identity verifies the membership, so this side only
+    // has to pass through what the URL says.
+    const selected = selectedAccountFromUrl();
+    if (selected !== null) headers["X-Account-Id"] = selected;
+
     return inner({ ...request, headers });
   };
 

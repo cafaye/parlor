@@ -128,6 +128,57 @@ describe("base url", () => {
   });
 });
 
+describe("the browser transport", () => {
+  it("carries the session token and the account the URL names", async () => {
+    // The two headers the BFF reads, asserted at the FETCH seam rather than
+    // the transport seam: the whole defect this holds shut was a client that
+    // sent neither and a BFF whose exchange then had nothing to exchange.
+    // `history.pushState` sets the URL jsdom cannot navigate to, which is the
+    // same fact a person sees in the address bar after picking a team.
+    const seen: Record<string, string>[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
+        seen.push(Object.fromEntries(new Headers(init?.headers)));
+        return Promise.resolve(json(200, { data: [], page: aPage() }));
+      }),
+    );
+    window.history.pushState({}, "", "/billing/plans?account=22222222-2222-4222-8222-222222222222");
+
+    try {
+      await createBillingClient({ token: "tok_abc" }).listPlans();
+
+      expect(seen[0].authorization).toBe("Bearer tok_abc");
+      expect(seen[0]["x-account-id"]).toBe("22222222-2222-4222-8222-222222222222");
+    } finally {
+      vi.unstubAllGlobals();
+      window.history.pushState({}, "", "/");
+    }
+  });
+
+  it("sends no account header when the URL names none, so the exchange falls back to personal", async () => {
+    const seen: Record<string, string>[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
+        seen.push(Object.fromEntries(new Headers(init?.headers)));
+        return Promise.resolve(json(200, { data: [], page: aPage() }));
+      }),
+    );
+    window.history.pushState({}, "", "/billing/plans");
+
+    try {
+      await createBillingClient({ token: "tok_abc" }).listPlans();
+
+      expect(seen[0].authorization).toBe("Bearer tok_abc");
+      expect(seen[0]["x-account-id"]).toBeUndefined();
+    } finally {
+      vi.unstubAllGlobals();
+      window.history.pushState({}, "", "/");
+    }
+  });
+});
+
 describe("listPlans", () => {
   it("asks for the collection and returns the page whole", async () => {
     const { transport, calls } = stubTransport(() =>
@@ -224,7 +275,6 @@ describe("createCustomer", () => {
     const client = createBillingClient({ baseUrl, transport });
 
     await client.createCustomer({
-      owner: { type: "Account", id: "acc_0a1b2c3d" },
       processor: "stripe",
     });
 
@@ -241,8 +291,8 @@ describe("createCustomer", () => {
     const client = createBillingClient({ baseUrl, transport });
 
     const key = "3f6b2c10-1111-4222-8333-444455556666";
-    await client.createCustomer({ owner: { type: "User", id: "usr_1" }, processor: "stripe" }, key);
-    await client.createCustomer({ owner: { type: "User", id: "usr_1" }, processor: "stripe" }, key);
+    await client.createCustomer({ processor: "stripe" }, key);
+    await client.createCustomer({ processor: "stripe" }, key);
 
     expect(calls[0].headers["Idempotency-Key"]).toBe(key);
     expect(calls[1].headers["Idempotency-Key"]).toBe(key);
@@ -252,7 +302,7 @@ describe("createCustomer", () => {
     const { transport, calls } = stubTransport(() => json(201, aCustomer()));
     const client = createBillingClient({ baseUrl, transport });
 
-    const input = { owner: { type: "User" as const, id: "usr_1" }, processor: "stripe" as const };
+    const input = { processor: "stripe" as const };
     await client.createCustomer(input);
     await client.createCustomer(input);
 
@@ -264,14 +314,15 @@ describe("createCustomer", () => {
     const client = createBillingClient({ baseUrl, transport });
 
     await client.createCustomer({
-      owner: { type: "Account", id: "acc_0a1b2c3d" },
       processor: "stripe",
       email: "kaka@example.com",
       metadata: { plan: "team" },
     });
 
+    // No owner, and there is nowhere to put one: billing 2.0.0 takes the owner
+    // from the token, so the body below is the whole of what a caller can say
+    // about a customer it is creating.
     expect(JSON.parse(calls[0].body as string)).toEqual({
-      owner: { type: "Account", id: "acc_0a1b2c3d" },
       processor: "stripe",
       email: "kaka@example.com",
       metadata: { plan: "team" },
@@ -300,7 +351,7 @@ describe("failures", () => {
     const client = createBillingClient({ baseUrl, transport });
 
     const failure = (await client
-      .createCustomer({ owner: { type: "User", id: "usr_1" }, processor: "stripe" })
+      .createCustomer({ processor: "stripe" })
       .catch((error: unknown) => error)) as BillingError;
 
     expect(failure.fieldErrors).toEqual([{ field: "email", code: "invalid_format" }]);

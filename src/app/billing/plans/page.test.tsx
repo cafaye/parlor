@@ -12,9 +12,9 @@ const identity = () =>
     me: vi.fn(() => Promise.resolve(aUser())),
   });
 
-function renderPlans(billing = stubBilling()) {
+function renderPlans(billing = stubBilling(), searchParams?: Record<string, string>) {
   createTokenStore().set("tok_abc", "2026-03-14T12:00:00Z");
-  return { billing, ...renderWithProviders(PlansPage(), { identity: identity(), billing }) };
+  return { billing, ...renderWithProviders(PlansPage({ searchParams }), { identity: identity(), billing }) };
 }
 
 beforeEach(() => localStorage.clear());
@@ -94,6 +94,43 @@ describe("the pricing screen", () => {
     expect(screen.getByRole("link", { name: "Subscribe" }).getAttribute("href")).toContain("team");
   });
 
+  it("the account the URL names is the one the Subscribe link carries, and the selector shows it", async () => {
+    // THE TEAM-ACCOUNT SELECTOR, at the screen: `?account=` is the choice, the
+    // selector reflects it so the default is visible rather than implied, and
+    // the link to checkout carries it so the money is for the account the
+    // person picked. The BFF and identity enforce the membership — this test
+    // is about the choice travelling, not about the enforcement.
+    const TEAM = "22222222-2222-4222-8222-222222222222";
+    const billing = stubBilling({
+      listPlans: vi.fn(() =>
+        Promise.resolve({
+          data: [aPlan({ slug: "team", processor_price_id: "price_1PZQaBcDeFgHiJkLmNoPqR2" })],
+          page: { next_cursor: null, has_more: false },
+        }),
+      ),
+    });
+    const identity = stubIdentity({
+      me: vi.fn(() => Promise.resolve(aUser())),
+      listAccounts: vi.fn(() =>
+        Promise.resolve([
+          { id: "11111111-1111-4111-8111-111111111111", name: "Kaka", slug: "kaka", personal: true, role: "owner" as const, created_at: "2026-01-01T00:00:00Z" },
+          { id: TEAM, name: "Acme", slug: "acme", personal: false, role: "admin" as const, created_at: "2026-01-01T00:00:00Z" },
+        ]),
+      ),
+    });
+    createTokenStore().set("tok_abc", "2026-03-14T12:00:00Z");
+
+    renderWithProviders(PlansPage({ searchParams: { account: TEAM } }), { identity, billing });
+
+    await waitFor(() => expect(screen.getByRole("link", { name: "Subscribe" })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
+
+    expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe(TEAM);
+    expect(screen.getByRole("link", { name: "Subscribe" }).getAttribute("href")).toContain(
+      `account=${TEAM}`,
+    );
+  });
+
   it("says billing is not configured, rather than an error, in the launch shape", async () => {
     const billing = stubBilling({
       listPlans: vi.fn(() => Promise.reject(aBillingError(503, "billing_not_configured"))),
@@ -101,8 +138,10 @@ describe("the pricing screen", () => {
 
     renderPlans(billing);
 
-    await waitFor(() => expect(screen.getByRole("status")).toBeTruthy());
-    expect(screen.getByRole("status").textContent).toMatch(/not configured/i);
+    // The wait names the COPY, not the element: the notice exists from the
+    // first render ("Loading plans..."), so waiting for it alone would pass
+    // before the refusal arrives.
+    await waitFor(() => expect(screen.getByRole("status").textContent).toMatch(/not configured/i));
   });
 
   it("shows what the plan grants", async () => {

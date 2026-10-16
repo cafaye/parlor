@@ -12,7 +12,7 @@ import { PlansScreen } from "./plans-screen";
  * renders its own unconfigured state rather than an error — the deployment
  * shape where `BILLING_URL` is unset is a real deployment, not a broken one.
  */
-export default function PricingPage() {
+export default function PricingPage({ searchParams }: { searchParams?: Record<string, string> }) {
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-10">
       <header className="mb-8 flex flex-col gap-2 border-b border-border pb-6">
@@ -20,7 +20,7 @@ export default function PricingPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Pricing</h1>
         <p className="text-sm text-muted">What you can buy, at what price, and on what cadence.</p>
       </header>
-      <PlansScreen />
+      <PlansScreen account={searchParams?.account ?? null} />
     </main>
   );
 }

@@ -65,7 +65,14 @@ export type Exchange =
    */
   | { status: "forward_untouched"; reason: ExchangeFailure }
   /** This app cannot get a token, and the reason is this app's, not the caller's. */
-  | { status: "failed"; reason: ExchangeFailure };
+  | { status: "failed"; reason: ExchangeFailure }
+  /**
+   * The caller named an account it cannot act in — or one that does not exist;
+   * identity's 404 is one sentence for both, on D33's terms (`absence, not
+   * refusal`), and this outcome carries that sentence through rather than
+   * inventing a second one.
+   */
+  | { status: "no_such_account" };
 
 /**
  * True for a list whose entries are accounts at all.
@@ -88,49 +95,74 @@ function isAccountList(value: unknown): value is Account[] {
 }
 
 /**
- * Exchanges the caller's session for a token scoped to their personal account.
+ * Exchanges the caller's session for a token scoped to one account.
  *
  * `authorization` is the caller's own header, carried through verbatim: this
  * app proves nothing new about anyone, it asks identity to re-state the same
  * fact in a dialect one service accepts.
+ *
+ * `selectedAccountId` is the account the caller CHOSE — the team-account
+ * selector's answer, named by the browser and verified by identity before
+ * anything is signed. When it is absent the caller's personal account is used,
+ * which is the solo-buyer default this app has always had. When it is present
+ * there is ONE call instead of two, and that is not an optimization detail:
+ * identity already resolves the id against the caller's own memberships and
+ * refuses a stranger's with the same sentence it refuses a nonexistent one,
+ * so the account list this function fetches for the default case is not
+ * needed to answer "is this the caller's account".
  */
 export async function mintBillingToken(
   identityUrl: string,
   authorization: string | null,
   fetchImpl: typeof fetch,
+  selectedAccountId?: string | null,
 ): Promise<Exchange> {
   if (authorization === null || authorization === "") {
     return { status: "forward_untouched", reason: "the caller is not signed in" };
   }
 
-  // Which account the caller acts in. One call, and it is also where an expired
-  // or revoked session answers 401 — the one refusal that reaches this function
-  // before anything is minted.
-  const accounts = await call("GET", `${identityUrl}/v1/accounts`, authorization, null, fetchImpl);
-  if (accounts.outcome === "refused") {
-    return { status: "forward_untouched", reason: "the caller's session is no longer valid" };
-  }
-  if (accounts.outcome !== "ok" || !isAccountList(accounts.body)) {
-    return {
-      status: "failed",
-      reason: accounts.outcome === "ok" ? "identity's answer was not the shape this app expects" : "identity does not answer",
-    };
-  }
+  let accountId: string | undefined;
+  if (selectedAccountId !== undefined && selectedAccountId !== null && selectedAccountId !== "") {
+    accountId = selectedAccountId;
+  } else {
+    // Which account the caller acts in when nothing was chosen. One call, and
+    // it is also where an expired or revoked session answers 401 — the one
+    // refusal that reaches this function before anything is minted.
+    const accounts = await call("GET", `${identityUrl}/v1/accounts`, authorization, null, fetchImpl);
+    if (accounts.outcome === "refused") {
+      return { status: "forward_untouched", reason: "the caller's session is no longer valid" };
+    }
+    if (accounts.outcome !== "ok" || !isAccountList(accounts.body)) {
+      return {
+        status: "failed",
+        reason: accounts.outcome === "ok" ? "identity's answer was not the shape this app expects" : "identity does not answer",
+      };
+    }
 
-  const personal = accounts.body.find((account) => account.personal);
-  if (personal === undefined) {
-    return { status: "failed", reason: "the caller has no personal account to act in" };
+    const personal = accounts.body.find((account) => account.personal);
+    if (personal === undefined) {
+      return { status: "failed", reason: "the caller has no personal account to act in" };
+    }
+    accountId = personal.id;
   }
 
   const minted = await call(
     "POST",
     `${identityUrl}/v1/session/tokens`,
     authorization,
-    { account_id: personal.id, audience: BILLING_TOKEN_AUDIENCE },
+    { account_id: accountId, audience: BILLING_TOKEN_AUDIENCE },
     fetchImpl,
   );
   if (minted.outcome === "refused") {
     return { status: "forward_untouched", reason: "the caller's session is no longer valid" };
+  }
+  if (minted.outcome === "absent") {
+    // The caller named an account it is not a member of (or one that does not
+    // exist — identity answers both the same way, deliberately), and that call
+    // passing through the 404 on the STATUS rather than folding it into "this
+    // app cannot mint" is the whole distinction: 502 is this app's fault and
+    // this is the caller's choice.
+    return { status: "no_such_account" };
   }
   if (minted.outcome !== "ok") {
     return { status: "failed", reason: "identity does not answer" };
@@ -158,7 +190,12 @@ async function call(
   authorization: string,
   body: { account_id: string; audience: string } | null,
   fetchImpl: typeof fetch,
-): Promise<{ outcome: "ok"; body: unknown } | { outcome: "refused" } | { outcome: "error" }> {
+): Promise<
+  | { outcome: "ok"; body: unknown }
+  | { outcome: "refused" }
+  | { outcome: "absent" }
+  | { outcome: "error" }
+> {
   try {
     const response = await fetchImpl(url, {
       method,
@@ -171,6 +208,11 @@ async function call(
     });
 
     if (response.status === 401 || response.status === 403) return { outcome: "refused" };
+    // A 404 from the exchange is the ONLY absence this function passes
+    // through, and it means one thing: the account the caller named is not one
+    // it can act in. Every other non-2xx is an operational fact about
+    // identity, not a fact about the caller's choice.
+    if (response.status === 404) return { outcome: "absent" };
     if (!response.ok) return { outcome: "error" };
 
     const text = await response.text();

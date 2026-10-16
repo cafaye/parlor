@@ -4,31 +4,43 @@
  * The billing client, in a context of its own.
  *
  * A separate provider from the session, unlike the identity client which rides
- * along on `AuthProvider`. The reason is the token.
+ * along on `AuthProvider`. The reason is the error type as much as the
+ * credential: `BillingError` and `IdentityError` are independent, so a change
+ * to one service's envelope should not be a change to the other's client.
  *
- * **No identity session token is sent to billing.** billing's contract declares
- * `security: []` with no `securitySchemes` at all, and documents it as a
- * recorded gap: the surface is open until an authorization packet lands. So
- * there is nothing to authenticate with, and this client takes no credential.
- *
- * That is a deliberate decision rather than an omission. Handing an identity
- * session token to a service that does not authenticate it would put a live
- * session credential into a third party's request logs for no benefit, and the
- * moment billing grows real auth it will want a credential scoped to billing
- * rather than one borrowed from another service's boundary. When that packet
- * lands, the parameter belongs here.
- *
- * The other reason for a separate context is symmetry with the error type:
- * `BillingError` and `IdentityError` are independent, so a change to one
- * service's envelope should not be a change to the other's client.
+ * **The session token crosses to the BFF and stops there.** billing
+ * authenticates a signed token with a singular `account_id`, which the browser
+ * does not hold; the browser's credential is identity's opaque session token,
+ * and `src/lib/billing-token.server.ts` is the only thing that can turn one
+ * into the other. So this client attaches the session token to every call and
+ * the forwarder swaps it for a billing-scoped token before anything reaches
+ * billing — billing itself never sees the session token.
  */
 
-import { createContext, useContext, type ReactNode } from "react";
+import { createContext, useContext, useMemo, type ReactNode } from "react";
 
 import { createBillingClient, type BillingClient } from "@/lib/billing";
 import { useAuth } from "@/lib/auth";
 
 const BillingContext = createContext<BillingClient | null>(null);
+
+/**
+ * Whether a billing call can mean anything yet.
+ *
+ * Every billing call carries the session token — the BFF has nothing to
+ * exchange otherwise — and on a fresh page load (the redirect back from the
+ * payment processor is one) the token is read a commit after the first render.
+ * A screen that fires its load effect during that window asks billing a
+ * question with no credential, and billing answers the only thing it can: 401,
+ * which the screen then renders as "billing could not be reached" on the page
+ * a buyer lands on after paying. Measured on the launch stack, 2026-10-16.
+ * So the screens wait for the session to be KNOWN — authed or anonymous;
+ * anonymous still asks and still gets its 401, which is that person's answer
+ * rather than a race.
+ */
+export function useBillingReady(): boolean {
+  return useAuth().session.status !== "loading";
+}
 
 /**
  * The billing client, wired to the signed-in caller.
@@ -52,11 +64,15 @@ export function BillingProvider({
 }) {
   const { token } = useAuth();
 
-  return (
-    <BillingContext.Provider value={billing ?? createBillingClient({ token })}>
-      {children}
-    </BillingContext.Provider>
-  );
+  // One client per TOKEN, not per render. The client is what the screens'
+  // load effects depend on, and a fresh object on every provider render made
+  // every screen re-fetch for reasons the screen could not see — the third
+  // request of the measured landing above was this. The token is the client's
+  // only per-session state; the account is read from the URL at call time,
+  // so it deliberately does not appear here.
+  const client = useMemo(() => billing ?? createBillingClient({ token }), [billing, token]);
+
+  return <BillingContext.Provider value={client}>{children}</BillingContext.Provider>;
 }
 
 export function useBilling(): BillingClient {

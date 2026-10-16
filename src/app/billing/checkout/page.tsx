@@ -20,7 +20,7 @@ export default function CheckoutPage({ searchParams }: { searchParams: Record<st
         <h1 className="text-2xl font-semibold tracking-tight">Checkout</h1>
         <p className="text-sm text-muted">Start a subscription. The payment page belongs to the payment processor.</p>
       </header>
-      <CheckoutScreen planSlug={searchParams.plan} />
+      <CheckoutScreen planSlug={searchParams.plan} account={searchParams.account ?? null} />
     </main>
   );
 }

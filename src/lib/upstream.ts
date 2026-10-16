@@ -708,13 +708,33 @@ export function createUpstreamForwarder(options: UpstreamOptions): UpstreamForwa
     // caller's own header unchanged, so billing answers its own 401: a
     // signed-out screen must say "signed out" rather than "something broke".
     if (match.upstream === "billing") {
+      // THE ACCOUNT THE CALLER CHOSE, and it is read here and NOWHERE ELSE.
+      // A uuid-shaped `x-account-id` names the account the request acts in
+      // — the team-account selector's answer — and the exchange hands it to
+      // identity, which verifies the caller's membership before signing. The
+      // header is CONSUMED, not forwarded: billing has no header and no
+      // parameter for an account (the token IS the account), so this is the
+      // first allow-list entry in this file that crosses in neither
+      // direction. A malformed value is refused HERE, before identity is
+      // dialed: a value that could never name an account should not become a
+      // question about one.
+      const selectedAccount = request.headers.get("x-account-id");
+      if (selectedAccount !== null && !SEGMENT_PATTERNS.uuid.test(selectedAccount)) {
+        return problem(400, "validation_failed", "x-account-id is not an account id.");
+      }
+
       const exchange = await mintBillingToken(
         bases.identity,
         request.headers.get("authorization"),
         fetchImpl,
+        selectedAccount,
       );
       if (exchange.status === "minted") {
         headers.set("authorization", `Bearer ${exchange.token}`);
+      } else if (exchange.status === "no_such_account") {
+        // Identity's own sentence, carried through: one 404 for "not a member"
+        // and "does not exist", so a caller cannot walk ids by trying them.
+        return problem(404, "not_found", "No such account is visible to you.");
       } else if (exchange.status === "failed") {
         return problem(
           502,

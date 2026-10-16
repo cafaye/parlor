@@ -791,6 +791,77 @@ describe("billing's bearer", () => {
     expect(hops.filter((hop) => hop.url.startsWith(BILLING_URL))).toHaveLength(0);
   });
 
+  it("a chosen account crosses into the mint body, and the account list is never fetched", async () => {
+    const { forward, hops } = forwarder(exchangeResponder());
+
+    await forward(
+      new Request("https://parlor.test/v1/plans", {
+        headers: { Authorization: "Bearer a-session-token", "x-account-id": ACCOUNT_B },
+      }),
+      ["plans"],
+    );
+
+    // Two hops and not three: with a chosen account the exchange skips the
+    // account list entirely — identity resolves the id against the caller's
+    // memberships itself, and fetching the list to check the same fact would
+    // be a second answer to one question.
+    expect(hops.map((hop) => hop.url)).toEqual([
+      `${IDENTITY_URL}/v1/session/tokens`,
+      `${BILLING_URL}/v1/plans`,
+    ]);
+
+    const body = JSON.parse(hops[0].body ?? "{}") as { account_id: string };
+    expect(body.account_id).toBe(ACCOUNT_B);
+    expect(hops[1].headers.authorization).toBe("Bearer a-minted-account-token");
+    // AND THE HEADER DOES NOT CROSS. Billing has no parameter and no header
+    // for an account — the token IS the account — so x-account-id is consumed
+    // here and appears on neither hop.
+    expect(hops[1].headers["x-account-id"]).toBeUndefined();
+    expect(hops[0].headers["x-account-id"]).toBeUndefined();
+  });
+
+  it("refuses a malformed x-account-id before anything is dialed", async () => {
+    // A value that could never name an account should not become a question
+    // about one: identity is not asked, billing is not asked, and the 400
+    // names the header.
+    const { forward, hops } = forwarder();
+
+    const response = await forward(
+      new Request("https://parlor.test/v1/plans", {
+        headers: { Authorization: "Bearer a-session-token", "x-account-id": "../../etc/passwd" },
+      }),
+      ["plans"],
+    );
+
+    expect(response.status).toBe(400);
+    expect(hops).toHaveLength(0);
+  });
+
+  it("answers identity's 404 for an account the caller cannot act in, and never asks billing", async () => {
+    // The mint's 404 is D33's absence — one sentence for "not a member" and
+    // "does not exist" — and it is the CALLER's choice being refused, not this
+    // app's failure, so it is a 404 rather than the 502 an unreachable
+    // identity gets.
+    const { forward, hops } = forwarder((hop) =>
+      hop.url === `${IDENTITY_URL}/v1/session/tokens`
+        ? new Response(
+            JSON.stringify({ type: "about:blank", title: "Not found", status: 404, code: "not_found" }),
+            { status: 404, headers: { "content-type": "application/problem+json" } },
+          )
+        : new Response("{}", { status: 200 }),
+    );
+
+    const response = await forward(
+      new Request("https://parlor.test/v1/plans", {
+        headers: { Authorization: "Bearer a-session-token", "x-account-id": ACCOUNT_B },
+      }),
+      ["plans"],
+    );
+
+    expect(response.status).toBe(404);
+    expect(hops.filter((hop) => hop.url.startsWith(BILLING_URL))).toHaveLength(0);
+  });
+
   it("answers 502 when identity's account list has no personal account", async () => {
     // The anomaly this names: identity mints a personal account for every user,
     // so a caller with only team accounts is a state this forwarder cannot act
@@ -1210,7 +1281,7 @@ describe("the table and the clients agree", () => {
     await billing.getPlanBySlug("pro");
     await billing.listCustomers({ cursor: "c" });
     await billing.getCustomer("4d5e6f70-0000-4000-8000-000000000002");
-    await billing.createCustomer({ owner: { type: "User", id }, processor: "stripe" });
+    await billing.createCustomer({ processor: "stripe" });
 
     // Every hop landed on an upstream, and every one of them was a hop the table
     // approved. A refusal would have thrown above rather than reached this line.

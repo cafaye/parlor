@@ -19,6 +19,18 @@ const buyable = () =>
     Promise.resolve(aPlan({ slug: "team", processor_price_id: "price_1PZQaBcDeFgHiJkLmNoPqR2" })),
   );
 
+/**
+ * The click a person makes: the button is enabled only once the plan is read
+ * AND the session is known, so the wait is the same one the screen performs —
+ * and it is what keeps the first-purchase path from racing the session's
+ * answer (the customer it creates carries the buyer's email).
+ */
+async function continueToCheckout() {
+  const button = await screen.findByRole("button", { name: /continue to checkout/i });
+  await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
+  button.click();
+}
+
 beforeEach(() => localStorage.clear());
 afterEach(cleanup);
 
@@ -28,8 +40,9 @@ describe("the checkout screen", () => {
 
     renderCheckout(billing);
 
-    await waitFor(() => expect(screen.getByRole("button", { name: /continue to checkout/i })).toBeTruthy());
-    expect(screen.getByText(/Team/)).toBeTruthy();
+    // The plan line is the read's own answer; the button exists (disabled)
+    // from the first render, so waiting for it would pass before the read.
+    await waitFor(() => expect(screen.getByText(/Team/)).toBeTruthy());
     expect(billing.getPlanBySlug).toHaveBeenCalledWith("team");
   });
 
@@ -43,8 +56,7 @@ describe("the checkout screen", () => {
     });
 
     renderCheckout(billing);
-    await waitFor(() => expect(screen.getByRole("button", { name: /continue to checkout/i })).toBeTruthy());
-    screen.getByRole("button", { name: /continue to checkout/i }).click();
+    await continueToCheckout();
 
     await waitFor(() => expect(screen.getByRole("link", { name: /payment page/i })).toBeTruthy());
     // The POST names this account's customer and the plan read from the URL —
@@ -61,19 +73,56 @@ describe("the checkout screen", () => {
     expect(screen.queryByText(/you are subscribed/i)).toBeNull();
   });
 
-  it("refuses to check out when the account has no billing customer", async () => {
+  it("a first purchase creates the account's customer, then checks out", async () => {
     const billing = stubBilling({
       getPlanBySlug: buyable(),
       listCustomers: vi.fn(() => Promise.resolve({ data: [], page: { next_cursor: null, has_more: false } })),
+      createCustomer: vi.fn(() => Promise.resolve(aCustomer({ id: "cus_new" }))),
       startSubscriptionCheckout: vi.fn(() => Promise.resolve(aCheckoutSession())),
     });
 
     renderCheckout(billing);
-    await waitFor(() => expect(screen.getByRole("button", { name: /continue to checkout/i })).toBeTruthy());
-    screen.getByRole("button", { name: /continue to checkout/i }).click();
+    await continueToCheckout();
 
-    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
-    expect(billing.startSubscriptionCheckout).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByRole("link", { name: /payment page/i })).toBeTruthy());
+    // The row is created for THIS account — the owner is the token's, decided
+    // by billing, never the body — and it carries the buyer's address, because
+    // billing puts that address on the event and courier refuses an event with
+    // no address: a row created without one would buy silently.
+    expect(billing.createCustomer).toHaveBeenCalledWith({
+      processor: "stripe",
+      email: "kaka@example.com",
+    });
+    // And the checkout names the row that was just created.
+    expect(billing.startSubscriptionCheckout).toHaveBeenCalledWith(
+      expect.objectContaining({ customer_id: "cus_new", plan_id: aPlan().id }),
+    );
+  });
+
+  it("carries the chosen account into the return URLs, so the buyer lands back on that account's page", async () => {
+    const TEAM = "22222222-2222-4222-8222-222222222222";
+    const billing = stubBilling({
+      getPlanBySlug: buyable(),
+      listCustomers: vi.fn(() =>
+        Promise.resolve({ data: [aCustomer({ id: "cus_mine" })], page: { next_cursor: null, has_more: false } }),
+      ),
+      startSubscriptionCheckout: vi.fn(() => Promise.resolve(aCheckoutSession())),
+    });
+
+    renderCheckout(billing, { plan: "team", account: TEAM });
+    await continueToCheckout();
+
+    await waitFor(() => expect(screen.getByRole("link", { name: /payment page/i })).toBeTruthy());
+    // The redirect by the processor is a browser navigation and the URL is the
+    // only place the choice survives the round trip, so both return URLs name
+    // the account the checkout was started for.
+    expect(billing.startSubscriptionCheckout).toHaveBeenCalledWith({
+      customer_id: "cus_mine",
+      plan_id: aPlan().id,
+      success_url: `${window.location.origin}/billing/subscriptions?account=${TEAM}`,
+      cancel_url: `${window.location.origin}/billing/checkout?plan=team&account=${TEAM}`,
+    });
+    expect(billing.createCustomer).not.toHaveBeenCalled();
   });
 
   it("says nothing was charged when the processor refuses", async () => {
@@ -86,8 +135,7 @@ describe("the checkout screen", () => {
     });
 
     renderCheckout(billing);
-    await waitFor(() => expect(screen.getByRole("button", { name: /continue to checkout/i })).toBeTruthy());
-    screen.getByRole("button", { name: /continue to checkout/i }).click();
+    await continueToCheckout();
 
     await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
     expect(screen.getByRole("alert").textContent).toMatch(/nothing was charged/i);

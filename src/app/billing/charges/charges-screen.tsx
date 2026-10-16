@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import { useBilling } from "@/lib/billing-context";
+import { useBilling, useBillingReady } from "@/lib/billing-context";
 import { BILLING_NOT_CONFIGURED_CODE } from "@/lib/billing";
 import { formatMoney } from "@/lib/money";
 import type { Charge } from "@/lib/billing";
@@ -17,15 +17,22 @@ import type { Charge } from "@/lib/billing";
  */
 export function ChargesScreen() {
   const billing = useBilling();
+  const ready = useBillingReady();
   const [charges, setCharges] = useState<Charge[] | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!ready) return;
     let live = true;
     billing
       .listCharges({ limit: 100 })
       .then((page) => {
-        if (live) setCharges(page.data);
+        if (live) {
+          setCharges(page.data);
+          // An answered load clears an earlier failure — see the sibling in
+          // `plans-screen.tsx` for the measured sequence.
+          setFailure(null);
+        }
       })
       .catch((cause: unknown) => {
         if (live) setFailure(failureCopy(cause));
@@ -33,7 +40,7 @@ export function ChargesScreen() {
     return () => {
       live = false;
     };
-  }, [billing]);
+  }, [billing, ready]);
 
   if (failure) return <Notice description={failure} />;
   if (charges === null) return <Notice description="Loading charges..." />;

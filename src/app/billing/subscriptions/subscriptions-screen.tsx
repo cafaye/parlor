@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 
-import { useBilling } from "@/lib/billing-context";
+import { useBilling, useBillingReady } from "@/lib/billing-context";
 import { BILLING_NOT_CONFIGURED_CODE } from "@/lib/billing";
 import { formatMoney } from "@/lib/money";
 import type { Entitlements, InvoicePreview, PaymentMethodUrl, Plan, Subscription } from "@/lib/billing";
@@ -20,17 +20,26 @@ import type { Entitlements, InvoicePreview, PaymentMethodUrl, Plan, Subscription
  */
 export function SubscriptionsScreen() {
   const billing = useBilling();
+  const ready = useBillingReady();
   const [subscriptions, setSubscriptions] = useState<Subscription[] | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
 
   const load = useCallback(() => {
     billing
       .listSubscriptions({ limit: 100 })
-      .then((page) => setSubscriptions(page.data))
+      .then((page) => {
+        setSubscriptions(page.data);
+        // An answered load clears an earlier failure, so one transient error
+        // cannot keep a page an error page after the data arrives — this is
+        // the page a buyer lands on when the processor redirects them back.
+        setFailure(null);
+      })
       .catch((cause: unknown) => setFailure(failureCopy(cause)));
   }, [billing]);
 
-  useEffect(load, [load]);
+  useEffect(() => {
+    if (ready) load();
+  }, [load, ready]);
 
   if (failure) return <Notice description={failure} />;
   if (subscriptions === null) return <Notice description="Loading subscriptions..." />;
@@ -253,7 +262,15 @@ function SubscriptionRow({ subscription, onChange }: { subscription: Subscriptio
       )}
 
       <p className="text-xs text-muted">
-        <Link className="underline" to="/billing/charges">
+        {/* The account rides every internal billing link — it is the URL that
+            holds the choice — so the charges page is the charges of the
+            account whose subscriptions are above, not a quiet step back to the
+            personal one. */}
+        <Link
+          className="underline"
+          to="/billing/charges"
+          search={(previous: Record<string, unknown>) => previous}
+        >
           See every charge
         </Link>
       </p>
