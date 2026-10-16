@@ -311,10 +311,10 @@ scope:
       line: 189
       reason: the account_id field of the Charge type, transcribed from components.schemas.Charge in billing's openapi/v1.yaml — a wire shape, not a predicate
     - file: src/lib/billing.ts
-      line: 587
+      line: 603
       reason: the isSubscription guard's field check — the guard refuses a response whose account_id is not a string, which is checking the transcription rather than acting on it
     - file: src/lib/billing.ts
-      line: 636
+      line: 652
       reason: the isCharge guard's field check — the same check on the Charge transcription
     # --- the session-to-token exchange (billing's bearer, packet billing-local-stack) ----
     # `src/lib/billing-token.server.ts` is the one file in this tree that names an

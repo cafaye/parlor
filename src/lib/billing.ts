@@ -400,10 +400,26 @@ const fetchTransport: BillingTransport = async ({ url, method, headers, body }) 
   fetch(url, { method, headers, body, credentials: "same-origin" });
 
 export function createBillingClient(
-  options: { baseUrl?: string; transport?: BillingTransport } = {},
+  options: { baseUrl?: string; transport?: BillingTransport; token?: string | null } = {},
 ): BillingClient {
   const base = (options.baseUrl ?? BILLING_BASE_URL).replace(/\/+$/, "");
-  const transport = options.transport ?? fetchTransport;
+  const inner = options.transport ?? fetchTransport;
+
+  // THE BEARER, AND WHO PUTS IT THERE. The browsers' request carries the
+  // identity SESSION token in `authorization`, because that is the only
+  // credential a signed-in browser has, and the BFF (`src/lib/upstream.ts`)
+  // EXCHANGES it for one billing reads: the browser's token is never
+  // forwarded to billing, and what crosses is the minted account-scoped
+  // token. Without this line the browser's billing calls carry no credential
+  // at all, the exchange has nothing to work with, and the BFF forwards the
+  // request bare — the screens answered "billing could not be reached"
+  // while the API itself was answering 200 to an exchange it was never asked
+  // to perform. Measured on the launch stack, 2026-10-16.
+  const transport: BillingTransport = (request) => {
+    const headers = { ...request.headers };
+    if (options.token) headers.Authorization = `Bearer ${options.token}`;
+    return inner({ ...request, headers });
+  };
 
   return {
     listPlans: (query) => send(transport, `${base}/v1/plans${queryString(query)}`, "GET"),
