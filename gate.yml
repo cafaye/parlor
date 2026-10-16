@@ -821,9 +821,17 @@ gate:
     # report); blanking the committed digest turns the tag-fallback assertion
     # red.
     # Measured on this tree: `npm test` -> `Tests  1109 passed (1109)`, 48 files.
+    # IT IS 1147 BY THE NEXT ACCOUNT. 1109 -> 1147, and only 3 of the 38 are this
+    # packet's: the backend-adoption packet adds `src/lib/ci-backend.test.ts`
+    # (+3 — the backend name kit ships, the one-token shape, and the executable
+    # pipeline), and the other 35 were already on the tree and the floor had
+    # fallen behind. Same rule as every account above: the floor moves in the
+    # same commit as the tests, or it is a decrease-detector that has stopped
+    # detecting. Measured on this tree: `npm test` -> `Tests  1147 passed
+    # (1147)`, 53 files.
     - id: suite
       match: '^[ ]*Tests[ ]+([0-9]+)[ ]+passed(?![ ]*\|)'
-      minimum: 1109
+      minimum: 1147
     # The tally `tests/validate-ci.sh` prints, which is the second half of this
     # gate: the checks that the tree still has the shape CI assumes — one
     # runtime pin, `npm ci` and not `npm install`, the gate command, the
