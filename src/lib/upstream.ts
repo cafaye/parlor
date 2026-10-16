@@ -138,7 +138,8 @@
  * The dependency runs the other way too — `telemetry.ts` does not import this
  * file — so there is no cycle to reason about.
  */
-import { BILLING_NOT_CONFIGURED_CODE } from "@/lib/billing";
+import { BILLING_NOT_CONFIGURED_CODE, BILLING_TOKEN_UNAVAILABLE_CODE } from "@/lib/billing";
+import { mintBillingToken } from "@/lib/billing-token.server";
 import { tracedFetch } from "@/lib/telemetry.server";
 
 /** The services this app forwards to. Nothing else is reachable. */
@@ -159,7 +160,7 @@ export const MAX_REQUEST_BODY_BYTES = 4 << 10;
 /**
  * Request headers that cross to the upstream. Everything else is dropped.
  *
- *   * `authorization` — identity's session token. The whole point.
+ *   * `authorization` — identity's session token. The whole point, EXCEPT that it is REPLACED on the billing routes, where the caller's token is exchanged for one billing reads. See the exchange block in `forward`, which is the only place a forwarded header's value is rewritten.
  *   * `content-type` — a JSON body has to stay a JSON body.
  *   * `accept` — the clients ask for `application/json, application/problem+json`
  *     and a forwarder that dropped this would make identity answer with
@@ -680,6 +681,47 @@ export function createUpstreamForwarder(options: UpstreamOptions): UpstreamForwa
     for (const name of FORWARDED_REQUEST_HEADERS) {
       const value = request.headers.get(name);
       if (value !== null) headers.set(name, value);
+    }
+
+    // BILLING'S BEARER IS MINTED, NOT FORWARDED — and this is the only place in
+    // this file where a forwarded header's value is rewritten.
+    //
+    // The caller's `authorization` is identity's OPAQUE session token. Billing
+    // does not read that dialect at all: it verifies an RS256 token off
+    // identity's published JWKS, with a singular `account_id` claim. Measured
+    // on the whole local stack (2026-10-16) with both services live and the
+    // screens open in a browser: forwarding the session token answered 401 on
+    // every billing route — the plans screen showed its degrade state and
+    // billing's log carried the 401.
+    //
+    // Identity's `POST /v1/session/tokens` closes that gap, and the caller of it
+    // is `billing-token.server.ts`: two local calls, one token scoped to the
+    // caller's own personal account (the choice is stated there rather than
+    // hidden). Nothing is cached, because a token that outlives the session
+    // that minted it is a credential nobody asked for.
+    //
+    // THREE OUTCOMES, AND EACH ANSWER IS THIS APP'S OWN. A minted token
+    // replaces the caller's for this hop and billing reads it as issued to this
+    // user for this account. A 502 names the exchange failure as this app's —
+    // identity unreachable, or an answer this app cannot use — because the
+    // billing request never happened. And `forward_untouched` forwards the
+    // caller's own header unchanged, so billing answers its own 401: a
+    // signed-out screen must say "signed out" rather than "something broke".
+    if (match.upstream === "billing") {
+      const exchange = await mintBillingToken(
+        bases.identity,
+        request.headers.get("authorization"),
+        fetchImpl,
+      );
+      if (exchange.status === "minted") {
+        headers.set("authorization", `Bearer ${exchange.token}`);
+      } else if (exchange.status === "failed") {
+        return problem(
+          502,
+          BILLING_TOKEN_UNAVAILABLE_CODE,
+          "We could not get billing's key for this request.",
+        );
+      }
     }
 
     // A GET and a DELETE carry no body in this app, and reading one anyway would

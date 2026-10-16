@@ -311,11 +311,34 @@ scope:
       line: 189
       reason: the account_id field of the Charge type, transcribed from components.schemas.Charge in billing's openapi/v1.yaml — a wire shape, not a predicate
     - file: src/lib/billing.ts
-      line: 572
+      line: 587
       reason: the isSubscription guard's field check — the guard refuses a response whose account_id is not a string, which is checking the transcription rather than acting on it
     - file: src/lib/billing.ts
-      line: 621
+      line: 636
       reason: the isCharge guard's field check — the same check on the Charge transcription
+    # --- the session-to-token exchange (billing's bearer, packet billing-local-stack) ----
+    # `src/lib/billing-token.server.ts` is the one file in this tree that names an
+    # account and then USES the name — and it acts in no account of its own. The
+    # walk that motivated it (2026-10-16, the whole local stack) showed a signed-in
+    # user's billing calls answered 401: the browser's token is identity's opaque
+    # session token and billing verifies a signed token with a singular account_id,
+    # so this app asks identity to exchange one and the caller's accounts answer
+    # the question of WHICH account the caller is acting in.
+    #
+    # THE ACTING ACCOUNT IS THE CALLER'S PERSONAL ONE, chosen because identity
+    # mints exactly one per user — so the choice is total, and it is stated here
+    # rather than left to "whichever came first", which is the cross-tenant guess
+    # the exchange exists to make impossible. A team-account selector is the next
+    # step and names the chosen account in this same request.
+    - file: src/lib/billing-token.server.ts
+      line: 8
+      reason: the Account type, transcribed from identity's wire contract — a wire shape, not a predicate
+    - file: src/lib/billing-token.server.ts
+      line: 129
+      reason: the personal-account selection from identity's own account list. A choice, not a lookup: nothing else in this tree reads a second account's rows, and the membership behind it is identity's, checked by identity before it signs
+    - file: src/lib/billing-token.server.ts
+      line: 159
+      reason: the outbound exchange body's account_id — the name identity verifies against its own memberships and then signs into the token billing reads. A field this app sends, never one it guards
     - file: src/test/support/billing.ts
       line: 121
       reason: a test fixture — aSubscription copies billing's Subscription contract field for field, so a screen is asserted against what the service writes
@@ -332,8 +355,18 @@ scope:
     # every one of the nine lines individually instead.
     # --- the forwarder's own security test ----------------------------------
     - file: src/lib/upstream.test.ts
-      line: 1386
+      line: 1510
       reason: a hostile request BODY carrying another account's id, asserting the forwarder does not let it move the destination — the opposite of a scope
+    - file: src/lib/upstream.test.ts
+      line: 650
+      reason: the exchange responder's account fixtures — identity's two-account answer (one personal, one team), the shape the exchange test above walks
+    - file: src/lib/upstream.test.ts
+      line: 651
+      reason: the exchange body the test asserts — the personal account named in it is the ONE the handler sent, so this is the assertion on the choice rather than the choice
+    # --- prose, in the code that reasons about the claim ----------------------
+    - file: src/lib/billing.ts
+      line: 343
+      reason: prose in the exchange-failure code's doc comment, naming the singular `account_id` claim billing's verifier requires. A comment carries no data; it is here because the scan reads the words and a lookup with no row is a failure
     # --- the one prose site in e2e -------------------------------------------
     - file: e2e/account-admin.e2e.spec.ts
       line: 33

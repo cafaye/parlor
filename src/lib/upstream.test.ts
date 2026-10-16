@@ -15,7 +15,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { BILLING_NOT_CONFIGURED_CODE } from "./billing";
+import { BILLING_NOT_CONFIGURED_CODE, BILLING_TOKEN_UNAVAILABLE_CODE } from "./billing";
 import {
   FORWARDED_RESPONSE_HEADERS,
   MAX_REQUEST_BODY_BYTES,
@@ -93,6 +93,39 @@ function recordingFetch(respond?: (hop: Hop) => Response) {
     return Promise.resolve(respond ? respond(hop) : new Response("{}", { status: 200 }));
   });
   return { fetchImpl, hops };
+}
+
+/**
+ * Identity's two answers for the session-to-token exchange, in one responder.
+ *
+ * Billing routes no longer forward the caller's session token — they exchange
+ * it — so a billing hop now consists of three recorded hops: identity's account
+ * list, identity's token mint, and the billing request with the minted bearer.
+ * This answers the first two the way identity does; the third gets the recorder's
+ * default 200.
+ *
+ * `accounts` is an array rather than `{}` on purpose: the exchange validates the
+ * shape, and an answer that is not one is a 502 rather than a silent no-account.
+ */
+function exchangeResponder(accounts: unknown = [
+  { id: ACCOUNT_A, name: "Kaka", slug: "kaka", personal: true, role: "owner", created_at: "2026-10-16T00:00:00Z", updated_at: "2026-10-16T00:00:00Z" },
+  { id: ACCOUNT_B, name: "Acme", slug: "acme", personal: false, role: "admin", created_at: "2026-10-16T00:00:00Z", updated_at: "2026-10-16T00:00:00Z" },
+]) {
+  return (hop: Hop) => {
+    if (hop.url === `${IDENTITY_URL}/v1/session/tokens`) {
+      return new Response(
+        JSON.stringify({ token: "a-minted-account-token", expires_at: "2026-10-16T00:15:00Z" }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+    if (hop.url === `${IDENTITY_URL}/v1/accounts`) {
+      return new Response(JSON.stringify(accounts), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    return new Response("{}", { status: 200 });
+  };
 }
 
 function forwarder(respond?: (hop: Hop) => Response) {
@@ -595,21 +628,30 @@ describe("the allow-list", () => {
     expect(hops[1].body).toBe("{}");
   });
 
-  it("does not send an identity session token to billing", async () => {
-    // The claim in `src/lib/billing.ts` is that no identity credential is ever
-    // handed to billing. With a forwarder in the path that claim is only true if
-    // the forwarder does not add one — so this asserts on the hop, not on the
-    // comment.
-    const { forward, hops } = forwarder();
+  // MEASURED ON THE WHOLE LOCAL STACK, 2026-10-16: the caller's session token
+  // DID cross to billing, and its own answer was the 401 every billing screen
+  // showed — parlor's plans page rendered its degrade state while billing's log
+  // carried the 401. The forwarder exchanges the token now, and this is the hop
+  // assertion that says so: the caller's credential never crosses, and what
+  // crosses is one identity minted for this exchange, scoped to the caller's
+  // own personal account.
+  it("exchanges the caller's session for billing's own token, and forwards only that", async () => {
+    const { forward, hops } = forwarder(exchangeResponder());
 
     await forward(new Request("https://parlor.test/v1/customers", {
       headers: { Authorization: "Bearer a-session-token" },
     }), ["customers"]);
 
-    expect(hops[0].headers.authorization).toBe("Bearer a-session-token");
-    // Billing's own client sends no credential, and the forwarder invents none.
-    const billingHop = hops[0];
-    expect(billingHop.url.startsWith(BILLING_URL)).toBe(true);
+    const [accounts, mint, billing] = hops;
+    expect(accounts.url).toBe(`${IDENTITY_URL}/v1/accounts`);
+    expect(mint.url).toBe(`${IDENTITY_URL}/v1/session/tokens`);
+    // The personal account is the one named in the exchange body, and not the
+    // first entry, not "whichever the caller meant".
+    const body = JSON.parse(mint.body ?? "{}") as { account_id: string; audience: string };
+    expect(body.account_id).toBe(ACCOUNT_A);
+    expect(body.audience).toBe("billing");
+    expect(billing.url).toBe(`${BILLING_URL}/v1/customers`);
+    expect(billing.headers.authorization).toBe("Bearer a-minted-account-token");
   });
 
   it("drops a query parameter the route does not declare", async () => {
@@ -685,6 +727,85 @@ describe("the allow-list", () => {
 //    is same-origin, and the part whose attributes are load-bearing in a way
 //    they were not before.
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// 2b. Billing's bearer, and the three answers the exchange can produce.
+//
+// The exchange is the second half of what the local stack measured: the caller's
+// identity credential is wrong for billing and the minted one is right, so the
+// forwarder rewrites it. These three tests are the failure vocabulary — a mint,
+// a refusal that is the CALLER's (forward untouched, billing's own 401), and a
+// failure that is this app's (502 naming the exchange) — because the difference
+// is what a screen renders and what an operator looks for.
+// ---------------------------------------------------------------------------
+
+describe("billing's bearer", () => {
+  it("forwards nothing for billing when the caller is not signed in, and asks identity for nothing", async () => {
+    const { forward, hops } = forwarder();
+
+    await forward(new Request("https://parlor.test/v1/plans"), ["plans"]);
+
+    // One hop: billing's own 401 is the answer, because there is no caller to
+    // exchange and this app invents no credential.
+    expect(hops).toHaveLength(1);
+    expect(hops[0].url).toBe(`${BILLING_URL}/v1/plans`);
+    expect(hops[0].headers.authorization).toBeUndefined();
+  });
+
+  it("forwards the caller's own token when identity refuses the session, so billing's 401 stands", async () => {
+    const { forward, hops } = forwarder((hop) =>
+      hop.url === `${IDENTITY_URL}/v1/accounts`
+        ? new Response(
+            JSON.stringify({ type: "about:blank", title: "Unauthorized", status: 401 }),
+            { status: 401, headers: { "content-type": "application/problem+json" } },
+          )
+        : new Response("{}", { status: 200 }),
+    );
+
+    const response = await forward(new Request("https://parlor.test/v1/plans", {
+      headers: { Authorization: "Bearer a-dead-session-token" },
+    }), ["plans"]);
+
+    expect(response.status).toBe(200);
+    const billingHop = hops.at(-1);
+    expect(billingHop?.headers.authorization).toBe("Bearer a-dead-session-token");
+    expect(hops.some((hop) => hop.url === `${IDENTITY_URL}/v1/session/tokens`)).toBe(false);
+  });
+
+  it("answers 502 with its own code when the exchange cannot be completed", async () => {
+    const { forward, hops } = forwarder((hop) =>
+      hop.url === `${IDENTITY_URL}/v1/accounts`
+        ? new Response("<html>identity is away</html>", { status: 503 })
+        : new Response("{}", { status: 200 }),
+    );
+
+    const response = await forward(new Request("https://parlor.test/v1/plans", {
+      headers: { Authorization: "Bearer a-live-session-token" },
+    }), ["plans"]);
+
+    expect(response.status).toBe(502);
+    const body = (await response.json()) as { code: string };
+    expect(body.code).toBe(BILLING_TOKEN_UNAVAILABLE_CODE);
+    // And billing was never asked: a token that could not be minted is not a
+    // request that should be tried.
+    expect(hops.filter((hop) => hop.url.startsWith(BILLING_URL))).toHaveLength(0);
+  });
+
+  it("answers 502 when identity's account list has no personal account", async () => {
+    // The anomaly this names: identity mints a personal account for every user,
+    // so a caller with only team accounts is a state this forwarder cannot act
+    // in — and it says so rather than picking an account.
+    const { forward } = forwarder(exchangeResponder([]));
+
+    const response = await forward(new Request("https://parlor.test/v1/plans", {
+      headers: { Authorization: "Bearer a-live-session-token" },
+    }), ["plans"]);
+
+    expect(response.status).toBe(502);
+    const body = (await response.json()) as { code: string };
+    expect(body.code).toBe(BILLING_TOKEN_UNAVAILABLE_CODE);
+  });
+});
 
 describe("the session cookie", () => {
   it("hands identity's Set-Cookie to the browser with its attributes untouched", async () => {
@@ -955,7 +1076,10 @@ describe("upstream failures", () => {
 
 describe("the table and the clients agree", () => {
   it("forwards exactly what the clients call", async () => {
-    const { forward, hops } = forwarder();
+    // The exchange responder, because the billing routes on this walk now
+    // exchange the session outbound for billing's own token before the billing
+    // hop — see `exchangeResponder`. Identity routes are unaffected.
+    const { forward, hops } = forwarder(exchangeResponder());
 
     // Every method on the identity client, with arguments of the right shape.
     const id = "8f2c1a44-0000-4000-8000-000000000001";

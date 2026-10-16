@@ -334,6 +334,21 @@ export type BillingClient = {
  */
 export const BILLING_NOT_CONFIGURED_CODE = "billing_not_configured";
 
+/**
+ * The `code` on the 502 this app answers a billing route with when the
+ * SESSION-TO-TOKEN EXCHANGE cannot be completed.
+ *
+ * Billing's bearer is not the caller's token: the browser sends identity's
+ * opaque session token and billing verifies RS256 tokens with a singular
+ * `account_id`, so this app exchanges the session for one at identity before
+ * forwarding (`src/lib/billing-token.server.ts`). When identity does not
+ * answer, or answers something this app cannot use, the billing request never
+ * happens and the failure is THIS app's — which is what the code is for: the
+ * screens can tell "we could not reach billing" from "we could not reach
+ * identity to ask for billing's key", rather than both being a 502.
+ */
+export const BILLING_TOKEN_UNAVAILABLE_CODE = "billing_token_unavailable";
+
 export class BillingError extends Error {
   readonly status: number;
   /** The reserved code from core's list, or `internal`. */
