@@ -16,16 +16,14 @@
  *
  * ## The acting account, said out loud
  *
- * The exchange names an account, and this app names the caller's PERSONAL
- * account. It is a deliberate choice rather than a default nobody wrote: a
- * personal account is one identity mints for every user, so the choice is total
- * (a caller has exactly one personal account) and it is the account a solo
- * subscription belongs to. A TEAM-ACCOUNT SELECTOR — the screens asking which
- * account to bill — is the next step, and when it lands it names the chosen
- * account in this same request; the membership check inside identity is what
- * makes that safe, so nothing here has to learn which accounts exist. Until
- * then the choice is stated here rather than hidden in `accounts[0]`, which is
- * the guess the exchange endpoint exists to make impossible.
+ * The exchange names an account, and this app names the one the caller CHOSE —
+ * the team-account selector's answer, carried as `?account=<uuid>` in the
+ * browser and `x-account-id` to the forwarder. When nothing is chosen the
+ * caller's PERSONAL account is used: identity mints exactly one per user, so
+ * the default is total and it is stated rather than hidden in `accounts[0]`,
+ * which is the guess the exchange endpoint exists to make impossible. The
+ * choice is only as good as identity's membership check, which is the point —
+ * nothing here has to know which accounts exist.
  *
  * ## Why there is no cache
  *
