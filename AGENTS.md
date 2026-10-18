@@ -1059,3 +1059,6 @@ state library, no chart library — if a screen needs one, that is a packet.
 `tailwind-merge`: `src/lib/cx.ts` is the whole of what that problem needs.
 There is no `@testing-library/user-event`; `fireEvent` from the already-installed
 `@testing-library/react` is what the house uses.
+
+## Secrets
+- No `.env` files with values. Use `cafe secret set/get/list` (dev) and `cafe dev` (injects). See `docs/secrets.md`.

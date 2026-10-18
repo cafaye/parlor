@@ -89,3 +89,5 @@ playwright-report/
 # not edit: every run rewrites this file", so committing it would be committing
 # a generated artifact that is a merge conflict waiting to happen.
 caf.dev.compose.yaml
+keyring/
+secrets/
