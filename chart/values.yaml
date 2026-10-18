@@ -49,7 +49,7 @@ image:
   # as committed when the digest input is empty (a `push: false` run, or a chart
   # the composer could not hand a digest). It is the digest of this repository's
   # current published image, read from the registry.
-  digest: "sha256:fa7fa7958ad35d228a6e387d7e8bb5eb9b69a14e4d15d457c9a6fb92bdf4945f"
+  digest: "sha256:a5b4db5b8c6d93ce508315767d98ab40bb6dd8818a23edcc8e94eba284333e66"
   pullPolicy: IfNotPresent
 
 # The read-only pull secret on the box, created once, out of band:
