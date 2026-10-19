@@ -254,6 +254,7 @@ scope:
     - src/app/register
     - src/app/reset-password
     - src/app/settings
+    - src/app/status
     - src/app/v1
     - src/app/verify-email
     - src/components

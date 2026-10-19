@@ -356,6 +356,7 @@ const ROUTE_TEMPLATES: readonly string[] = [
   "/register",
   "/reset-password",
   "/settings",
+  "/status",
   "/terms",
   "/v1/{path}",
   "/v1/auth/oauth/{provider}/callback",
