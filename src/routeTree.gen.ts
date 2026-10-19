@@ -31,10 +31,13 @@ import { Route as BillingCheckoutRouteImport } from './routes/billing/checkout'
 import { Route as BillingPlansRouteImport } from './routes/billing/plans'
 import { Route as BillingSubscriptionsRouteImport } from './routes/billing/subscriptions'
 import { Route as BoxInstallRouteImport } from './routes/box/install'
+import { Route as EmailProvidersIndexRouteImport } from './routes/email-providers/index'
+import { Route as EmailProvidersCloudflareRouteImport } from './routes/email-providers/cloudflare'
 import { Route as InvitationsTokenRouteImport } from './routes/invitations/$token'
 import { Route as V1SplatRouteImport } from './routes/v1/$'
 import { Route as VerifyEmailIndexRouteImport } from './routes/verify-email.index'
 import { Route as VerifyEmailConfirmRouteImport } from './routes/verify-email/confirm'
+import { Route as EmailProvidersCloudflareDnsRouteImport } from './routes/email-providers/cloudflare/dns'
 import { Route as V1AuthOauthProviderCallbackRouteImport } from './routes/v1/auth/oauth/$provider/callback'
 
 const IndexRoute = IndexRouteImport.update({
@@ -147,6 +150,17 @@ const BoxInstallRoute = BoxInstallRouteImport.update({
   path: '/install',
   getParentRoute: () => BoxRoute,
 } as any)
+const EmailProvidersIndexRoute = EmailProvidersIndexRouteImport.update({
+  id: '/email-providers/',
+  path: '/email-providers/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EmailProvidersCloudflareRoute =
+  EmailProvidersCloudflareRouteImport.update({
+    id: '/email-providers/cloudflare',
+    path: '/email-providers/cloudflare',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const InvitationsTokenRoute = InvitationsTokenRouteImport.update({
   id: '/invitations/$token',
   path: '/invitations/$token',
@@ -167,6 +181,12 @@ const VerifyEmailConfirmRoute = VerifyEmailConfirmRouteImport.update({
   path: '/confirm',
   getParentRoute: () => VerifyEmailRoute,
 } as any)
+const EmailProvidersCloudflareDnsRoute =
+  EmailProvidersCloudflareDnsRouteImport.update({
+    id: '/dns',
+    path: '/dns',
+    getParentRoute: () => EmailProvidersCloudflareRoute,
+  } as any)
 const V1AuthOauthProviderCallbackRoute =
   V1AuthOauthProviderCallbackRouteImport.update({
     id: '/v1/auth/oauth/$provider/callback',
@@ -196,11 +216,14 @@ export interface FileRoutesByFullPath {
   '/billing/plans': typeof BillingPlansRoute
   '/billing/subscriptions': typeof BillingSubscriptionsRoute
   '/box/install': typeof BoxInstallRoute
+  '/email-providers/cloudflare': typeof EmailProvidersCloudflareRouteWithChildren
   '/invitations/$token': typeof InvitationsTokenRoute
   '/v1/$': typeof V1SplatRoute
   '/verify-email/confirm': typeof VerifyEmailConfirmRoute
   '/accounts/': typeof AccountsIndexRoute
+  '/email-providers/': typeof EmailProvidersIndexRoute
   '/verify-email/': typeof VerifyEmailIndexRoute
+  '/email-providers/cloudflare/dns': typeof EmailProvidersCloudflareDnsRoute
   '/v1/auth/oauth/$provider/callback': typeof V1AuthOauthProviderCallbackRoute
 }
 export interface FileRoutesByTo {
@@ -224,11 +247,14 @@ export interface FileRoutesByTo {
   '/billing/plans': typeof BillingPlansRoute
   '/billing/subscriptions': typeof BillingSubscriptionsRoute
   '/box/install': typeof BoxInstallRoute
+  '/email-providers/cloudflare': typeof EmailProvidersCloudflareRouteWithChildren
   '/invitations/$token': typeof InvitationsTokenRoute
   '/v1/$': typeof V1SplatRoute
   '/verify-email/confirm': typeof VerifyEmailConfirmRoute
   '/accounts': typeof AccountsIndexRoute
+  '/email-providers': typeof EmailProvidersIndexRoute
   '/verify-email': typeof VerifyEmailIndexRoute
+  '/email-providers/cloudflare/dns': typeof EmailProvidersCloudflareDnsRoute
   '/v1/auth/oauth/$provider/callback': typeof V1AuthOauthProviderCallbackRoute
 }
 export interface FileRoutesById {
@@ -254,11 +280,14 @@ export interface FileRoutesById {
   '/billing/plans': typeof BillingPlansRoute
   '/billing/subscriptions': typeof BillingSubscriptionsRoute
   '/box/install': typeof BoxInstallRoute
+  '/email-providers/cloudflare': typeof EmailProvidersCloudflareRouteWithChildren
   '/invitations/$token': typeof InvitationsTokenRoute
   '/v1/$': typeof V1SplatRoute
   '/verify-email/confirm': typeof VerifyEmailConfirmRoute
   '/accounts/': typeof AccountsIndexRoute
+  '/email-providers/': typeof EmailProvidersIndexRoute
   '/verify-email/': typeof VerifyEmailIndexRoute
+  '/email-providers/cloudflare/dns': typeof EmailProvidersCloudflareDnsRoute
   '/v1/auth/oauth/$provider/callback': typeof V1AuthOauthProviderCallbackRoute
 }
 export interface FileRouteTypes {
@@ -285,11 +314,14 @@ export interface FileRouteTypes {
     | '/billing/plans'
     | '/billing/subscriptions'
     | '/box/install'
+    | '/email-providers/cloudflare'
     | '/invitations/$token'
     | '/v1/$'
     | '/verify-email/confirm'
     | '/accounts/'
+    | '/email-providers/'
     | '/verify-email/'
+    | '/email-providers/cloudflare/dns'
     | '/v1/auth/oauth/$provider/callback'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -313,11 +345,14 @@ export interface FileRouteTypes {
     | '/billing/plans'
     | '/billing/subscriptions'
     | '/box/install'
+    | '/email-providers/cloudflare'
     | '/invitations/$token'
     | '/v1/$'
     | '/verify-email/confirm'
     | '/accounts'
+    | '/email-providers'
     | '/verify-email'
+    | '/email-providers/cloudflare/dns'
     | '/v1/auth/oauth/$provider/callback'
   id:
     | '__root__'
@@ -342,11 +377,14 @@ export interface FileRouteTypes {
     | '/billing/plans'
     | '/billing/subscriptions'
     | '/box/install'
+    | '/email-providers/cloudflare'
     | '/invitations/$token'
     | '/v1/$'
     | '/verify-email/confirm'
     | '/accounts/'
+    | '/email-providers/'
     | '/verify-email/'
+    | '/email-providers/cloudflare/dns'
     | '/v1/auth/oauth/$provider/callback'
   fileRoutesById: FileRoutesById
 }
@@ -371,9 +409,11 @@ export interface RootRouteChildren {
   BillingCheckoutRoute: typeof BillingCheckoutRoute
   BillingPlansRoute: typeof BillingPlansRoute
   BillingSubscriptionsRoute: typeof BillingSubscriptionsRoute
+  EmailProvidersCloudflareRoute: typeof EmailProvidersCloudflareRouteWithChildren
   InvitationsTokenRoute: typeof InvitationsTokenRoute
   V1SplatRoute: typeof V1SplatRoute
   AccountsIndexRoute: typeof AccountsIndexRoute
+  EmailProvidersIndexRoute: typeof EmailProvidersIndexRoute
   V1AuthOauthProviderCallbackRoute: typeof V1AuthOauthProviderCallbackRoute
 }
 
@@ -533,6 +573,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BoxInstallRouteImport
       parentRoute: typeof BoxRoute
     }
+    '/email-providers/': {
+      id: '/email-providers/'
+      path: '/email-providers'
+      fullPath: '/email-providers/'
+      preLoaderRoute: typeof EmailProvidersIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/email-providers/cloudflare': {
+      id: '/email-providers/cloudflare'
+      path: '/email-providers/cloudflare'
+      fullPath: '/email-providers/cloudflare'
+      preLoaderRoute: typeof EmailProvidersCloudflareRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/invitations/$token': {
       id: '/invitations/$token'
       path: '/invitations/$token'
@@ -560,6 +614,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/verify-email/confirm'
       preLoaderRoute: typeof VerifyEmailConfirmRouteImport
       parentRoute: typeof VerifyEmailRoute
+    }
+    '/email-providers/cloudflare/dns': {
+      id: '/email-providers/cloudflare/dns'
+      path: '/dns'
+      fullPath: '/email-providers/cloudflare/dns'
+      preLoaderRoute: typeof EmailProvidersCloudflareDnsRouteImport
+      parentRoute: typeof EmailProvidersCloudflareRoute
     }
     '/v1/auth/oauth/$provider/callback': {
       id: '/v1/auth/oauth/$provider/callback'
@@ -595,6 +656,20 @@ const VerifyEmailRouteWithChildren = VerifyEmailRoute._addFileChildren(
   VerifyEmailRouteChildren,
 )
 
+interface EmailProvidersCloudflareRouteChildren {
+  EmailProvidersCloudflareDnsRoute: typeof EmailProvidersCloudflareDnsRoute
+}
+
+const EmailProvidersCloudflareRouteChildren: EmailProvidersCloudflareRouteChildren =
+  {
+    EmailProvidersCloudflareDnsRoute: EmailProvidersCloudflareDnsRoute,
+  }
+
+const EmailProvidersCloudflareRouteWithChildren =
+  EmailProvidersCloudflareRoute._addFileChildren(
+    EmailProvidersCloudflareRouteChildren,
+  )
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
@@ -616,9 +691,11 @@ const rootRouteChildren: RootRouteChildren = {
   BillingCheckoutRoute: BillingCheckoutRoute,
   BillingPlansRoute: BillingPlansRoute,
   BillingSubscriptionsRoute: BillingSubscriptionsRoute,
+  EmailProvidersCloudflareRoute: EmailProvidersCloudflareRouteWithChildren,
   InvitationsTokenRoute: InvitationsTokenRoute,
   V1SplatRoute: V1SplatRoute,
   AccountsIndexRoute: AccountsIndexRoute,
+  EmailProvidersIndexRoute: EmailProvidersIndexRoute,
   V1AuthOauthProviderCallbackRoute: V1AuthOauthProviderCallbackRoute,
 }
 export const routeTree = rootRouteImport
