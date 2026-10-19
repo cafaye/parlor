@@ -22,11 +22,9 @@ import { useState, type ReactNode } from "react";
 import { AuthProvider } from "@/lib/auth";
 import { BillingProvider } from "@/lib/billing-context";
 import { BoxProvider } from "@/lib/box-context";
-import { PantryProvider } from "@/lib/pantry-context";
 import { OperatorProvider } from "@/lib/operator-context";
 import { type BillingClient } from "@/lib/billing";
 import { type BoxClient } from "@/lib/box";
-import { type PantryClient } from "@/lib/pantry";
 import { createIdentityClient, type IdentityClient } from "@/lib/identity";
 import { type OperatorClient } from "@/lib/operator";
 import { createTokenStore, type TokenStore } from "@/lib/token-store";
@@ -37,7 +35,6 @@ export function Providers({
   billing,
   box,
   operator,
-  pantry,
   tokens,
 }: {
   children: ReactNode;
@@ -49,8 +46,6 @@ export function Providers({
   box?: BoxClient;
   /** Overrides the real client. Tests only. */
   operator?: OperatorClient;
-  /** Overrides the real client. Tests only. */
-  pantry?: PantryClient;
   /** Overrides the real store. Tests only. */
   tokens?: TokenStore;
 }) {
@@ -80,9 +75,7 @@ export function Providers({
       <AuthProvider identity={client} tokens={store}>
         <BillingProvider billing={billing}>
           <OperatorProvider operator={operator}>
-            <BoxProvider box={box}>
-              <PantryProvider pantry={pantry}>{children}</PantryProvider>
-            </BoxProvider>
+            <BoxProvider box={box}>{children}</BoxProvider>
           </OperatorProvider>
         </BillingProvider>
       </AuthProvider>

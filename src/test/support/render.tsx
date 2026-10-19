@@ -5,7 +5,6 @@ import type { ReactElement, ReactNode } from "react";
 import { Providers } from "@/app/providers";
 import type { BillingClient } from "@/lib/billing";
 import type { BoxClient } from "@/lib/box";
-import type { PantryClient } from "@/lib/pantry";
 import type { IdentityClient } from "@/lib/identity";
 import type { OperatorClient } from "@/lib/operator";
 import { createTokenStore, type TokenStore } from "@/lib/token-store";
@@ -93,12 +92,11 @@ export function renderWithProviders(
     billing?: BillingClient;
     box?: BoxClient;
     operator?: OperatorClient;
-    pantry?: PantryClient;
     tokens?: TokenStore;
     path?: string;
   } & Omit<RenderOptions, "wrapper">,
 ): RenderWithRouterResult {
-  const { identity, billing, box, operator, pantry, tokens, path, ...renderOptions } = options;
+  const { identity, billing, box, operator, tokens, path, ...renderOptions } = options;
   const store = tokens ?? createTokenStore();
 
   // The router is ABOVE `Providers`, which is the order `__root.tsx` mounts
@@ -109,7 +107,7 @@ export function renderWithProviders(
 
   const Wrapper = ({ children }: { children: ReactNode }) => (
     <RouterContextProvider router={router}>
-      <Providers identity={identity} billing={billing} box={box} operator={operator} pantry={pantry} tokens={store}>
+      <Providers identity={identity} billing={billing} box={box} operator={operator} tokens={store}>
         {children}
       </Providers>
     </RouterContextProvider>

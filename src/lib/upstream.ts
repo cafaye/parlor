@@ -140,12 +140,11 @@
  */
 import { BILLING_NOT_CONFIGURED_CODE, BILLING_TOKEN_UNAVAILABLE_CODE } from "@/lib/billing";
 import { BOX_NOT_CONFIGURED_CODE } from "@/lib/box";
-import { PANTRY_NOT_CONFIGURED_CODE } from "@/lib/pantry";
 import { mintBillingToken } from "@/lib/billing-token.server";
 import { tracedFetch } from "@/lib/telemetry.server";
 
 /** The services this app forwards to. Nothing else is reachable. */
-export type UpstreamName = "identity" | "billing" | "box" | "pantry";
+export type UpstreamName = "identity" | "billing" | "box";
 
 /**
  * The request body ceiling, in bytes.
@@ -553,12 +552,6 @@ export const ROUTES: readonly Route[] = [
     path: ["accounts", ":accountId", "email-providers", ":connectionId", "verify"],
     upstream: "box",
   },
-  {
-    method: "GET",
-    path: ["projects"],
-    upstream: "pantry",
-    query: ["kind", "language", "contract", "owner", "limit", "cursor"],
-  },
 ];
 
 /** What kind of wildcard a `:name` in a route path is. */
@@ -640,10 +633,6 @@ export type UpstreamOptions = {
    * with a distinct 503 (`BOX_NOT_CONFIGURED_CODE`) rather than dialing.
    */
   boxUrl?: string;
-  /**
-   * Where pantry runs. Empty means "not configured", same shape as box.
-   */
-  pantryUrl?: string;
   /** The seam. Tests pass a recorder; the route handler passes nothing. */
   fetchImpl?: typeof fetch;
 };
@@ -660,7 +649,6 @@ export function createUpstreamForwarder(options: UpstreamOptions): UpstreamForwa
     identity: stripTrailingSlash(options.identityUrl),
     billing: stripTrailingSlash(options.billingUrl),
     box: stripTrailingSlash(options.boxUrl ?? ""),
-    pantry: stripTrailingSlash(options.pantryUrl ?? ""),
   };
   const fetchImpl = options.fetchImpl ?? fetch;
 
@@ -712,10 +700,6 @@ export function createUpstreamForwarder(options: UpstreamOptions): UpstreamForwa
     // branch on that code.
     if (match.upstream === "box" && bases.box === "") {
       return problem(503, BOX_NOT_CONFIGURED_CODE, "Box is not configured.");
-    }
-
-    if (match.upstream === "pantry" && bases.pantry === "") {
-      return problem(503, PANTRY_NOT_CONFIGURED_CODE, "Pantry is not configured.");
     }
 
     const url = buildUrl(bases[match.upstream], match, segments, request.url);
