@@ -118,7 +118,6 @@ const DEFAULT_IDENTITY_URL = "http://localhost:8080";
 const forward = createUpstreamForwarder({
   identityUrl: identityUrl(),
   billingUrl: billingUrl(),
-  boxUrl: boxUrl(),
 });
 
 /**
@@ -274,13 +273,4 @@ function identityUrl(): string {
  */
 function billingUrl(): string {
   return (process.env.BILLING_URL?.trim() ?? "").replace(/\/+$/, "");
-}
-
-/**
- * The box address. Empty means "not configured", the same shape as billing:
- * the launch stack may deploy no box, and the forwarder answers a box route
- * with a distinct 503 rather than dialing anything.
- */
-function boxUrl(): string {
-  return (process.env.BOX_URL?.trim() ?? "").replace(/\/+$/, "");
 }
