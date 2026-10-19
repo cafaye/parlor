@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
+import { Route as BoxRouteImport } from './routes/box'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as HealthzRouteImport } from './routes/healthz'
 import { Route as LoginRouteImport } from './routes/login'
@@ -28,6 +29,7 @@ import { Route as BillingChargesRouteImport } from './routes/billing/charges'
 import { Route as BillingCheckoutRouteImport } from './routes/billing/checkout'
 import { Route as BillingPlansRouteImport } from './routes/billing/plans'
 import { Route as BillingSubscriptionsRouteImport } from './routes/billing/subscriptions'
+import { Route as BoxInstallRouteImport } from './routes/box/install'
 import { Route as InvitationsTokenRouteImport } from './routes/invitations/$token'
 import { Route as V1SplatRouteImport } from './routes/v1/$'
 import { Route as VerifyEmailIndexRouteImport } from './routes/verify-email.index'
@@ -42,6 +44,11 @@ const IndexRoute = IndexRouteImport.update({
 const AdminRoute = AdminRouteImport.update({
   id: '/admin',
   path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BoxRoute = BoxRouteImport.update({
+  id: '/box',
+  path: '/box',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
@@ -129,6 +136,11 @@ const BillingSubscriptionsRoute = BillingSubscriptionsRouteImport.update({
   path: '/billing/subscriptions',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BoxInstallRoute = BoxInstallRouteImport.update({
+  id: '/install',
+  path: '/install',
+  getParentRoute: () => BoxRoute,
+} as any)
 const InvitationsTokenRoute = InvitationsTokenRouteImport.update({
   id: '/invitations/$token',
   path: '/invitations/$token',
@@ -159,6 +171,7 @@ const V1AuthOauthProviderCallbackRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/box': typeof BoxRouteWithChildren
   '/forgot-password': typeof ForgotPasswordRoute
   '/healthz': typeof HealthzRoute
   '/login': typeof LoginRoute
@@ -175,6 +188,7 @@ export interface FileRoutesByFullPath {
   '/billing/checkout': typeof BillingCheckoutRoute
   '/billing/plans': typeof BillingPlansRoute
   '/billing/subscriptions': typeof BillingSubscriptionsRoute
+  '/box/install': typeof BoxInstallRoute
   '/invitations/$token': typeof InvitationsTokenRoute
   '/v1/$': typeof V1SplatRoute
   '/verify-email/confirm': typeof VerifyEmailConfirmRoute
@@ -185,6 +199,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/box': typeof BoxRouteWithChildren
   '/forgot-password': typeof ForgotPasswordRoute
   '/healthz': typeof HealthzRoute
   '/login': typeof LoginRoute
@@ -200,6 +215,7 @@ export interface FileRoutesByTo {
   '/billing/checkout': typeof BillingCheckoutRoute
   '/billing/plans': typeof BillingPlansRoute
   '/billing/subscriptions': typeof BillingSubscriptionsRoute
+  '/box/install': typeof BoxInstallRoute
   '/invitations/$token': typeof InvitationsTokenRoute
   '/v1/$': typeof V1SplatRoute
   '/verify-email/confirm': typeof VerifyEmailConfirmRoute
@@ -211,6 +227,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/box': typeof BoxRouteWithChildren
   '/forgot-password': typeof ForgotPasswordRoute
   '/healthz': typeof HealthzRoute
   '/login': typeof LoginRoute
@@ -227,6 +244,7 @@ export interface FileRoutesById {
   '/billing/checkout': typeof BillingCheckoutRoute
   '/billing/plans': typeof BillingPlansRoute
   '/billing/subscriptions': typeof BillingSubscriptionsRoute
+  '/box/install': typeof BoxInstallRoute
   '/invitations/$token': typeof InvitationsTokenRoute
   '/v1/$': typeof V1SplatRoute
   '/verify-email/confirm': typeof VerifyEmailConfirmRoute
@@ -239,6 +257,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/admin'
+    | '/box'
     | '/forgot-password'
     | '/healthz'
     | '/login'
@@ -255,6 +274,7 @@ export interface FileRouteTypes {
     | '/billing/checkout'
     | '/billing/plans'
     | '/billing/subscriptions'
+    | '/box/install'
     | '/invitations/$token'
     | '/v1/$'
     | '/verify-email/confirm'
@@ -265,6 +285,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/admin'
+    | '/box'
     | '/forgot-password'
     | '/healthz'
     | '/login'
@@ -280,6 +301,7 @@ export interface FileRouteTypes {
     | '/billing/checkout'
     | '/billing/plans'
     | '/billing/subscriptions'
+    | '/box/install'
     | '/invitations/$token'
     | '/v1/$'
     | '/verify-email/confirm'
@@ -290,6 +312,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/admin'
+    | '/box'
     | '/forgot-password'
     | '/healthz'
     | '/login'
@@ -306,6 +329,7 @@ export interface FileRouteTypes {
     | '/billing/checkout'
     | '/billing/plans'
     | '/billing/subscriptions'
+    | '/box/install'
     | '/invitations/$token'
     | '/v1/$'
     | '/verify-email/confirm'
@@ -317,6 +341,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRoute
+  BoxRoute: typeof BoxRouteWithChildren
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   HealthzRoute: typeof HealthzRoute
   LoginRoute: typeof LoginRoute
@@ -353,6 +378,13 @@ declare module '@tanstack/react-router' {
       path: '/admin'
       fullPath: '/admin'
       preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/box': {
+      id: '/box'
+      path: '/box'
+      fullPath: '/box'
+      preLoaderRoute: typeof BoxRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/forgot-password': {
@@ -474,6 +506,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BillingSubscriptionsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/box/install': {
+      id: '/box/install'
+      path: '/install'
+      fullPath: '/box/install'
+      preLoaderRoute: typeof BoxInstallRouteImport
+      parentRoute: typeof BoxRoute
+    }
     '/invitations/$token': {
       id: '/invitations/$token'
       path: '/invitations/$token'
@@ -512,6 +551,16 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface BoxRouteChildren {
+  BoxInstallRoute: typeof BoxInstallRoute
+}
+
+const BoxRouteChildren: BoxRouteChildren = {
+  BoxInstallRoute: BoxInstallRoute,
+}
+
+const BoxRouteWithChildren = BoxRoute._addFileChildren(BoxRouteChildren)
+
 interface VerifyEmailRouteChildren {
   VerifyEmailConfirmRoute: typeof VerifyEmailConfirmRoute
   VerifyEmailIndexRoute: typeof VerifyEmailIndexRoute
@@ -529,6 +578,7 @@ const VerifyEmailRouteWithChildren = VerifyEmailRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
+  BoxRoute: BoxRouteWithChildren,
   ForgotPasswordRoute: ForgotPasswordRoute,
   HealthzRoute: HealthzRoute,
   LoginRoute: LoginRoute,

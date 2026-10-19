@@ -139,11 +139,12 @@
  * file — so there is no cycle to reason about.
  */
 import { BILLING_NOT_CONFIGURED_CODE, BILLING_TOKEN_UNAVAILABLE_CODE } from "@/lib/billing";
+import { BOX_NOT_CONFIGURED_CODE } from "@/lib/box";
 import { mintBillingToken } from "@/lib/billing-token.server";
 import { tracedFetch } from "@/lib/telemetry.server";
 
 /** The services this app forwards to. Nothing else is reachable. */
-export type UpstreamName = "identity" | "billing";
+export type UpstreamName = "identity" | "billing" | "box";
 
 /**
  * The request body ceiling, in bytes.
@@ -540,6 +541,17 @@ export const ROUTES: readonly Route[] = [
   { method: "POST", path: ["subscriptions", ":id", "payment_method"], upstream: "billing" },
   { method: "POST", path: ["checkouts"], upstream: "billing" },
   { method: "GET", path: ["charges"], upstream: "billing", query: ["cursor", "limit"] },
+
+  // --- box: the surface moved from website ---------------------------------
+  { method: "GET", path: ["accounts", ":accountId", "boxes"], upstream: "box" },
+  { method: "POST", path: ["accounts", ":accountId", "capabilities"], upstream: "box" },
+  { method: "GET", path: ["accounts", ":accountId", "email-providers"], upstream: "box" },
+  { method: "POST", path: ["accounts", ":accountId", "email-providers"], upstream: "box" },
+  {
+    method: "POST",
+    path: ["accounts", ":accountId", "email-providers", ":connectionId", "verify"],
+    upstream: "box",
+  },
 ];
 
 /** What kind of wildcard a `:name` in a route path is. */
@@ -615,6 +627,12 @@ export type UpstreamOptions = {
    * passes an address; a test that wants the launch stack passes "".
    */
   billingUrl: string;
+  /**
+   * Where box runs. Empty means "not configured", same shape as billing: the
+   * launch stack may deploy no box, and the forwarder answers a box route
+   * with a distinct 503 (`BOX_NOT_CONFIGURED_CODE`) rather than dialing.
+   */
+  boxUrl?: string;
   /** The seam. Tests pass a recorder; the route handler passes nothing. */
   fetchImpl?: typeof fetch;
 };
@@ -630,6 +648,7 @@ export function createUpstreamForwarder(options: UpstreamOptions): UpstreamForwa
   const bases: Record<UpstreamName, string> = {
     identity: stripTrailingSlash(options.identityUrl),
     billing: stripTrailingSlash(options.billingUrl),
+    box: stripTrailingSlash(options.boxUrl ?? ""),
   };
   const fetchImpl = options.fetchImpl ?? fetch;
 
@@ -673,6 +692,14 @@ export function createUpstreamForwarder(options: UpstreamOptions): UpstreamForwa
     // that branch on it and the forwarder that mints it agree on one spelling.
     if (match.upstream === "billing" && bases.billing === "") {
       return problem(503, BILLING_NOT_CONFIGURED_CODE, "Billing is not configured.");
+    }
+
+    // BOX IS OPTIONAL IN THE SAME WAY BILLING IS. An empty `BOX_URL` means no
+    // Box deployed; a box route answers here with a distinct 503 carrying
+    // `BOX_NOT_CONFIGURED_CODE` rather than dialing anything, and the screens
+    // branch on that code.
+    if (match.upstream === "box" && bases.box === "") {
+      return problem(503, BOX_NOT_CONFIGURED_CODE, "Box is not configured.");
     }
 
     const url = buildUrl(bases[match.upstream], match, segments, request.url);
