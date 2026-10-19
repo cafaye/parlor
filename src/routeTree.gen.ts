@@ -19,6 +19,7 @@ import { Route as ReadyzRouteImport } from './routes/readyz'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as StatusRouteImport } from './routes/status'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as VerifyEmailRouteImport } from './routes/verify-email'
 import { Route as AccountsIndexRouteImport } from './routes/accounts/index'
@@ -81,6 +82,11 @@ const ResetPasswordRoute = ResetPasswordRouteImport.update({
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StatusRoute = StatusRouteImport.update({
+  id: '/status',
+  path: '/status',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TermsRoute = TermsRouteImport.update({
@@ -161,6 +167,7 @@ export interface FileRoutesByFullPath {
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
+  '/status': typeof StatusRoute
   '/terms': typeof TermsRoute
   '/verify-email': typeof VerifyEmailRouteWithChildren
   '/accounts/$accountId': typeof AccountsAccountIdRoute
@@ -186,6 +193,7 @@ export interface FileRoutesByTo {
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
+  '/status': typeof StatusRoute
   '/terms': typeof TermsRoute
   '/accounts/$accountId': typeof AccountsAccountIdRoute
   '/billing/charges': typeof BillingChargesRoute
@@ -211,6 +219,7 @@ export interface FileRoutesById {
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
+  '/status': typeof StatusRoute
   '/terms': typeof TermsRoute
   '/verify-email': typeof VerifyEmailRouteWithChildren
   '/accounts/$accountId': typeof AccountsAccountIdRoute
@@ -238,6 +247,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/reset-password'
     | '/settings'
+    | '/status'
     | '/terms'
     | '/verify-email'
     | '/accounts/$accountId'
@@ -263,6 +273,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/reset-password'
     | '/settings'
+    | '/status'
     | '/terms'
     | '/accounts/$accountId'
     | '/billing/charges'
@@ -287,6 +298,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/reset-password'
     | '/settings'
+    | '/status'
     | '/terms'
     | '/verify-email'
     | '/accounts/$accountId'
@@ -313,6 +325,7 @@ export interface RootRouteChildren {
   RegisterRoute: typeof RegisterRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SettingsRoute: typeof SettingsRoute
+  StatusRoute: typeof StatusRoute
   TermsRoute: typeof TermsRoute
   VerifyEmailRoute: typeof VerifyEmailRouteWithChildren
   AccountsAccountIdRoute: typeof AccountsAccountIdRoute
@@ -396,6 +409,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/status': {
+      id: '/status'
+      path: '/status'
+      fullPath: '/status'
+      preLoaderRoute: typeof StatusRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/terms': {
@@ -517,6 +537,7 @@ const rootRouteChildren: RootRouteChildren = {
   RegisterRoute: RegisterRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SettingsRoute: SettingsRoute,
+  StatusRoute: StatusRoute,
   TermsRoute: TermsRoute,
   VerifyEmailRoute: VerifyEmailRouteWithChildren,
   AccountsAccountIdRoute: AccountsAccountIdRoute,

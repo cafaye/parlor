@@ -16,6 +16,7 @@
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { initErrorReporting } from "@/lib/error-reporting";
 import { useState, type ReactNode } from "react";
 
 import { AuthProvider } from "@/lib/auth";
@@ -43,6 +44,8 @@ export function Providers({
   /** Overrides the real store. Tests only. */
   tokens?: TokenStore;
 }) {
+  initErrorReporting();
+
   // `useState` with an initializer, not a module constant: one client per
   // request on the server, and a fresh cache per mount in the browser.
   const [queryClient] = useState(
