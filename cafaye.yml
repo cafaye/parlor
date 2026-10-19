@@ -138,7 +138,7 @@ repository:
   # Read from `git remote get-url origin`, not assumed from the pattern.
   url: git@github.com:cafaye/parlor.git
   defaultBranch: master
-  visibility: public
+  visibility: private
 
 owner:
   team: parlor
