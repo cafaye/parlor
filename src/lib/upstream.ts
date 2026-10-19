@@ -545,8 +545,6 @@ export const ROUTES: readonly Route[] = [
 
   // --- box: the surface moved from website ---------------------------------
   { method: "GET", path: ["accounts", ":accountId", "boxes"], upstream: "box" },
-  { method: "GET", path: ["accounts", ":accountId", "setup"], upstream: "box" },
-  { method: "PATCH", path: ["accounts", ":accountId", "setup"], upstream: "box" },
   { method: "POST", path: ["accounts", ":accountId", "capabilities"], upstream: "box" },
   { method: "GET", path: ["accounts", ":accountId", "email-providers"], upstream: "box" },
   { method: "POST", path: ["accounts", ":accountId", "email-providers"], upstream: "box" },

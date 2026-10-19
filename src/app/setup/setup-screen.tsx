@@ -1,11 +1,11 @@
 import { useState } from "react";
 
+import { useQuery } from "@tanstack/react-query";
+
 import { Link } from "@tanstack/react-router";
 
 import { Button, Callout, LoadingState, Surface } from "@/components/ui";
 import { useAuth } from "@/lib/auth";
-import { useAccounts } from "@/lib/accounts";
-import { useMutation, useQuery } from "@tanstack/react-query";
 import { usePantry } from "@/lib/pantry-context";
 
 /**
@@ -19,44 +19,8 @@ import { usePantry } from "@/lib/pantry-context";
  */
 export function SetupScreen() {
   const { token } = useAuth();
-  const accounts = useAccounts();
-  const accountId = accounts.data?.[0]?.id;
   const pantry = usePantry();
   const [selected, setSelected] = useState<Set<string>>(new Set());
-
-  const setupQuery = useQuery({
-    queryKey: ["setup", accountId, token ?? ""],
-    queryFn: async () => {
-      if (!accountId) return null;
-      const res = await fetch(`/v1/accounts/${accountId}/setup`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (!res.ok) return null;
-      const body = await res.json();
-      return (body?.setup?.selected_services ?? []) as string[];
-    },
-    enabled: Boolean(accountId),
-    retry: false,
-  });
-
-  // hydrate selection from the server once
-  if (setupQuery.data && selected.size === 0 && setupQuery.data.length > 0) {
-    setSelected(new Set(setupQuery.data));
-  }
-
-  const saveMutation = useMutation({
-    mutationFn: async (services: string[]) => {
-      if (!accountId) return;
-      await fetch(`/v1/accounts/${accountId}/setup`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ selected_services: services }),
-      });
-    },
-  });
 
   const catalog = useQuery({
     queryKey: ["pantry", "projects", token ?? ""],
@@ -91,18 +55,6 @@ export function SetupScreen() {
               Choose hosted or your own box
             </Link>{" "}
             <span className="text-muted">— both end with the same services running.</span>
-          </li>
-          <li>
-            <Link className="font-medium underline underline-offset-2" to="/email-providers">
-              Configure an email provider
-            </Link>{" "}
-            <span className="text-muted">— seal credentials to your box.</span>
-          </li>
-          <li>
-            <Link className="font-medium underline underline-offset-2" to="/email-providers/cloudflare/dns">
-              Verify DNS records
-            </Link>{" "}
-            <span className="text-muted">— prove control of your sending domain.</span>
           </li>
           <li>
             <Link className="font-medium underline underline-offset-2" to="/billing/plans">
@@ -154,7 +106,7 @@ export function SetupScreen() {
       </Surface>
 
       <div className="flex justify-end">
-        <Button type="button" onClick={() => saveMutation.mutate(Array.from(selected))} disabled={saveMutation.isPending}>{saveMutation.isPending ? "Saving…" : "Save selection"}</Button>
+        <Button type="button">Save selection</Button>
       </div>
     </div>
   );
