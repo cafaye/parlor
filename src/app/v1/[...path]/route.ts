@@ -119,6 +119,7 @@ const forward = createUpstreamForwarder({
   identityUrl: identityUrl(),
   billingUrl: billingUrl(),
   boxUrl: boxUrl(),
+  pantryUrl: pantryUrl(),
 });
 
 /**
@@ -283,4 +284,8 @@ function billingUrl(): string {
  */
 function boxUrl(): string {
   return (process.env.BOX_URL?.trim() ?? "").replace(/\/+$/, "");
+}
+
+function pantryUrl(): string {
+  return (process.env.PANTRY_URL?.trim() ?? "").replace(/\/+$/, "");
 }
