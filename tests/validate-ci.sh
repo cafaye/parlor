@@ -1742,7 +1742,7 @@ self_test() {
     local n=0 proof
     for proof in \
     "rm-workflow|rm -f '$SANDBOX/ci/ci.yml'" \
-    "dead-uses-path|sed_i 's|\.github/workflows/ci\.reusable|workflows/ci.reusable|' '$SANDBOX/ci/ci.yml'" \
+    "dead-uses-path|sed_i 's|cafaye/kit/ci/ci\.reusable|cafaye/kit/workflows/ci.reusable|' '$SANDBOX/ci/ci.yml'" \
     "language-bun|sed_i 's|language: node|language: bun|' '$SANDBOX/ci/ci.yml'" \
     "pin-drifts-into-ci|sed_i 's|\"node\":\"[^\"]*\"|\"node\":\"24.0.0\"|' '$SANDBOX/ci/ci.yml'" \
     "pin-drifts-in-mise|sed_i 's|^node = .*|node = \"20.11.0\"|' '$SANDBOX/mise.toml'" \
