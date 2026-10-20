@@ -1,7 +1,8 @@
 # AGENTS.md — working rules for this repo
 
 Orientation for agents and humans changing `parlor`. The operating contract
-lives in the house rules — SSH remotes for the repositories cafaye owns, and tests first: write the test, watch it fail, then implement; this file is the
+lives in the house rules — SSH remotes for the repositories cafaye owns, and
+tests first: write the test, watch it fail, then implement. This file is the
 parlor-specific part.
 
 ## What this repo is
