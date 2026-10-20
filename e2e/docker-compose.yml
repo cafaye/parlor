@@ -50,7 +50,7 @@
 #
 #      WHY, because "it is faster" is not the reason and the measured numbers
 #      say so: a warm full build here is 13.81s and invalidating identity costs
-#      20.40s (logs/parlor-registry-e2e-01/README.md, measured). The old
+#      20.40s (measured on this machine). The old
 #      `build:` stanzas did not cost minutes. What they cost was that
 #      `cafaye/e2e-identity:local` was built from whatever happened to be in
 #      the sibling checkout at the instant the suite ran, pushed nowhere, and
@@ -463,7 +463,7 @@ services:
       # still holds is what `FORCE` buys, and it is measured rather than assumed —
       # run as `identity` with an account identity set, a session reads its own
       # account's row and not another's, and with no identity set it reads zero
-      # (see HANDOFF-parlor-e2e-protect-table-01.md §3). The remaining gap is the
+      # (see HANDOFF-parlor-e2e-protect-table-01 §3). The remaining gap is the
       # ability to remove the policies, and closing it means editing identity's
       # `DATABASE_URL`, which is a sibling repository this one may not modify; it
       # is DECISION NEEDED in the handoff rather than quietly fixed by pointing

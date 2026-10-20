@@ -32,7 +32,7 @@
 # ## WHY THE LAST PACKET TO LOOK AT THIS SAID "CORE CANNOT CHECK IT", AND WHY
 # ## THAT IS NO LONGER TRUE
 #
-# `REPORT-parlor-tenant-proof.md` §4 records, honestly, why it did NOT write
+# `REPORT-parlor-tenant-proof` §4 records, honestly, why it did NOT write
 # this file: *"its checker is SQL-shaped: it reads `create policy`, `alter
 # table … row level security` and `protect_table(...)` calls … so a
 # `tenancy.yml` here would be a declaration core cannot check."* That was
@@ -116,7 +116,7 @@
 #     real property and it is guarded by `src/lib/accounts.test.tsx` — 12
 #     tests, including the two that go red when either half of a key is
 #     dropped — but it is a cache-correctness property about the caller's own
-#     browser, not a boundary over customer data. `REPORT-parlor-tenant-proof.md`
+#     browser, not a boundary over customer data. `REPORT-parlor-tenant-proof`
 #     §2 records the nine breakages observed red.
 #   * **`src/lib/upstream.ts` — the forwarder's `ROUTES` allow-list.** Seven
 #     of its entries carry a `:accountId` segment, value-matched as a uuid

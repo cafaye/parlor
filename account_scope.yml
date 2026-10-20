@@ -6,16 +6,16 @@ service: parlor
 #
 # Checked by cafaye/core's contract harness:
 #
-#     /Users/kaka/Code/any/moon/cafaye/core/harness/bin/account-scope-check .
+#     /Users/kaka/Code/any/cafaye/core/harness/bin/account-scope-check .
 #
 # THE ANSWER IS "NONE OF THEM", AND THAT IS A DECLARATION RATHER THAN A COMMENT.
 #
 # `parlor` is the sign-in form — the page identity's README says it renders no
 # HTML and that the login hop lives here. It holds NO customer rows: there is no
 # database, no query layer and no migration of its own.
-# `kit/reports/tenant-adapter-ts-01/subject-audit.sh` sweeps every TypeScript
-# service in the fleet for a driver import, a driver declaration and a `.sql`
-# file and finds none in any of them, so that is a measurement and not a claim.
+# A sweep of every TypeScript service in the fleet for a driver import, a driver
+# declaration and a `.sql` file found none in any of them, so that is a
+# measurement and not a claim.
 # A repository with no such file is indistinguishable from a service that never
 # did the work, and all eight in-scope repositories are in that state today.
 #

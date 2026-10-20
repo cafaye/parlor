@@ -348,7 +348,7 @@ export type Route = {
  * /v1/session` can give, the client can perform it, and the login screen
  * drives it. What did NOT cross, and still has not, is the disable —
  * `DELETE /v1/mfa` — which remains a destructive security action with no
- * screen behind it. See `REPORT-parlor-mfa-challenge-01.md`.
+ * screen behind it. See `REPORT-parlor-mfa-challenge-01`.
  */
 export const ROUTES: readonly Route[] = [
   // --- identity: the session and user routes ------------------------------

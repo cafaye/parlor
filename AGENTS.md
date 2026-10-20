@@ -139,7 +139,7 @@ e2e/no-token-artifacts.ts global teardown: no artifact holds a session token,
   anything starts. Reading it out of the document is what stops the two from
   drifting into disagreeing about where the script lives. The measurement, and
   why the failure took this shape, is in
-  `HANDOFF-parlor-e2e-protect-table-01.md`.
+  `HANDOFF-parlor-e2e-protect-table-01`.
 - **`POSTGRES_USER` is `postgres` and it cannot be `identity`.** The official
   image creates `POSTGRES_USER` as a superuser BEFORE initdb runs, and kit's
   script then does `CREATE ROLE <name>` per `KIT_POSTGRES_DATABASES`; with
@@ -325,7 +325,7 @@ and dies with `ERR_MODULE_NOT_FOUND`.
   with the framework that named it. It was a *second, looser* standard that
   `npm run lint` read and CI never did — and a developer who ran the documented
   command got a green they had not earned. One lint command, the fleet's, and it
-  cannot drift from the gate. (`HANDOFF-parlor-eslint-335-01.md` is the packet
+  cannot drift from the gate. (`HANDOFF-parlor-eslint-335-01` is the packet
   that removed it, with the measurements.)
 - **`kit/lint/eslint.config.mjs` is not this repository's to edit.** Overriding a
   rule there, or with an inline disable that is really an override, is how a
@@ -639,7 +639,7 @@ provider edits that array. `redirect_uri` remains a deployment fact this
 repository does not own: identity builds it from its own configured public base,
 and if that is not **this app's origin** the round trip completes on the wrong
 origin, where the state cookie is not in scope. **No unit test here can see
-that** — see `HANDOFF-parlor-02-social-ui.md` — but the end-to-end tier now
+that** — see `HANDOFF-parlor-02-social-ui` — but the end-to-end tier now
 does, and that is the return on `parlor-e2e-social-01`: `social.e2e.spec.ts`
 drives a real browser through a real identity and a real provider, and
 `OAUTH_REDIRECT_BASE_URL` is the edge's published port. Point it at identity's
@@ -1062,3 +1062,11 @@ There is no `@testing-library/user-event`; `fireEvent` from the already-installe
 
 ## Secrets
 - No `.env` files with values. Use `cafe secret set/get/list` (dev) and `cafe dev` (injects). See `docs/secrets.md`.
+
+## Packet identifiers
+
+`REPORT-x`, `HANDOFF-x` and `MEASUREMENTS-x` name **work packets, not
+files**. The written reports were removed on 2026-10-20: duplicated across
+repositories, owned by nobody, rotting faster than they were read. What
+survives of a packet is its entry in `CHANGELOG.md` and, where a decision was
+made, in `DECISIONS.md`. A citation to a packet id points at that entry.

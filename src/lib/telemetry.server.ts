@@ -243,7 +243,7 @@ export function install(): void {
   // async-context store on boot is not the no-op the packet asks for.
   //
   // WHY IT IS SAFE HERE, which was the blocking question in
-  // HANDOFF-otel-01.md §4: this repository's serving runtime is Node —
+  // HANDOFF-otel-01 §4: this repository's serving runtime is Node —
   // `vite.node.config.mts` / the Dockerfile / `config/deploy.yml` all target it —
   // and `node:async_hooks` is core there. `compatibility_flags:
   // ["nodejs_compat"]` in `wrangler.jsonc` is what keeps that true for the

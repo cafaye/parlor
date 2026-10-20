@@ -194,7 +194,7 @@ test("the session survives a page load, so a signed-in person can reach their ac
   // stored token against a live `GET /v1/me` before the header can say who this
   // is. Everything below this line therefore proves the session survived a fresh
   // document, not a route change — which is the property this file's name claims
-  // and the one HANDOFF-parlor-tanstack-start.md says the migration never
+  // and the one HANDOFF-parlor-tanstack-start says the migration never
   // exercised.
   await page.reload();
 

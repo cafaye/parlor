@@ -420,7 +420,7 @@ gate:
     # and a throwing handler answering 500 rather than killing the process.
     #
     # The floor before that, 710, was raised by the tenant-proof packet:
-    # 665 -> 710, a +45 in two files and for one reason. `DEBT.md` D18 measured this repository at
+    # 665 -> 710, a +45 in two files and for one reason. `cafaye/notes/debt.md` D18 measured this repository at
     # zero cross-tenant negative tests, and that was true: there was nothing in
     # the suite asserting that one account's rows are not another account's.
     # The number moved because the account boundary is now written down in two

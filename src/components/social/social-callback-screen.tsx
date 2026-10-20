@@ -97,7 +97,7 @@ const DID_NOT_FINISH = "That sign-in did not finish here. Nothing was signed in.
  * password path's prompt drives it, but a social sign-in that lands on the
  * challenge has no form here to answer it with — so the honest sentence is the
  * one that says "you are not signed in" and points at the screen that exists.
- * See `HANDOFF-parlor-02-social-ui.md` for the finding.
+ * See `HANDOFF-parlor-02-social-ui` for the finding.
  */
 const SECOND_FACTOR =
   "This account has a second factor, so this sign-in is not finished and nobody is signed in. Sign in with your email and password instead.";

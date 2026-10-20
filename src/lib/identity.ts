@@ -518,7 +518,7 @@ export type IdentityClient = {
   // is still unreachable from THIS screen: a social sign-in that lands on the
   // challenge has no form to answer it with, so the honest answer is the
   // sentence that points at the password path. See
-  // `HANDOFF-parlor-02-social-ui.md` for the finding.
+  // `HANDOFF-parlor-02-social-ui` for the finding.
   // ---------------------------------------------------------------------------
   startSocialLogin: (provider: SocialProvider) => Promise<string>;
   completeSocialLogin: (

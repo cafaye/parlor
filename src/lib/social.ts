@@ -106,7 +106,7 @@ export function socialStartPath(provider: string): string {
  * This app does not LINK a browser to this path — the provider does, from
  * whatever `redirect_uri` identity was configured with, and that address has to
  * be this origin or the state cookie is not in scope when the callback arrives.
- * See `HANDOFF-social-parlor-01-collision.md`, "redirect_uri is a deployment
+ * See `HANDOFF-social-parlor-01-collision`, "redirect_uri is a deployment
  * fact nobody has written down".
  */
 export function socialCallbackPath(provider: string): string {

@@ -10,7 +10,7 @@ import { linkClasses } from "./link";
  * cafaye has not published terms of service or a privacy policy, and inventing
  * either would be printing claims nobody made — that is the failure mode this
  * component exists to avoid, and it is named in the fleet's own precedent (the
- * retired `cafaye/site`, whose `REPORT-site-legal-01.md` records the decision
+ * retired `cafaye/site`, whose `REPORT-site-legal-01` records the decision
  * and what was ruled out).
  *
  * So the body says the page is a placeholder, tells the operator to update the

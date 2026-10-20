@@ -904,7 +904,7 @@ describe("the sessions panel", () => {
 describe("what this screen deliberately does not have", () => {
   it("offers exactly the controls whose routes the forwarder allows", async () => {
     // Display name, other sessions, delete-account and the second factor all
-    // have routes in `identity` now — see `REPORT-parlor-profile-v2-01.md` §3 —
+    // have routes in `identity` now — see `REPORT-parlor-profile-v2-01` §3 —
     // so they are here and do what their labels say. What is left is absent for
     // the same reason it was then, and in the same form: not greyed, not
     // "coming soon", not behind a disabled control. A greyed control is still a

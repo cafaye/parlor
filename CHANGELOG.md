@@ -19,7 +19,7 @@ All notable changes to parlor are recorded here. The format follows
   `idempotency_key_reused`), `src/lib/upstream.ts`'s `problem()`,
   `src/app/v1/[...path]/route.ts`'s `notFound()`, and the five test files
   that stub those envelopes. The two references in
-  `REPORT-parlor-oauth-callback-01.md` and `REPORT-parlor-profile-v1-01.md`
+  `REPORT-parlor-oauth-callback-01` and `REPORT-parlor-profile-v1-01`
   stay as they were written: each is a transcript of what a running identity
   answered at the time, and a record edited to match a later configuration is
   no longer a record. `README.md` now prints the CLI as `cafe …` (§3 L1's docs
@@ -249,7 +249,7 @@ All notable changes to parlor are recorded here. The format follows
   it by asserting the secret is absent from the document after the confirm.
   The gate floor moved 868 → 895 with the account in `gate.yml`. What this
   leaves — the LOGIN challenge, which is still refused and still owned by the
-  login flow — is in `REPORT-parlor-mfa-enroll-01.md`.
+  login flow — is in `REPORT-parlor-mfa-enroll-01`.
 
 - **A `traceparent` this hop derives, and nothing a caller chose.** A caller
   cannot put its own parent on an upstream request: `traceparent` is not on
@@ -278,7 +278,7 @@ All notable changes to parlor are recorded here. The format follows
   `context.with()` is a no-op, and every client span is a ROOT span with a fresh
   trace id — a trace view full of unrelated single-span traces, each carrying the
   right `service.name`, which is indistinguishable from a healthy service. The
-  blocking question in `HANDOFF-otel-01.md` §4 is answered by the ruling that
+  blocking question in `HANDOFF-otel-01` §4 is answered by the ruling that
   this service runs SSR + a fetch-forwarding BFF on Node, and measured on the
   BUILT Node server: `GET /v1/me` with an inbound `traceparent` exported two
   spans under that trace id and the fake upstream received
@@ -312,7 +312,7 @@ All notable changes to parlor are recorded here. The format follows
   pins to the version it deploys, and records the choice here") authorises the
   bump. The measurements, and three further defects in kit's
   `hono.ts.snippet` — including a `defaultTextMapGetter` that silently discards
-  every inbound `traceparent` — are in `HANDOFF-otel-01.md` §2.
+  every inbound `traceparent` — are in `HANDOFF-otel-01` §2.
 
 ### Removed
 
@@ -459,7 +459,7 @@ All notable changes to parlor are recorded here. The format follows
   hides it there. Two are a pre-existing defect in this repository's router:
   `src/routes/verify-email.tsx` declares a `component` and no `<Outlet />`, so
   `/verify-email/confirm` is served the index screen's body. Both are written up
-  in `HANDOFF-parlor-e2e-protect-table-01.md` §4 and §5 rather than patched — one
+  in `HANDOFF-parlor-e2e-protect-table-01` §4 and §5 rather than patched — one
   is a sibling repository, the other belongs to whoever owns the screens. The three
   social tests `parlor-e2e-social-01` added all pass against the fixed cluster.
 
@@ -1770,7 +1770,7 @@ recorded so it is not rediscovered from a UI symptom.
   signed out having been told nothing. **Reported, not fixed** — it is a
   `src/lib/identity.ts` contract question with its own test surface, and a
   security-relevant one that belongs in its own packet rather than smuggled in
-  behind a UI change. `HANDOFF-parlor-02-social-ui.md` names it.
+  behind a UI change. `HANDOFF-parlor-02-social-ui` names it.
 - **A browser cannot call `identity` from this app: `identity` serves no CORS
   headers.** Measured on a running stack, and it is the first thing this
   repository's end-to-end tier found. The client bundle does the fetching
