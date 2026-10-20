@@ -1,11 +1,27 @@
+# THIS FILE IS NOT A GITHUB ACTIONS WORKFLOW ANY MORE, AND NOTHING RUNS IT.
+#
+# The fleet's CI runs in dev sandboxes: the same sandbox the work happens in,
+# on the machine the developer chose. This file is the SPECIFICATION those
+# checks read — the steps, the floors, the exemptions — kept where the
+# repository can hold it and read it.
+#
+# What executes is `ci/the pipeline` (named in this repository's `gate.yml`, under
+# `ci.workflow`), and the CI service reads that declaration and runs it.
+#
+# The GitHub Actions spelling is retired, not deleted, because the checks in
+# this repository read this file to hold the specification still: a gate that
+# checks a specification nobody executes is a gate checking a fiction, and a
+# gate that checks nothing is worse. The steps below are the specification
+# the executable CI is measured against, and the day this file stops being
+# that, the checks move with it.
 ---
 # parlor CI — the shared half is kit's, the service-specific half is here.
 #
 # The shared workflow is called, not copied: a fix in
-# cafaye/kit/.github/workflows/ci.reusable.yml reaches this repository on the
+# cafaye/kit/ci/ci.reusable.yml reaches this repository on the
 # next run with no per-repo PR. The `.github/workflows/` in that path is not
 # decoration — GitHub resolves a reusable workflow at
-# `{owner}/{repo}/.github/workflows/{file}@{ref}` and documents that
+# `{owner}/{repo}/ci/{file}@{ref}` and documents that
 # subdirectories of the workflows directory are unsupported, so the older
 # `cafaye/kit/workflows/ci.reusable.yml@master` resolves to nothing.
 #
@@ -42,7 +58,7 @@ jobs:
   # -------------------------------------------------------------- the shared
   ci:
     name: ci (kit, node)
-    uses: cafaye/kit/.github/workflows/ci.reusable.yml@master
+    uses: cafaye/kit/ci/ci.reusable.yml@master
     with:
       # `node`, not `bun`: the committed lockfile is package-lock.json, and the
       # bun job installs frozen from bun.lock. The value follows the lockfile

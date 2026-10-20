@@ -317,7 +317,7 @@ gate:
     # of this packet rather than a rounding detail. Nothing now asserts those
     # five properties of the Node target, because `nitro` is not this
     # repository's code and its behaviour is its own to test. The replacement is
-    # coverage at a different level: `.github/workflows/ci.yml` asserts that
+    # coverage at a different level: `ci/ci.yml` asserts that
     # `.output/server/index.mjs` exists and that `.output/public` carries the
     # webfont binaries — which is the failure this repository has actually
     # produced, twice. So this is a GAP and not a trade, named here so that the
@@ -648,7 +648,7 @@ gate:
     #
     #   * 1 green test asserting the four facts that make the loop work, all
     #     of them read out of the verbatim caller template: the caller calls
-    #     kit's composed publish workflow (`uses: cafaye/kit/.github/workflows/
+    #     kit's composed publish workflow (`uses: cafaye/kit/ci/
     #     publish.reusable.yml@master` — a caller that inlines the steps has
     #     forked the composition, and a fix in kit stops landing here); it
     #     grants `packages: write` (a reusable workflow can request a
@@ -1041,6 +1041,28 @@ external:
   #     way — see the `ci-shape-checks` proof above.
 
 ci:
+  # THE FILE CI RUNS, AND WHY IT IS NOT A WORKFLOW ANY MORE.
+  #
+  # The paragraphs below describe the GitHub Actions workflow this repository
+  # used to have. That workflow is gone: the fleet's CI is no longer GitHub
+  # Actions. The gate runs in a dev sandbox — the same sandbox the work
+  # happens in — and what the runner executes is `ci/pipeline.sh`.
+  #
+  # The pipeline is this repository's own: its gate, its build and its ship,
+  # in one script, in the repository, where a person can run it by hand as
+  # well as a sandbox. The CI runs it with CI_DRY_RUN=1, so a CI run gates
+  # the tree and stops before the ship; the ship is a deliberate act and not
+  # a side effect of a push.
+  #
+  # WHAT FOLLOWS IS KEPT, AND WHY. The notes below were written about the
+  # workflow this repository used to have. The claims they make about the GATE
+  # — which command it is, which flag it carries, which tier is deliberately
+  # not declared here — are still true and are still the reason this block is
+  # what it is. The claims they make about the workflow's shape (its job names,
+  # its `run:` bodies, the line numbers in a file that no longer exists) are
+  # how the workflow was, and the workflow is gone. Nothing here is a
+  # declaration about a file CI runs.
+  #
   # `ci.yml`, and not `e2e.yml`. The `prime` job in ci.yml runs `./bin/prime` —
   # literally the same argv a developer types, which is the point: if the
   # workflow and the gate can disagree, one of them is lying. `e2e.yml` is the
@@ -1066,5 +1088,5 @@ ci:
   # the self-test's `one-line-run` case, which asserts the reader sees the
   # one-line form, and the `ci-disagrees` case above, which asserts it still
   # sees the step when the command is changed to something else.
-  workflow: .github/workflows/ci.yml
+  workflow: ci/pipeline.sh
   invokes: [./bin/prime]

@@ -274,7 +274,7 @@ sibling_ref() {
 #
 # A worktree is not a rare shape on this fleet: it is what `wt/` is made of, and
 # `../kit`, `../identity` and friends are the kind of thing a worker session
-# symlinks in. `.github/workflows/e2e.yml` already spelled this check `-e`; the
+# symlinks in. `ci/e2e.yml` already spelled this check `-e`; the
 # two spellings disagreeing is how this went unnoticed.
 sibling_is_checkout() {
   [ -e "$1/.git" ]

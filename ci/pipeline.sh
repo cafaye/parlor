@@ -8,9 +8,9 @@
 # workflows, `instabox` provisions a sandbox that polls the repo and runs this
 # file. `kit/backends/README.md` is the contract.
 #
-# WHERE THE FACTS COME FROM: `.github/workflows/*.yml` IN THIS REPOSITORY.
+# WHERE THE FACTS COME FROM: `ci/*.yml` IN THIS REPOSITORY.
 #
-#   * THE GATE is `./bin/prime`. `.github/workflows/ci.yml`'s `prime` job runs
+#   * THE GATE is `./bin/prime`. `ci/ci.yml`'s `prime` job runs
 #     it as a one-line `run: ./bin/prime` — literally the command a developer
 #     types, and the gate.yml declaration's `invokes:` too. `bin/prime` already
 #     runs `npm ci`, the vitest suite, `tsc --noEmit`, `vite build` and
@@ -29,7 +29,7 @@
 #     addition to every push is how a per-commit gate stops being one. The
 #     gate here is the one `gate.yml` declares and `ci.yml`'s `prime` job runs.
 #
-#   * THE SHIP is the image + chart publish. `.github/workflows/publish.yml` is
+#   * THE SHIP is the image + chart publish. `ci/publish.yml` is
 #     the github-actions spelling — `push: true` into kit's reusable publish
 #     workflow on every push to master. On this backend the same bytes are
 #     produced by `bin/publish` (kit's tool), which DERIVES the image digest
@@ -67,7 +67,7 @@ log() { printf '\n== %s\n' "$1"; }
 log "pipeline: $REPO_NAME at $REPO_DIR"
 
 # ===========================================================================
-# MARKED 1 — THE GATE. `./bin/prime`, the argv `.github/workflows/ci.yml`'s
+# MARKED 1 — THE GATE. `./bin/prime`, the argv `ci/ci.yml`'s
 # `prime` job runs and `gate.yml` declares. A list, so a multi-word gate works
 # without eval and nothing written here is re-parsed.
 # ===========================================================================
@@ -75,7 +75,7 @@ GATE=(./bin/prime)
 
 # ===========================================================================
 # MARKED 2 — PATHS THIS REPOSITORY'S CI ADDS. `grep GITHUB_PATH
-# .github/workflows/*.yml` finds only the goose entry in `e2e.yml`, which is
+# ci/*.yml` finds only the goose entry in `e2e.yml`, which is
 # the separate whole-stack tier and not this pipeline's business; `ci.yml`
 # appends none. So this is empty on purpose.
 # ===========================================================================

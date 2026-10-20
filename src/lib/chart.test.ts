@@ -43,7 +43,7 @@
  * enabled with an empty host FAILS the template. Both were shown red
  * before green (see the packet report).
  *
- * The publish caller assertions read `.github/workflows/publish.yml` —
+ * The publish caller assertions read `ci/publish.yml` —
  * kit's caller template, copied verbatim — and assert the facts that make
  * the publish loop work: that it calls kit's composed publish workflow
  * (a caller that inlines the steps has forked the composition), that it
@@ -80,9 +80,9 @@ const ingressYaml = readFileSync(`${chartDir}/templates/ingress.yaml`, "utf8");
 const dockerfile = readFileSync(resolve(REPO, "Dockerfile"), "utf8");
 
 // kit/templates/publish/publish.yml, copied verbatim to
-// .github/workflows/publish.yml — the whole of parlor's side of the publish
+// ci/publish.yml — the whole of parlor's side of the publish
 // loop is that one caller file.
-const publishWorkflowPath = resolve(REPO, ".github/workflows/publish.yml");
+const publishWorkflowPath = resolve(REPO, "ci/publish.yml");
 
 // kit/templates/substrate/manifests/applications/parlor.yaml — the Argo CD
 // Application the chart is pulled by. The chart's version IS the OCI tag
@@ -305,7 +305,7 @@ describe("the image digest — the pin Argo can see", () => {
 
 // --- the publish caller ----------------------------------------------------
 //
-// `.github/workflows/publish.yml` is kit's caller template copied verbatim.
+// `ci/publish.yml` is kit's caller template copied verbatim.
 // It is the whole of parlor's side of the publish loop: one `uses:` of kit's
 // composed publish workflow, which publishes both the image
 // `config/deploy.yml` deploys and the chart the Argo CD Application pulls.
@@ -336,11 +336,11 @@ function expectPublishLoop(
   // it, and a fix in kit's publish.reusable.yml stops landing here.
   if (
     !workflowYaml.includes(
-      "uses: cafaye/kit/.github/workflows/publish.reusable.yml@master",
+      "uses: cafaye/kit/ci/publish.reusable.yml@master",
     )
   ) {
     throw new Error(
-      "the publish caller must call kit's composed publish workflow — `uses: cafaye/kit/.github/workflows/publish.reusable.yml@master` — and not inline the steps: the composition lives in kit, and a caller that inlines it has forked it, so a fix in kit stops landing here",
+      "the publish caller must call kit's composed publish workflow — `uses: cafaye/kit/ci/publish.reusable.yml@master` — and not inline the steps: the composition lives in kit, and a caller that inlines it has forked it, so a fix in kit stops landing here",
     );
   }
   // THE GRANT IS THE CALLER'S TO MAKE. A reusable workflow can request a

@@ -574,7 +574,7 @@ expect_red 'a mise task that resolves to a DIFFERENT file than gate.entrypoint n
 # --- CI, in both directions -------------------------------------------------
 seed_sandbox ci-missing
 edit "$SANDBOX/gate.yml" \
-  'workflow: .github/workflows/ci.yml' 'workflow: .github/workflows/nope.yml'
+  'workflow: ci/ci.yml' 'workflow: .github/workflows/nope.yml'
 expect_red 'a declaration naming a CI workflow that is not in this repository' \
   "$SANDBOX" 'gate.ci-missing'
 
@@ -586,7 +586,7 @@ expect_red 'a declaration naming a CI workflow that is not in this repository' \
 # `run: ./bin/prime` occurs exactly once in this workflow and `edit` fails loudly
 # if that ever stops being true.
 seed_sandbox ci-disagrees
-edit "$SANDBOX/.github/workflows/ci.yml" \
+edit "$SANDBOX/ci/ci.yml" \
   "
         run: ./bin/prime
 " "
@@ -603,7 +603,7 @@ seed_sandbox ci-command-removed
 # no red twin cannot say which of the two is doing the work, so here the
 # command goes and the argv is absent from every `run:` body in the file. The
 # finding has to be the same one.
-edit "$SANDBOX/.github/workflows/ci.yml" \
+edit "$SANDBOX/ci/ci.yml" \
   "
         run: ./bin/prime
 " ""
@@ -1093,7 +1093,7 @@ external:
   requirements: []
 
 ci:
-  workflow: .github/workflows/ci.yml
+  workflow: ci/ci.yml
   invokes: [./bin/prime]
 YML
 printf '%s\n' \

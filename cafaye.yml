@@ -169,7 +169,7 @@ owner:
 #       `node: "22"` and `packageManager: npm` were coarse mirrors of the
 #       runtime pin, and the exact number is not a contract fact. The pin of
 #       record is `engines.node` in package.json; mise.toml and
-#       .github/workflows/ci.yml mirror it; tests/validate-ci.sh fails when the
+#       ci/ci.yml mirror it; tests/validate-ci.sh fails when the
 #       mirrors drift and now also fails if the manifest grows a fourth copy.
 #       `build.command` and `serve.command` are package.json scripts; the
 #       container shape is the Dockerfile.

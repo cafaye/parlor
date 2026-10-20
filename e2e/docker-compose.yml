@@ -386,7 +386,7 @@ services:
       # of that is a fact rather than a preference: the stack needs identity and
       # gateway because of where their image TAGS come from (the registry this run
       # starts holds nothing), and it now needs kit because of this mount, which
-      # the registry cannot supply. `.github/workflows/e2e.yml` checks kit out
+      # the registry cannot supply. `ci/e2e.yml` checks kit out
       # beside the repository and its presence step asserts this file by name, and
       # `bin/e2e-stack`'s preflight refuses to start a stack whose init script is
       # not on disk. Between them, "the cluster came up with no roles" becomes a

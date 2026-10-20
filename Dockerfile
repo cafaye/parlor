@@ -89,7 +89,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 # `build:node`, not `build`, and the runner stage's header says why: this image
 # ships a Node server and `npm run build` emits a Worker. The Cloudflare build
-# still runs in `bin/prime` and in the `build` job in `.github/workflows/ci.yml`,
+# still runs in `bin/prime` and in the `build` job in `ci/ci.yml`,
 # so neither target is unbuilt by choosing the other here.
 RUN npm run build:node
 

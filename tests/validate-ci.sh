@@ -32,18 +32,18 @@
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-WF="$ROOT/.github/workflows/ci.yml"
+WF="$ROOT/ci/ci.yml"
 PRIME="$ROOT/bin/prime"
 PKG="$ROOT/package.json"
 MISE="$ROOT/mise.toml"
 MANIFEST="$ROOT/cafaye.yml"
 # The path kit documents for a caller. GitHub resolves a reusable workflow at
-# {owner}/{repo}/.github/workflows/{file}@{ref} and documents that
+# {owner}/{repo}/ci/{file}@{ref} and documents that
 # subdirectories of the workflows directory are unsupported, so the older
 # `cafaye/kit/workflows/ci.reusable.yml@master` resolves to nothing and every
 # caller using it has a red build. kit-04 moves the file; this is the only
 # spelling that can ever work.
-USES_LINE='uses: cafaye/kit/.github/workflows/ci.reusable.yml@master'
+USES_LINE='uses: cafaye/kit/ci/ci.reusable.yml@master'
 DEAD_USES='cafaye/kit/workflows/ci.reusable.yml@'
 # The lockfile `npm ci` consumes. CI fails when the gate moves it; see the
 # prime job in the workflow for why that is the desired failure.
@@ -52,7 +52,7 @@ LOCKFILE=package-lock.json
 # of CI, because a claim CI makes about a tier is a claim about the shape of the
 # tree, and this tier has several that can be true while the tier still does not
 # run (see the end-to-end section below).
-E2E_WF="$ROOT/.github/workflows/e2e.yml"
+E2E_WF="$ROOT/ci/e2e.yml"
 E2E_COMPOSE="$ROOT/e2e/docker-compose.yml"
 E2E_STACK="$ROOT/bin/e2e-stack"
 PW_CONFIG="$ROOT/playwright.config.ts"
@@ -1665,14 +1665,14 @@ self_test() {
   # breakages under test.
   seed_sandbox() {
     rm -rf "${SANDBOX:?:?}"/*
-    mkdir -p "$SANDBOX/tests" "$SANDBOX/.github/workflows" "$SANDBOX/bin" "$SANDBOX/e2e" "$SANDBOX/config"
+    mkdir -p "$SANDBOX/tests" "$SANDBOX/ci" "$SANDBOX/bin" "$SANDBOX/e2e" "$SANDBOX/config"
     cp "$ROOT/tests/validate-ci.sh" "$SANDBOX/tests/validate-ci.sh"
     cp "$PRIME" "$SANDBOX/bin/prime"
     cp "$PKG" "$SANDBOX/package.json"
     cp "$MISE" "$SANDBOX/mise.toml"
     cp "$MANIFEST" "$SANDBOX/cafaye.yml"
     cp "$ROOT/$LOCKFILE" "$SANDBOX/$LOCKFILE"
-    cp "$WF" "$SANDBOX/.github/workflows/ci.yml"
+    cp "$WF" "$SANDBOX/ci/ci.yml"
     # The local stack's catalog, for the same reason: a sandbox without it is red
     # for the "caf.dev.json exists" check, so the baseline would be red for a
     # reason that has nothing to do with the breakages under test.
@@ -1699,7 +1699,7 @@ self_test() {
     # about what follows. The spec sources are copied INTO the sandbox's own e2e/
     # directory, because that is the directory the skip check reads, and it has
     # to be the same directory the checks read in the real tree.
-    cp "$E2E_WF" "$SANDBOX/.github/workflows/e2e.yml"
+    cp "$E2E_WF" "$SANDBOX/ci/e2e.yml"
     cp "$E2E_COMPOSE" "$SANDBOX/e2e/docker-compose.yml"
     cp "$E2E_STACK" "$SANDBOX/bin/e2e-stack"
     cp "$PW_CONFIG" "$SANDBOX/playwright.config.ts"
@@ -1741,17 +1741,17 @@ self_test() {
   proof_at() {
     local n=0 proof
     for proof in \
-    "rm-workflow|rm -f '$SANDBOX/.github/workflows/ci.yml'" \
-    "dead-uses-path|sed_i 's|\.github/workflows/ci\.reusable|workflows/ci.reusable|' '$SANDBOX/.github/workflows/ci.yml'" \
-    "language-bun|sed_i 's|language: node|language: bun|' '$SANDBOX/.github/workflows/ci.yml'" \
-    "pin-drifts-into-ci|sed_i 's|\"node\":\"[^\"]*\"|\"node\":\"24.0.0\"|' '$SANDBOX/.github/workflows/ci.yml'" \
+    "rm-workflow|rm -f '$SANDBOX/ci/ci.yml'" \
+    "dead-uses-path|sed_i 's|\.github/workflows/ci\.reusable|workflows/ci.reusable|' '$SANDBOX/ci/ci.yml'" \
+    "language-bun|sed_i 's|language: node|language: bun|' '$SANDBOX/ci/ci.yml'" \
+    "pin-drifts-into-ci|sed_i 's|\"node\":\"[^\"]*\"|\"node\":\"24.0.0\"|' '$SANDBOX/ci/ci.yml'" \
     "pin-drifts-in-mise|sed_i 's|^node = .*|node = \"20.11.0\"|' '$SANDBOX/mise.toml'" \
     "manifest-reintroduces-a-node-pin|printf 'node: \"20\"\n' >>'$SANDBOX/cafaye.yml'" \
     "an-unquoted-colon-in-the-manifest|sed_i 's|^description: \"The cafaye web app|description: The cafaye web app|; s|live contracts\.\"$|live contracts.|' '$SANDBOX/cafaye.yml'" \
-    "npm-install-in-ci|sed_i 's|npm ci|npm install \\&\\& npm ci|' '$SANDBOX/.github/workflows/ci.yml'" \
-    "no-lockfile-guard|sed_i '/git diff --exit-code/d' '$SANDBOX/.github/workflows/ci.yml'" \
-    "stale-script-name|sed_i 's|npm run typecheck|npm run typecheckp|' '$SANDBOX/.github/workflows/ci.yml'" \
-    "ci-does-not-run-prime|sed_i 's|\\./bin/prime|echo skipping the gate|' '$SANDBOX/.github/workflows/ci.yml'" \
+    "npm-install-in-ci|sed_i 's|npm ci|npm install \\&\\& npm ci|' '$SANDBOX/ci/ci.yml'" \
+    "no-lockfile-guard|sed_i '/git diff --exit-code/d' '$SANDBOX/ci/ci.yml'" \
+    "stale-script-name|sed_i 's|npm run typecheck|npm run typecheckp|' '$SANDBOX/ci/ci.yml'" \
+    "ci-does-not-run-prime|sed_i 's|\\./bin/prime|echo skipping the gate|' '$SANDBOX/ci/ci.yml'" \
     "npm-install-in-prime|sed_i 's|^npm ci\$|npm install|' '$SANDBOX/bin/prime'" \
     "no-build-in-prime|sed_i '/^npm run build\$/d' '$SANDBOX/bin/prime'" \
     "no-typecheck-in-prime|sed_i '/^npm run typecheck\$/d' '$SANDBOX/bin/prime'" \
@@ -1760,12 +1760,12 @@ self_test() {
     "range-instead-of-a-pin|sed_i 's|\"node\": \"22.22.2\"|\"node\": \"^22\"|' '$SANDBOX/package.json'" \
     "package-manager-is-not-npm|node -e 'const f=process.argv[1];const p=require(f);p.packageManager=\"pnpm@10.9.7\";require(\"fs\").writeFileSync(f,JSON.stringify(p,null,2))' '$SANDBOX/package.json'" \
     "manifest-reintroduces-a-test-command|printf 'test: npm run other\n' >>'$SANDBOX/cafaye.yml'" \
-    "no-e2e-workflow|rm -f '$SANDBOX/.github/workflows/e2e.yml'" \
-    "e2e-in-the-per-commit-gate|printf '      - run: ./bin/e2e\n' >>'$SANDBOX/.github/workflows/ci.yml'" \
+    "no-e2e-workflow|rm -f '$SANDBOX/ci/e2e.yml'" \
+    "e2e-in-the-per-commit-gate|printf '      - run: ./bin/e2e\n' >>'$SANDBOX/ci/ci.yml'" \
     "e2e-in-bin-prime|printf 'npm run e2e\n' >>'$SANDBOX/bin/prime'" \
-    "e2e-job-does-not-run-the-tier|sed_i 's|run: ./bin/e2e|run: echo the tier is optional|' '$SANDBOX/.github/workflows/e2e.yml'" \
-    "e2e-job-is-soft-fail|printf '    continue-on-error: true\n' >>'$SANDBOX/.github/workflows/e2e.yml'" \
-    "e2e-job-cannot-tell-nothing-ran|sed_i '/assert-e2e-ran.mjs/d' '$SANDBOX/.github/workflows/e2e.yml'" \
+    "e2e-job-does-not-run-the-tier|sed_i 's|run: ./bin/e2e|run: echo the tier is optional|' '$SANDBOX/ci/e2e.yml'" \
+    "e2e-job-is-soft-fail|printf '    continue-on-error: true\n' >>'$SANDBOX/ci/e2e.yml'" \
+    "e2e-job-cannot-tell-nothing-ran|sed_i '/assert-e2e-ran.mjs/d' '$SANDBOX/ci/e2e.yml'" \
     "e2e-runner-not-executable|chmod -x '$SANDBOX/bin/e2e'" \
     "the-two-test-floors-disagree|sed_i 's|^const MINIMUM_TESTS = 2;|const MINIMUM_TESTS = 1;|' '$SANDBOX/e2e/no-token-artifacts.ts'" \
     "trace-on|sed_i 's|trace: \"off\"|trace: \"retain-on-failure\"|' '$SANDBOX/playwright.config.ts'" \
@@ -1962,7 +1962,7 @@ self_test() {
   # that punishes the warning it wants written is a check that gets deleted.
   seed_sandbox
   printf '# a comment that says npm install must not fail the check\n' \
-    >>"$SANDBOX/.github/workflows/ci.yml"
+    >>"$SANDBOX/ci/ci.yml"
   if bash "$SANDBOX/tests/validate-ci.sh" >/dev/null 2>&1; then
     printf '  ok   a comment mentioning npm install does not go red\n'
   else
