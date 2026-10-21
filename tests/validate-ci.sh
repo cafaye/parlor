@@ -192,7 +192,7 @@ pin_in_workflow() {
 # of this check had no cd and PASSED on a manifest caf had just refused, which
 # is how a check written to catch this bug ended up not catching it.
 manifest_parses() {
-  if ! command -v caf >/dev/null 2>&1; then
+  if ! command -v cafe >/dev/null 2>&1; then
     echo "cafe not on PATH; nothing on this machine can be asked whether it reads the manifest"
     return 2
   fi
