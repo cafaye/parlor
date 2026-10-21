@@ -307,7 +307,7 @@ builds it, and then checks that the tree still says what CI assumes about it. If
 it is green, your checkout is sound, the tree compiles *and* the gate is the
 gate.
 
-`mise run stack` is `cafe dev -registry caf.dev.json -port 3000`, and it is the
+`mise run stack` is `cafe dev -registry cafe.dev.json -port 3000`, and it is the
 task to reach for whenever you are touching sign in, registration, accounts or
 invitations — everything in `src/lib/identity.ts` and `src/lib/auth.tsx`.
 `npm run dev` on its own starts `vite dev` with **nothing behind it**, so every
@@ -316,7 +316,7 @@ authenticated route fails against an origin that is not there.
 The catalog is committed because `cafe` ships none, and it says why in its own
 docs: an image reference guessed by a CLI is a reference that pulls the wrong
 thing. Two facts in it are load-bearing rather than conventional, and both are
-argued at the line in `caf.dev.json`:
+argued at the line in `cafe.dev.json`:
 
 - **`-port 3000` is not a preference.** This app declares no `exposes.api`, so
   `cafe dev` cannot tell that a Vite/TanStack Start app serves HTTP and publishes

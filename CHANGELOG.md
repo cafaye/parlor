@@ -23,7 +23,7 @@ All notable changes to parlor are recorded here. The format follows
   stay as they were written: each is a transcript of what a running identity
   answered at the time, and a record edited to match a later configuration is
   no longer a record. `README.md` now prints the CLI as `cafe …` (§3 L1's docs
-  rule); `caf.dev.json` is a file this repository commits and keeps its name,
+  rule); `cafe.dev.json` is a file this repository commits and keeps its name,
   and `mise.toml`'s `tasks.stack.run` still invokes the binary that exists.
 
 - **`LICENSE` is a Business Source License 1.1, and both manifests say
@@ -584,7 +584,7 @@ All notable changes to parlor are recorded here. The format follows
   rather than at `mise run stack`, which is the moment a developer is looking
   at something else.
 
-  **`caf.dev.json` is readable by caf.** `cafe` already refuses a catalog it
+  **`cafe.dev.json` is readable by caf.** `cafe` already refuses a catalog it
   cannot believe — and refuses it well, naming every unknown key and the service
   it is in rather than stopping at the first. What it cannot do is run on a CI
   runner with no cafe and no Docker, which is exactly where a per-commit check
@@ -640,7 +640,7 @@ All notable changes to parlor are recorded here. The format follows
   Gate: 43 passed, 0 failed. Self-test: 47 breakages, every check proven able to
   fail. `shellcheck -S warning` clean.
 
-- **A local stack that exists: `caf.dev.json`, `mise run stack`, and the
+- **A local stack that exists: `cafe.dev.json`, `mise run stack`, and the
   facts that make it work — so a service generated from this template is born
   able to talk to identity instead of discovering how later.** The template had
   identity client code (`src/lib/identity.ts`, `src/lib/auth.tsx`, sign in, sign
@@ -652,7 +652,7 @@ All notable changes to parlor are recorded here. The format follows
 
   cafe refuses to run a local stack without a service catalog, and states why in
   its own package doc: "an image reference guessed by a CLI is a reference that
-  pulls the wrong thing". So `caf.dev.json` is committed, and each non-obvious
+  pulls the wrong thing". So `cafe.dev.json` is committed, and each non-obvious
   value in it carries an `x-` key saying where it came from. The four that are
   load-bearing rather than conventional:
 
@@ -683,7 +683,7 @@ All notable changes to parlor are recorded here. The format follows
   - **`startPeriod`, not `start_period`.** cafe's catalog is JSON with its own
     spelling, and cafe refuses a key it does not model rather than ignoring it —
     so identity's own compose spelling fails the stack instead of being quietly
-    dropped. Verified: the rendered `caf.dev.compose.yaml` contains
+    dropped. Verified: the rendered `cafe.dev.compose.yaml` contains
     `start_period: 5s`, so the translation happens and the key was accepted.
 
   billing is deliberately absent. `cafaye.yml` declares it `required: false`,
@@ -692,13 +692,13 @@ All notable changes to parlor are recorded here. The format follows
   how to run it`. Adding it would start a service that is not going out on
   launch day.
 
-  `caf.dev.compose.yaml` is gitignored and `caf.dev.json` is not, and the
+  `cafe.dev.compose.yaml` is gitignored and `cafe.dev.json` is not, and the
   asymmetry is the point: cafe prints "Do not edit: every run rewrites this
   file", so committing the render is committing a generated artifact that is a
   merge conflict waiting to happen, while a catalog nobody commits is a catalog
   that only exists on the machine that wrote it.
 
-  **Proven, not asserted.** `cafe dev -registry caf.dev.json -port 3000 -dry-run`
+  **Proven, not asserted.** `cafe dev -registry cafe.dev.json -port 3000 -dry-run`
   renders a four-service stack — `parlor` with `build: {context: ., dockerfile:
   Dockerfile}` and `ports: ["3000:3000"]`, `identity` published on 8080, plus
   `postgres` and `redis` — with `DATABASE_URL =

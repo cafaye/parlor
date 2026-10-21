@@ -28,7 +28,7 @@
 #
 # wrangler's scratch space: the plugin's generated per-build state and anything
 # `wrangler dev` / `deploy --dry-run` leaves behind. `wrangler.jsonc` IS
-# committed for the same reason `caf.dev.json` is — it is the configuration the
+# committed for the same reason `cafe.dev.json` is — it is the configuration the
 # deploy reads, not a build artifact. `wrangler.jsonc`'s own comments say which
 # of the three fields earn their place.
 /.output/
@@ -83,11 +83,11 @@ playwright-report/
 # contains it either.
 /.kit/
 
-# caf dev's rendered stack. `caf.dev.json` IS committed — it is the catalog the
+# caf dev's rendered stack. `cafe.dev.json` IS committed — it is the catalog the
 # local stack is built from, and a catalog nobody commits is a catalog that only
 # exists on the machine that wrote it. This file is not: `caf dev` prints "Do
 # not edit: every run rewrites this file", so committing it would be committing
 # a generated artifact that is a merge conflict waiting to happen.
-caf.dev.compose.yaml
+cafe.dev.compose.yaml
 keyring/
 secrets/

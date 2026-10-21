@@ -1278,7 +1278,7 @@ fi
 # ---------------------------------------------------------------------------
 # The local stack's catalog
 # ---------------------------------------------------------------------------
-# `caf.dev.json` is the file `mise run stack` hands `caf dev -registry`, and it
+# `cafe.dev.json` is the file `mise run stack` hands `caf dev -registry`, and it
 # is committed rather than generated, so a service generated from this template
 # inherits a local stack instead of rediscovering how to get one. What can be
 # wrong with it is worth a per-commit check, because the alternative is finding
@@ -1309,12 +1309,12 @@ fi
 # misspelled key in silence and then tell a developer their catalog was missing
 # something it plainly contained.
 
-CATALOG="$ROOT/caf.dev.json"
+CATALOG="$ROOT/cafe.dev.json"
 if [ ! -f "$CATALOG" ]; then
-  no "caf.dev.json exists" \
+  no "cafe.dev.json exists" \
     "$CATALOG is the catalog 'mise run stack' passes to 'caf dev -registry'; without it caf refuses the required identity dependency and no stack starts"
 else
-  ok "caf.dev.json exists"
+  ok "cafe.dev.json exists"
   # Existence and readability are separate checks on purpose. Collapsing them
   # makes a catalog that is present but malformed report FAIL against a check
   # named "exists", and the message under it then contradicts the label — which
@@ -1337,12 +1337,12 @@ let doc;
 try {
   doc = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
 } catch (err) {
-  process.stdout.write("caf.dev.json is not JSON: " + err.message);
+  process.stdout.write("cafe.dev.json is not JSON: " + err.message);
   process.exit(0);
 }
 
 if (doc === null || typeof doc !== "object" || Array.isArray(doc)) {
-  process.stdout.write("caf.dev.json is not a JSON object keyed by service name");
+  process.stdout.write("cafe.dev.json is not a JSON object keyed by service name");
   process.exit(0);
 }
 
@@ -1376,9 +1376,9 @@ for (const [key, entry] of Object.entries(doc)) {
 process.stdout.write(problems.join("; "));
 ' "$CATALOG")
   if [ -z "$catalog_report" ]; then
-    ok "every entry in caf.dev.json is one caf dev can believe"
+    ok "every entry in cafe.dev.json is one caf dev can believe"
   else
-    no "every entry in caf.dev.json is one caf dev can believe" "$catalog_report"
+    no "every entry in cafe.dev.json is one caf dev can believe" "$catalog_report"
   fi
 fi
 
@@ -1674,9 +1674,9 @@ self_test() {
     cp "$ROOT/$LOCKFILE" "$SANDBOX/$LOCKFILE"
     cp "$WF" "$SANDBOX/ci/ci.yml"
     # The local stack's catalog, for the same reason: a sandbox without it is red
-    # for the "caf.dev.json exists" check, so the baseline would be red for a
+    # for the "cafe.dev.json exists" check, so the baseline would be red for a
     # reason that has nothing to do with the breakages under test.
-    cp "$ROOT/caf.dev.json" "$SANDBOX/caf.dev.json"
+    cp "$ROOT/cafe.dev.json" "$SANDBOX/cafe.dev.json"
     # The deployment story's three files, for the same reason the rest are here:
     # a sandbox without them is red for a reason that has nothing to do with the
     # breakage under test, and a self-test whose baseline is red proves nothing
@@ -1790,11 +1790,11 @@ self_test() {
     "a-service-address-back-in-the-dockerfile|echo 'ENV NEXT_PUBLIC_IDENTITY_URL=https://identity.example.com' >>'$SANDBOX/Dockerfile'" \
     "an-unpinned-node-base|sed_i 's|^FROM node:22.22.2-slim AS runner|FROM node:22-slim AS runner|' '$SANDBOX/Dockerfile'" \
     "the-deploy-tier-is-not-executable|chmod -x '$SANDBOX/bin/deploy-config'" \
-    "no-service-catalog|rm -f '$SANDBOX/caf.dev.json'" \
-    "a-misspelled-key-in-the-catalog|sed_i 's|\"image\": \"cafaye/identity:dev\"|\"imag\": \"cafaye/identity:dev\"|' '$SANDBOX/caf.dev.json'" \
-    "an-entry-named-for-another-service|sed_i 's|\"name\": \"identity\"|\"name\": \"parlor\"|' '$SANDBOX/caf.dev.json'" \
-    "a-catalog-entry-with-no-image|sed_i 's|\"image\": \"cafaye/identity:dev\",||' '$SANDBOX/caf.dev.json'" \
-    "a-healthcheck-with-no-test|sed_i 's|\"test\": \[\"CMD\", \"/app/service\", \"-healthcheck\"\],||' '$SANDBOX/caf.dev.json'" \
+    "no-service-catalog|rm -f '$SANDBOX/cafe.dev.json'" \
+    "a-misspelled-key-in-the-catalog|sed_i 's|\"image\": \"cafaye/identity:dev\"|\"imag\": \"cafaye/identity:dev\"|' '$SANDBOX/cafe.dev.json'" \
+    "an-entry-named-for-another-service|sed_i 's|\"name\": \"identity\"|\"name\": \"parlor\"|' '$SANDBOX/cafe.dev.json'" \
+    "a-catalog-entry-with-no-image|sed_i 's|\"image\": \"cafaye/identity:dev\",||' '$SANDBOX/cafe.dev.json'" \
+    "a-healthcheck-with-no-test|sed_i 's|\"test\": \[\"CMD\", \"/app/service\", \"-healthcheck\"\],||' '$SANDBOX/cafe.dev.json'" \
     "the-lockfile-does-not-know-the-tarball|node -e 'const fs=require(\"fs\"),p=require(\"path\"),c=require(\"crypto\");const f=process.argv[1];const root=p.dirname(f);const l=JSON.parse(fs.readFileSync(f,\"utf8\"));const rel=\"vendor/thing-1.0.0.tgz\";fs.mkdirSync(p.join(root,\"vendor\"),{recursive:true});fs.writeFileSync(p.join(root,rel),\"a tarball\");l.packages[\"node_modules/thing\"]={version:\"1.0.0\",resolved:\"file:\"+rel,integrity:\"sha512-AAAA\"+c.createHash(\"sha512\").update(\"different bytes\").digest(\"base64\")};fs.writeFileSync(f,JSON.stringify(l,null,2)+\"\\n\")' '$SANDBOX/package-lock.json'" \
     "a-tally-helper-that-is-not-a-function|node -e 'const fs=require(\"fs\");const f=process.argv[1];const s=fs.readFileSync(f,\"utf8\");const m=/\\nexit 0\\n$/;if(!m.test(s))throw new Error(\"this script no longer ends in a bare exit 0\");fs.writeFileSync(f,s.replace(m,\"\\nskip \\\"a tally helper that is not a function\\\"\\nexit 0\\n\"))' '$SANDBOX/tests/validate-ci.sh'"
   do

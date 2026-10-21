@@ -39,9 +39,9 @@ run = "npm run dev"
 
 [tasks.stack]
 # The whole local stack: parlor + identity + postgres + redis, brought up by
-# `caf dev` from `caf.dev.json`.
+# `caf dev` from `cafe.dev.json`.
 #
-# `-registry caf.dev.json` is not optional. caf ships no catalog and says why in
+# `-registry cafe.dev.json` is not optional. caf ships no catalog and says why in
 # its own package doc — "an image reference guessed by a CLI is a reference that
 # pulls the wrong thing" — so without this flag `caf dev` refuses the required
 # `identity` dependency and no stack starts at all.
@@ -67,4 +67,4 @@ run = "npm run dev"
 # are correct, and the fix is to run identity's migrations as their own step.
 # `./bin/e2e` runs them and is the tier that proves the integration.
 description = "The whole local stack via caf dev (parlor + identity + postgres + redis)"
-run = "caf dev -registry caf.dev.json -port 3000"
+run = "caf dev -registry cafe.dev.json -port 3000"
