@@ -26,23 +26,23 @@
 #       and `00016_account_isolation.sql` then fails at `protect_table` with a
 #       42704 naming a role nobody created.
 #
-#   ../caf — `caf dev` renders a compose document from a manifest plus a
+#   ../caf — `cafe dev` renders a compose document from a manifest plus a
 #       service catalog (internal/dev/plan.go, internal/dev/registry.go). It
 #       plans the *shape*: the project service built from the working tree, its
 #       declared dependencies resolved through the registry, the local Postgres
 #       and Redis, healthcheck-ordered `depends_on`, and a port-conflict refusal.
 #       This file is that plan with three things it cannot express, listed
-#       below. The alternative — invoking `caf dev` and then hand-patching its
-#       output — was rejected, and the reason is in the report: `caf dev`
+#       below. The alternative — invoking `cafe dev` and then hand-patching its
+#       output — was rejected, and the reason is in the report: `cafe dev`
 #       resolves dependencies to *published images*, and this harness has to
 #       consume siblings by tag rather than rebuild them, and it has to pin a
 #       port block nothing else on the machine uses.
 #
-# The three differences from what `caf dev` would render, and why each is here
+# The three differences from what `cafe dev` would render, and why each is here
 # rather than a caf feature request:
 #
 #   1. NO SIBLING BUILD CONTEXTS — this file changed, and the change is the
-#      point of the whole contract below. `caf dev` builds the project service
+#      point of the whole contract below. `cafe dev` builds the project service
 #      and pulls its dependencies; so does this file, for `parlor`. But
 #      `identity`, `gateway` and `oauth-stub` carry an `image:` and NO `build:`,
 #      so this tier consumes them as published artifacts rather than rebuilding
@@ -78,7 +78,7 @@
 #      file has no goose image: a third-party migration image pinned into the
 #      fleet's toolchain is a decision that belongs to identity and the manager,
 #      not to a test harness. See DECISION NEEDED in the packet report.
-#   4. kit's cluster init script, MOUNTED. `caf dev` plans a local Postgres for
+#   4. kit's cluster init script, MOUNTED. `cafe dev` plans a local Postgres for
 #      the project service and knows nothing about how a role is scoped, so it
 #      cannot bring up a cluster whose roles are the ones a service's migrations
 #      assume. This is the same class of difference as #3: something the plan
@@ -91,7 +91,7 @@
 # decision in this file, so here is the whole reasoning:
 #
 #   * Not the standard ports. 3000, 8080, 5432 and 6379 are exactly the ports a
-#     developer's own `caf dev` stack, a local Postgres and a local Redis are
+#     developer's own `cafe dev` stack, a local Postgres and a local Redis are
 #     already on. The brief for this file is that a developer's running stack
 #     must survive the harness.
 #   * Not 15xxx. That block is this workspace's observability stack
@@ -864,7 +864,7 @@ services:
       # IT IS COMMENTED OUT rather than pointed at `otel-collector:4318`, and
       # the reason is that this overlay has no collector in it: the stack's
       # infrastructure lives in `../kit/templates/compose/docker-compose.yml`
-      # and this file only overlays what `caf dev` cannot express. An endpoint
+      # and this file only overlays what `cafe dev` cannot express. An endpoint
       # naming a service that is not on this network would leave the exporter
       # retrying a name that does not resolve for the life of the container —
       # invisible in every dashboard, because nothing is being recorded. Turn

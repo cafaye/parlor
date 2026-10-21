@@ -83,9 +83,9 @@ playwright-report/
 # contains it either.
 /.kit/
 
-# caf dev's rendered stack. `cafe.dev.json` IS committed — it is the catalog the
+# cafe dev's rendered stack. `cafe.dev.json` IS committed — it is the catalog the
 # local stack is built from, and a catalog nobody commits is a catalog that only
-# exists on the machine that wrote it. This file is not: `caf dev` prints "Do
+# exists on the machine that wrote it. This file is not: `cafe dev` prints "Do
 # not edit: every run rewrites this file", so committing it would be committing
 # a generated artifact that is a merge conflict waiting to happen.
 cafe.dev.compose.yaml

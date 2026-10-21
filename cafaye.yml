@@ -25,8 +25,8 @@ name: parlor
 # colon only when no space follows it, and "app:" is followed by a space, so
 # YAML reads the remainder as a nested mapping and the document stops there.
 #
-#   $ caf dev --dry-run
-#   caf: caf dev: INVALID cafaye.yml: invalid YAML: [21:14] mapping value is not
+#   $ cafe dev --dry-run
+#   caf: cafe dev: INVALID cafaye.yml: invalid YAML: [21:14] mapping value is not
 #   allowed in this context
 #
 # This is the TEMPLATE, which makes it worse than a single broken service: every
@@ -208,7 +208,7 @@ owner:
 #       The stack is e2e/docker-compose.yml, the same-origin edge and why it
 #       exists are in e2e/edge.conf, the lifecycle and bounded readiness poll are
 #       bin/e2e-stack, the port block and its fallbacks are playwright.config.ts,
-#       and the tier is bin/e2e. It was never cafaye service metadata: `caf dev`
+#       and the tier is bin/e2e. It was never cafaye service metadata: `cafe dev`
 #       owns the local stack for developing against one service, and this is the
 #       harness's own.
 # ---------------------------------------------------------------------------

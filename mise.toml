@@ -39,17 +39,17 @@ run = "npm run dev"
 
 [tasks.stack]
 # The whole local stack: parlor + identity + postgres + redis, brought up by
-# `caf dev` from `cafe.dev.json`.
+# `cafe dev` from `cafe.dev.json`.
 #
 # `-registry cafe.dev.json` is not optional. caf ships no catalog and says why in
 # its own package doc — "an image reference guessed by a CLI is a reference that
-# pulls the wrong thing" — so without this flag `caf dev` refuses the required
+# pulls the wrong thing" — so without this flag `cafe dev` refuses the required
 # `identity` dependency and no stack starts at all.
 #
 # `-port 3000` publishes this service on the host, and the reason is in the
 # manifest rather than in taste. `cafaye.yml` declares no `exposes.api` (see the
 # comment there: this app ships no OpenAPI document, and inventing one would be
-# a second copy of the router), so `caf dev` cannot tell that a Next.js app
+# a second copy of the router), so `cafe dev` cannot tell that a Next.js app
 # serves HTTP and leaves its host port unpublished. Without `-port`, caf prints
 # "parlor is up on no published port" — which is true, and useless, because the
 # browser cannot reach it. The container port is not this flag's business: caf
@@ -66,5 +66,5 @@ run = "npm run dev"
 # `500 relation "users" does not exist` while `/readyz` reports healthy — both
 # are correct, and the fix is to run identity's migrations as their own step.
 # `./bin/e2e` runs them and is the tier that proves the integration.
-description = "The whole local stack via caf dev (parlor + identity + postgres + redis)"
-run = "caf dev -registry cafe.dev.json -port 3000"
+description = "The whole local stack via cafe dev (parlor + identity + postgres + redis)"
+run = "cafe dev -registry cafe.dev.json -port 3000"

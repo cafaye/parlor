@@ -163,8 +163,8 @@ pin_in_workflow() {
 # YAML scalar may contain a colon only when no space follows it, so YAML reads
 # the remainder as a nested mapping and stops there:
 #
-#   $ caf dev --dry-run
-#   caf: caf dev: INVALID cafaye.yml: invalid YAML: [21:14] mapping value is not
+#   $ cafe dev --dry-run
+#   caf: cafe dev: INVALID cafaye.yml: invalid YAML: [21:14] mapping value is not
 #   allowed in this context
 #
 # and every other check in this file stayed green. A check that reports on a
@@ -193,11 +193,11 @@ pin_in_workflow() {
 # is how a check written to catch this bug ended up not catching it.
 manifest_parses() {
   if ! command -v caf >/dev/null 2>&1; then
-    echo "caf not on PATH; nothing on this machine can be asked whether it reads the manifest"
+    echo "cafe not on PATH; nothing on this machine can be asked whether it reads the manifest"
     return 2
   fi
   local out
-  out="$(cd "$ROOT" && caf dev --dry-run 2>&1)" || true
+  out="$(cd "$ROOT" && cafe dev --dry-run 2>&1)" || true
   case "$out" in
     *"INVALID cafaye.yml"*)
       printf '%s\n' "$out" | head -1
@@ -457,12 +457,12 @@ fi
 # `description:` held an unquoted colon followed by a space, which YAML reads as
 # a nested mapping, and the document stopped there.
 #
-#   $ caf dev --dry-run
-#   caf: caf dev: INVALID cafaye.yml: invalid YAML: [52:14] mapping value is not
+#   $ cafe dev --dry-run
+#   caf: cafe dev: INVALID cafaye.yml: invalid YAML: [52:14] mapping value is not
 #   allowed in this context
 #
 # That is the whole of what cafaye's own tool could say about this repository.
-# `caf dev`, `caf contract`, `caf deploy` and `caf env` all open this file and
+# `cafe dev`, `caf contract`, `caf deploy` and `caf env` all open this file and
 # all of them failed, while `bin/prime` reported 48 passed, 0 failed. A gate
 # that is green on a file the toolchain cannot read is not slow, it is
 # measuring the wrong thing.
@@ -1278,7 +1278,7 @@ fi
 # ---------------------------------------------------------------------------
 # The local stack's catalog
 # ---------------------------------------------------------------------------
-# `cafe.dev.json` is the file `mise run stack` hands `caf dev -registry`, and it
+# `cafe.dev.json` is the file `mise run stack` hands `cafe dev -registry`, and it
 # is committed rather than generated, so a service generated from this template
 # inherits a local stack instead of rediscovering how to get one. What can be
 # wrong with it is worth a per-commit check, because the alternative is finding
@@ -1312,7 +1312,7 @@ fi
 CATALOG="$ROOT/cafe.dev.json"
 if [ ! -f "$CATALOG" ]; then
   no "cafe.dev.json exists" \
-    "$CATALOG is the catalog 'mise run stack' passes to 'caf dev -registry'; without it caf refuses the required identity dependency and no stack starts"
+    "$CATALOG is the catalog 'mise run stack' passes to 'cafe dev -registry'; without it caf refuses the required identity dependency and no stack starts"
 else
   ok "cafe.dev.json exists"
   # Existence and readability are separate checks on purpose. Collapsing them
@@ -1376,9 +1376,9 @@ for (const [key, entry] of Object.entries(doc)) {
 process.stdout.write(problems.join("; "));
 ' "$CATALOG")
   if [ -z "$catalog_report" ]; then
-    ok "every entry in cafe.dev.json is one caf dev can believe"
+    ok "every entry in cafe.dev.json is one cafe dev can believe"
   else
-    no "every entry in cafe.dev.json is one caf dev can believe" "$catalog_report"
+    no "every entry in cafe.dev.json is one cafe dev can believe" "$catalog_report"
   fi
 fi
 
@@ -1587,7 +1587,7 @@ fi
 # fail") rather than passing quietly. The failure mode of forgetting is loud,
 # and loud is the direction this file is willing to be wrong in.
 #
-# caf: `manifest_parses` asks `caf dev --dry-run` and is the ONLY check that
+# caf: `manifest_parses` asks `cafe dev --dry-run` and is the ONLY check that
 # can see an unquoted colon in `cafaye.yml`, because every other check reads the
 # manifest with `sed` line matching and a document YAML cannot parse still
 # matches every line pattern they use. With no `caf`, that breakage has no
@@ -1613,7 +1613,7 @@ breakage_axis() {
 axis_available() {
   case "$1" in
     -) return 0 ;;
-    caf) command -v caf >/dev/null 2>&1 ;;
+    cafe) command -v cafe >/dev/null 2>&1 ;;
     shellcheck) command -v shellcheck >/dev/null 2>&1 ;;
     docker)
       command -v docker >/dev/null 2>&1 \

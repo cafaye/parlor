@@ -933,7 +933,7 @@ gate:
     # ALSO A DECLARED COUNT, AND FOR THE SAME REASON. The self-test used to
     # floor the number of breakages it PROVED, which on a machine without `caf`
     # is one short of the real list: exactly one breakage — the one that plants
-    # an unquoted colon in `cafaye.yml` — can only be witnessed by `caf dev
+    # an unquoted colon in `cafaye.yml` — can only be witnessed by `cafe dev
     # --dry-run`, because every other check reads the manifest with `sed` line
     # matching and a document YAML cannot parse still matches all of them. Run
     # it without `caf` and the self-test asserted a check could fail, the check
