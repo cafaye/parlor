@@ -1,8 +1,8 @@
 # parlor
 
-**Current direction (2026-10-19):** Ship is the product. The cafaye stack is internal infrastructure; we are not selling or supporting it as a standalone product as of this date. We continue to develop and improve it, treating the founder as the primary customer and keeping "build once, run everywhere" true, with the expectation that it may be offered again later.
+**Current direction (2026-10-19):** Ship is the product. The anywaye stack is internal infrastructure; we are not selling or supporting it as a standalone product as of this date. We continue to develop and improve it, treating the founder as the primary customer and keeping "build once, run everywhere" true, with the expectation that it may be offered again later.
 
-The cafaye app shell — the template every cafaye-built product starts from, and
+The anywaye app shell — the template every anywaye-built product starts from, and
 the admin surface they all inherit.
 
 From [PLAN.md](../PLAN.md): `parlor` is *"app shell template + admin (Next.js)"*,
@@ -12,7 +12,7 @@ the identity contract with a mocked transport underneath it.
 
 ## Status: `website` is the customer-facing frontend
 
-Decision D1 (2026-10-09): **`cafaye/website` is the one customer-facing
+Decision D1 (2026-10-09): **`anywaye/website` is the one customer-facing
 frontend.** Every new human surface — the landing page, agent claim, email
 providers, audit, boxes — lands there, and no new screens land in this
 repository. This app was that product's reference implementation: every route
@@ -28,7 +28,7 @@ Business Source License 1.1 (SPDX `BUSL-1.1`), which lets you copy, modify,
 create derivative works and redistribute it, and which becomes Apache-2.0 on
 2030-10-10.
 
-**Where to go instead:** [cafaye/website](https://github.com/cafaye/website) —
+**Where to go instead:** [anywaye/website](https://github.com/anywaye/website) —
 for the product, its screens, and every screen still to come.
 
 ## The philosophy: a template, not a runtime dependency
@@ -42,7 +42,7 @@ This is a **template**, not a platform-as-a-service dependency.
   raise your prices or pull the rug.
 - We ship improvements upstream, so keeping in sync means a merge, not a
   migration.
-- Anything cafaye later adds — identity screens, billing screens, team
+- Anything anywaye later adds — identity screens, billing screens, team
   management — arrives as code in your repo, not as a runtime dependency.
 
 What you may do with this code is set by [LICENSE](LICENSE), not by this
@@ -77,7 +77,7 @@ README: parlor is licensed under the Business Source License 1.1
 | The HTTP contract | `openapi/v1.yaml` | The routing surface as an OpenAPI 3.1 document: every path and method the table allows, which upstream owns it. A transcription, kept in agreement with the table by `src/lib/openapi-document.test.ts` in both directions. |
 | Liveness | `/healthz` | `{"status":"ok"}` — process is up. No dependency checks, on purpose. |
 | Readiness | `/readyz` | `{"status":"ok","deps":[{"name":"identity","ok":true}]}` — a real sweep: identity's own `/readyz` with a short timeout, billing only when `BILLING_URL` is set. Any failure is a 503. |
-| Theme tokens | `src/styles/tokens.css` | The cafaye design system: two ramps, a semantic layer, and a measured focus ring. Contrast-checked in `src/styles/tokens.test.ts`. |
+| Theme tokens | `src/styles/tokens.css` | The anywaye design system: two ramps, a semantic layer, and a measured focus ring. Contrast-checked in `src/styles/tokens.test.ts`. |
 | Primitives | `src/components/ui/` | Button, Input, Select, Field, Callout, ConfirmDialog, Spinner, Surface, TextLink/CardLink, Panel, and the state components. One import path: `@/components/ui`. |
 | Site primitives | `src/components/shadcn/` | Tabs, Badge, Separator — for the surfaces a product's marketing home is made of (code panels, label chips, ruled divisions). shadcn/ui's API on Base UI and this system's tokens, zero new dependencies. See `docs/design-system.md` § Site primitives. |
 | Legal pages | `/terms`, `/privacy` | Placeholders, deliberately: they say they are placeholders and point at the policy generators. Replacing them is a legal decision, not a copy change. |
@@ -226,7 +226,7 @@ Two things about the contract are worth stating plainly, because both are
 decisions rather than accidents, and one of them is not settled:
 
 - **The error body is ambiguous.** `core/docs/openapi-conventions.md` requires
-  every cafaye service to answer with RFC 9457 problem+json (`code`, `detail`,
+  every anywaye service to answer with RFC 9457 problem+json (`code`, `detail`,
   `trace_id`, and `errors[]` of `{field, code}` on a 422). The identity-02 brief
   writes the failure shape as `{error:{…}}`. The client reads both and produces
   the same `IdentityError` either way, so the screens work against whichever one
@@ -296,7 +296,7 @@ is the only thing here that proves the app against a real `identity` and
 ## Getting started
 
 ```sh
-mise install      # node 22.22.2, the same pin package.json declares
+mise install      # node 22.23.4, the same pin package.json declares
 ./bin/prime       # npm ci + npm test + typecheck + build + the CI shape checks
 mise run stack    # the local stack: parlor + identity + postgres + redis
 ```
@@ -327,7 +327,7 @@ argued at the line in `cafe.dev.json`:
   names it, in which case it runs `image:` instead. Adding a self-entry would
   replace the Dockerfile with a pull of an image that does not exist.
 
-The stack task does not migrate — migrations are a deploy step in every cafaye
+The stack task does not migrate — migrations are a deploy step in every anywaye
 service — so against the database `cafe` provisions, a first registration
 returns `500 relation "users" does not exist` while `/readyz` reports healthy.
 Both are correct. `./bin/e2e` runs the migrations and is the tier that proves
@@ -345,7 +345,7 @@ npm run dev        # vite dev alone — no identity behind it
 
 ### The runtime pin is `package.json`, and the gate keeps it honest
 
-`engines.node` is the pin of record: **22.22.2**, the floor jsdom@30 demands.
+`engines.node` is the pin of record: **22.23.4**, the floor jsdom@30 demands.
 `packageManager` records the npm that ships with it. `.npmrc` sets
 `engine-strict=true`, which is what makes that a gate rather than a
 suggestion — with it, `npm ci` exits nonzero on a Node that does not match;
@@ -353,7 +353,7 @@ without it, the same command prints `npm warn EBADENGINE` and installs anyway.
 
 Three other files carry the same number, and that is deliberate: `mise.toml`
 so a developer's local toolchain is the pinned one, the CI workflow so the
-runner is, and `cafaye.yml` records the major line (`"22"`). A number in four
+runner is, and `anywaye.yml` records the major line (`"22"`). A number in four
 places is four pins unless something holds them together, so
 `bash tests/validate-ci.sh` fails when they disagree — as a pre-commit-ish
 habit, as part of `bin/prime`, and therefore in CI:
@@ -385,9 +385,9 @@ than two tests passed or anything was skipped.
 A third workflow, `.github/workflows/publish.yml`, is the publish half of the
 deploy loop: kit's caller template copied verbatim, one `uses:` of kit's
 composed `publish.reusable.yml`. A push to master publishes both artifacts —
-the image `config/deploy.yml` deploys, at `ghcr.io/cafaye/parlor:sha-<full 40
+the image `config/deploy.yml` deploys, at `ghcr.io/anywaye/parlor:sha-<full 40
 chars>` (plus `<branch>`, plus `latest` on the default branch), and the chart
-the Argo CD `Application` pulls, at `oci://ghcr.io/cafaye/charts/parlor:0.1.0`.
+the Argo CD `Application` pulls, at `oci://ghcr.io/anywaye/charts/parlor:0.1.0`.
 The chart's `version` IS the OCI tag, so it is the tag the substrate's
 `Application` must match (`targetRevision: 0.1.0`) — a service that bumps one
 and not the other is a service that never deploys. `src/lib/chart.test.ts`
@@ -466,7 +466,7 @@ docker run --rm -p 3000:3000 \
   parlor
 ```
 
-Multi-stage `node:22.22.2-slim` — the pin `package.json` declares, on **both**
+Multi-stage `node:22.23.4-slim` — the pin `package.json` declares, on **both**
 stages, not whatever `node:22-slim` resolves to this week — the `npm run
 build:node` output (`.output/`, server **and** the client assets Nitro serves
 from `.output/public`), non-root user, `/healthz` wired to the image
@@ -486,13 +486,13 @@ The image is not the point of this section any more. `bin/e2e` builds it, pulls
 ## Deploying
 
 `config/deploy.yml` is the Kamal configuration. It is a copy of
-`templates/kamal/deploy.yml.erb` from `cafaye/kit` (at kit commit `b9d8a30`)
+`templates/kamal/deploy.yml.erb` from `anywaye/kit` (at kit commit `b9d8a30`)
 with five differences, each argued at the line it is on and listed in the file's
 own header, so a diff against the template shows five differences rather than a
 fork.
 
 ```sh
-export KIT_SERVICE=parlor KIT_REGISTRY_ORG=cafaye KIT_REPO=parlor \
+export KIT_SERVICE=parlor KIT_REGISTRY_ORG=anywaye KIT_REPO=parlor \
        KIT_WEB_HOST=203.0.113.10 KIT_APP_DOMAIN=app.example.com \
        KIT_IDENTITY_URL=https://identity.example.com \
        KIT_BILLING_URL=https://billing.example.com
@@ -633,8 +633,8 @@ per-commit gate. The tier is `bin/e2e` and CI runs it as its own job.
 | `identity-postgres` | `postgres:17-alpine` | `16001` | identity's database. |
 | `gateway-redis` | `redis:7.4.1-alpine` | `16002` | The shared rate-limit counters. |
 | `parlor` | this repository, built (`context: .`) | `16003` | The app under test, also reachable directly. |
-| `identity` | `${E2E_REGISTRY:-localhost:16010}/cafaye/identity:e2e`, **pulled** | `16080` | Auth, sessions, accounts, on a real Postgres. |
-| `gateway` | `${E2E_REGISTRY:-localhost:16010}/cafaye/gateway:e2e`, **pulled** | `16081` | The gateway: JWT verification, rate limits, a BFF. |
+| `identity` | `${E2E_REGISTRY:-localhost:16010}/anywaye/identity:e2e`, **pulled** | `16080` | Auth, sessions, accounts, on a real Postgres. |
+| `gateway` | `${E2E_REGISTRY:-localhost:16010}/anywaye/gateway:e2e`, **pulled** | `16081` | The gateway: JWT verification, rate limits, a BFF. |
 
 Every published port is `${E2E_*:default}` rather than a literal — a literal port
 in a compose file is a collision the second developer on the machine hits.
@@ -786,12 +786,12 @@ rules, and the health-surface contracts. Long-running commands get `timeout N`.
 
 ## License
 
-[Business Source License 1.1](LICENSE), SPDX `BUSL-1.1`. Licensor `Cafaye`,
+[Business Source License 1.1](LICENSE), SPDX `BUSL-1.1`. Licensor `Anywaye`,
 Licensed Work `parlor`, Change Date `2030-10-10`, Change Licence `Apache-2.0`,
 no Additional Use Grant. In plain terms, and as a summary rather than a grant:
 you may copy, modify, create derivative works and redistribute parlor, and on
 the Change Date the licence becomes Apache-2.0. Production use requires a
-commercial licence from Cafaye or an Additional Use Grant — `LICENSE` is the
+commercial licence from Anywaye or an Additional Use Grant — `LICENSE` is the
 authority and this paragraph is a reading of it. Third-party components remain
 under their own licenses and notices — see `package.json` /
 `package-lock.json` and the notices preserved in source. Both of those

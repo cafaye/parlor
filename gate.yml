@@ -53,7 +53,7 @@ gate:
   # and "the gate exited 0" says nothing about any of them. A proof is a line
   # the gate's own output must contain, with a floor read from one capture
   # group, so a run that skipped a step and exited zero is a FAILURE and not a
-  # smaller green. This is the defect in `cafaye-rb`, where the database tier
+  # smaller green. This is the defect in `anywaye-rb`, where the database tier
   # never executed once and the run printed `ok`. Each of the three below is
   # the one line that cannot appear unless its step ran to the end, so a
   # `bin/prime` that quietly stopped doing one of the three is red rather than
@@ -420,7 +420,7 @@ gate:
     # and a throwing handler answering 500 rather than killing the process.
     #
     # The floor before that, 710, was raised by the tenant-proof packet:
-    # 665 -> 710, a +45 in two files and for one reason. `cafaye/notes/debt.md` D18 measured this repository at
+    # 665 -> 710, a +45 in two files and for one reason. `anywaye/notes/debt.md` D18 measured this repository at
     # zero cross-tenant negative tests, and that was true: there was nothing in
     # the suite asserting that one account's rows are not another account's.
     # The number moved because the account boundary is now written down in two
@@ -621,7 +621,7 @@ gate:
     # port matching the Dockerfile's `EXPOSE` (3000 = 3000 — the generator's
     # `LanguagePort("typescript")` agrees with the image); the templates being
     # present and non-empty; and the three `helm template` assertions — the
-    # Ingress rendering with `host: app.cafaye.com`, `ingressClassName:
+    # Ingress rendering with `host: app.anywaye.com`, `ingressClassName:
     # traefik`, the `cert-manager.io/cluster-issuer: letsencrypt-prod`
     # annotation and a `spec.tls` block, plus the two red controls that are
     # part of the suite: `ingress.enabled: false` emits no Ingress, and
@@ -648,7 +648,7 @@ gate:
     #
     #   * 1 green test asserting the four facts that make the loop work, all
     #     of them read out of the verbatim caller template: the caller calls
-    #     kit's composed publish workflow (`uses: cafaye/kit/ci/
+    #     kit's composed publish workflow (`uses: anywaye/kit/ci/
     #     publish.reusable.yml@master` — a caller that inlines the steps has
     #     forked the composition, and a fix in kit stops landing here); it
     #     grants `packages: write` (a reusable workflow can request a
@@ -794,7 +794,7 @@ gate:
     # floor nobody trusts, so this is what the 36 bought.
     # IT IS 1106 BY THE NEXT ACCOUNT. 1099 -> 1106, a +7 net in
     # `src/lib/chart.test.ts`, the apex-hosts packet: the Ingress now carries
-    # three hosts (`app.cafaye.com`, `cafaye.com`, `www.cafaye.com`) with one
+    # three hosts (`app.anywaye.com`, `anywaye.com`, `www.anywaye.com`) with one
     # TLS entry and one `secretName` per host (Traefik pattern,
     # `parlor-tls-<host>`), `hosts:` (list) with `host:` kept as a deprecated
     # singular fallback, and the empty-host guard moved to `hosts`+`host`.
@@ -933,7 +933,7 @@ gate:
     # ALSO A DECLARED COUNT, AND FOR THE SAME REASON. The self-test used to
     # floor the number of breakages it PROVED, which on a machine without `caf`
     # is one short of the real list: exactly one breakage — the one that plants
-    # an unquoted colon in `cafaye.yml` — can only be witnessed by `cafe dev
+    # an unquoted colon in `anywaye.yml` — can only be witnessed by `cafe dev
     # --dry-run`, because every other check reads the manifest with `sed` line
     # matching and a document YAML cannot parse still matches all of them. Run
     # it without `caf` and the self-test asserted a check could fail, the check
@@ -994,7 +994,7 @@ external:
       # it and package.json and the workflow disagree. That is a real
       # difference from the brief's phrasing and it is the whole reason
       # requirements are enumerated per repository instead of copied.
-      name: Node 22.22.2 and the npm that ships with it, as pinned in package.json and mise.toml
+      name: Node 22.23.4 and the npm that ships with it, as pinned in package.json and mise.toml
       satisfy:
         command: [mise, install]
         # Demonstrated, not asserted: with `engines.node` set to 99.0.0 and

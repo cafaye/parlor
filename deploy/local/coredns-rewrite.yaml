@@ -1,12 +1,12 @@
 ---
-# The CoreDNS rewrite for the internal zone `*.svc.cafaye.test`.
+# The CoreDNS rewrite for the internal zone `*.svc.anywaye.test`.
 #
 # WHAT THIS IS FOR. PLAN-names-urls-rollout §3 L8: "CoreDNS rewrite so
-# `*.svc.cafaye.test` resolves cluster-internally — the internal zone gets
+# `*.svc.anywaye.test` resolves cluster-internally — the internal zone gets
 # exercised for real inside the cluster, and only there." The zone is the
-# in-cluster half of the URL map (§1): `cafaye.test`, `api.cafaye.test`,
-# `auth.cafaye.test` and `docs.cafaye.test` are the EDGE names, and
-# `*.svc.cafaye.test` is what a pod calls when it means to reach a sibling.
+# in-cluster half of the URL map (§1): `anywaye.test`, `api.anywaye.test`,
+# `auth.anywaye.test` and `docs.anywaye.test` are the EDGE names, and
+# `*.svc.anywaye.test` is what a pod calls when it means to reach a sibling.
 #
 # WHY A `coredns-custom` ConfigMap AND NOT AN EDIT TO THE `Corefile`.
 # The cluster's own Corefile carries two import hooks:
@@ -43,15 +43,15 @@
 # warning, and `kubernetes.default.svc.cluster.local` still resolved. What the
 # `.override` did was splice the `rewrite` INTO `.:53` AFTER the `kubernetes`
 # plugin and BEFORE `forward . /etc/resolv.conf`. The kubernetes plugin, asked
-# about `probe.svc.cafaye.test`, sees a name outside its `cluster.local` zone,
+# about `probe.svc.anywaye.test`, sees a name outside its `cluster.local` zone,
 # passes it on, and the `rewrite` then rewrites the ALREADY-TRAVELLED query —
 # so the kubernetes plugin never sees the rewritten name and the request goes
 # to `/etc/resolv.conf`, where the public answer for `*.cluster.local` is
-# NXDOMAIN. The symptom was `server can't find probe.svc.cafaye.test:
+# NXDOMAIN. The symptom was `server can't find probe.svc.anywaye.test:
 # NXDOMAIN` even with the correct directive in place, which reads exactly like
 # "the service does not exist".
 #
-# Giving the internal zone its OWN server block (`svc.cafaye.test:53`) puts the
+# Giving the internal zone its OWN server block (`svc.anywaye.test:53`) puts the
 # `rewrite` before `kubernetes` in that block, so the plugin chain sees
 # `probe.probe.svc.cluster.local` and answers from the cluster. Both forms were
 # measured against a live `probe` Service (namespace `probe`, Service `probe`,
@@ -64,9 +64,9 @@
 #
 # THE REWRITE ITSELF, and the assumption it rests on.
 #
-#   rewrite name regex (.*)\.svc\.cafaye\.test {1}.{1}.svc.cluster.local
+#   rewrite name regex (.*)\.svc\.anywaye\.test {1}.{1}.svc.cluster.local
 #
-# `identity.svc.cafaye.test` becomes `identity.identity.svc.cluster.local`.
+# `identity.svc.anywaye.test` becomes `identity.identity.svc.cluster.local`.
 # The doubled label is NOT a typo, and it is the whole design:
 # `{1}` is the service name, and the cluster's `kubernetes` plugin needs
 # `<service>.<namespace>.svc.cluster.local` to answer a query, so the
@@ -78,8 +78,8 @@
 # restates it. `identity` lives in namespace `identity`, `gateway` in
 # `gateway`, `pantry` in `pantry`, `parlor` in `parlor`.
 #
-# WHY NOT `rewrite name suffix .svc.cafaye.test .svc.cluster.local`. That is
-# the obvious form and it is wrong here: it maps `identity.svc.cafaye.test` to
+# WHY NOT `rewrite name suffix .svc.anywaye.test .svc.cluster.local`. That is
+# the obvious form and it is wrong here: it maps `identity.svc.anywaye.test` to
 # `identity.svc.cluster.local`, which the kubernetes plugin reads as
 # `identity.default.svc.cluster.local` — a service in the DEFAULT namespace.
 # Nothing in this fleet runs there, so the suffix form would resolve every
@@ -103,8 +103,8 @@
 #
 # AND THE PROPERTY THE PLAN ASKS FOR — "and only there". This file lives in the
 # cluster's kube-system namespace. Nothing on a Mac resolver, a phone or
-# another machine ever sees it: `*.svc.cafaye.test` is not a public name, and
-# the EDGE names (`api.cafaye.test` and the rest) are NOT rewritten by this
+# another machine ever sees it: `*.svc.anywaye.test` is not a public name, and
+# the EDGE names (`api.anywaye.test` and the rest) are NOT rewritten by this
 # file — they resolve from the host's own `/etc/hosts`, or from the ingress
 # controller's published port. So the internal zone is exercised for real
 # inside the cluster and does not resolve outside it.
@@ -126,10 +126,10 @@ data:
   # complete on its own: a server block that cannot forward answers SERVFAIL
   # rather than passing the query on, and the `kubernetes` plugin handles every
   # name that should resolve from the cluster in any case.
-  cafaye-svc.server: |
-    svc.cafaye.test:53 {
+  anywaye-svc.server: |
+    svc.anywaye.test:53 {
         errors
-        rewrite name regex (.*)\.svc\.cafaye\.test {1}.{1}.svc.cluster.local
+        rewrite name regex (.*)\.svc\.anywaye\.test {1}.{1}.svc.cluster.local
         kubernetes cluster.local in-addr.arpa ip6.arpa {
           pods insecure
           fallthrough in-addr.arpa ip6.arpa

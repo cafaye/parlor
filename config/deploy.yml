@@ -1,7 +1,7 @@
 ---
 # `config/deploy.yml` — the Kamal configuration for parlor.
 #
-# IT IS A COPY of `templates/kamal/deploy.yml.erb` in cafaye/kit, at kit commit
+# IT IS A COPY of `templates/kamal/deploy.yml.erb` in anywaye/kit, at kit commit
 # `b9d8a30` — which is the commit the template last changed, measured with
 # `git -C ../kit log -1 -- templates/kamal/deploy.yml.erb`, not the tip
 # (`af73bc1` when this file was written). Re-copy on a kit bump and re-apply the
@@ -156,7 +156,7 @@ app_domain  = require.call("KIT_APP_DOMAIN")
 # RATHER THAN A COMPROMISE. identity is required: a config that cannot say where
 # identity is cannot serve a sign-in, so `require` stays. billing is optional:
 # the launch deploys identity + gateway + courier + parlor with no billing, and
-# `cafaye.yml` already declares it `required: false` because both billing
+# `anywaye.yml` already declares it `required: false` because both billing
 # screens render an error state rather than failing. So an empty value does not
 # fail the render — it omits `BILLING_URL` from `env.clear` entirely (below),
 # and the app answers its billing routes with a distinct "not configured" state
@@ -168,7 +168,7 @@ billing_url  = ENV["KIT_BILLING_URL"].to_s.strip
 %>
 # `config/deploy.yml` — the Kamal configuration for <%= service %>.
 #
-# Copy this file from cafaye/kit at the ref your `kit.ref` names, rename it to
+# Copy this file from anywaye/kit at the ref your `kit.ref` names, rename it to
 # `config/deploy.yml`, and export the KIT_* variables above. Every value that is
 # a DECISION rather than a deployment fact is written out below with the reason
 # it was made, because a number without its reason is not a decision — it is a
@@ -185,7 +185,7 @@ service: <%= service %>
 # `image: ghcr.io/org/repo` with `server: ghcr.io` resolves to
 # `ghcr.io/ghcr.io/org/repo` and the deploy fails at the push, not here.
 # Measured on kamal 2.12.0: `kamal config` reports
-# `:repository: ghcr.io/ghcr.io/cafaye/courier` for exactly that spelling.
+# `:repository: ghcr.io/ghcr.io/anywaye/courier` for exactly that spelling.
 # The host appears in `registry.server` and nowhere else.
 image: <%= org %>/<%= repo %>
 
@@ -425,7 +425,7 @@ builder:
   # ci.yml` has three jobs — kit's `node` job, `./bin/prime`, and
   # typecheck + build — and none of them runs `docker build`, `docker push`
   # or `kamal build`; the only place this image is built is
-  # `e2e/docker-compose.yml`, which tags it `cafaye/e2e-parlor:local` for the
+  # `e2e/docker-compose.yml`, which tags it `anywaye/e2e-parlor:local` for the
   # end-to-end stack and pushes it nowhere. So on a real host `kamal deploy` will
   # run `kamal build` THERE, which is precisely the OOM this block exists to
   # avoid, and the cache below is the only part of it that still does something

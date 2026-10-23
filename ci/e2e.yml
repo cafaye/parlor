@@ -54,7 +54,7 @@
 #     (a copy of the cluster script is a second opinion about the isolation
 #     contract, and one that stops being true silently), and is not optional:
 #     identity's `migrations/00016_account_isolation.sql` ends in
-#     `select cafaye.protect_table('account_users')`, which asks the cluster for a
+#     `select anywaye.protect_table('account_users')`, which asks the cluster for a
 #     LOGIN role named `identity_app` and refuses to proceed without one. This
 #     job was red on exactly that, with a 42704 naming a role nobody had created.
 #
@@ -153,17 +153,17 @@ jobs:
       # is why the guard → gateway rename looked like the whole cause.
       - uses: actions/checkout@v7
         with:
-          repository: cafaye/parlor
+          repository: anywaye/parlor
           path: parlor
           ref: ${{ github.ref }}
       - uses: actions/checkout@v7
         with:
-          repository: cafaye/identity
+          repository: anywaye/identity
           path: identity
           ref: master
       - uses: actions/checkout@v7
         with:
-          repository: cafaye/gateway
+          repository: anywaye/gateway
           path: gateway
           ref: master
 # The fake provider, at the PINNED TAG rather than at master. `ref:` alone
@@ -176,7 +176,7 @@ jobs:
       # silently in whichever direction a human last edited.
       - uses: actions/checkout@v7
         with:
-          repository: cafaye/oauth-stub
+          repository: anywaye/oauth-stub
           path: oauth-stub
           ref: v0.1.0
           fetch-depth: 0
@@ -203,7 +203,7 @@ jobs:
       # cluster-script change IS a change to every service's isolation.
       - uses: actions/checkout@v7
         with:
-          repository: cafaye/kit
+          repository: anywaye/kit
           path: kit
           ref: master
 
@@ -294,7 +294,7 @@ jobs:
             exit 1
           fi
           if [ -z "$(find "$initdb" -maxdepth 1 -type f -print -quit 2>/dev/null)" ]; then
-            echo "::error::$initdb is empty, which means it was created rather than found: cafaye/kit was not checked out beside this repository. Docker mounts a missing bind source as an empty directory instead of failing." >&2
+            echo "::error::$initdb is empty, which means it was created rather than found: anywaye/kit was not checked out beside this repository. Docker mounts a missing bind source as an empty directory instead of failing." >&2
             exit 1
           fi
           echo "  $initdb: present (kit's cluster script)"

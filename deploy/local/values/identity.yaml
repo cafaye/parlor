@@ -1,18 +1,18 @@
-# Local (`cafaye-local`) values for the identity chart — the OIDC face.
+# Local (`anywaye-local`) values for the identity chart — the OIDC face.
 image:
-  repository: cafaye/identity
+  repository: anywaye/identity
   tag: k8s-local
   pullPolicy: Never
 
 ingress:
   enabled: true
   className: traefik
-  # §1's URL map: auth.cafaye.test is identity's OIDC face.
-  host: auth.cafaye.test
+  # §1's URL map: auth.anywaye.test is identity's OIDC face.
+  host: auth.anywaye.test
   # The local self-signed ClusterIssuer. The chart names `letsencrypt-prod`;
-  # this cluster has `cafaye-test-ca` and not the other one, so a chart left
+  # this cluster has `anywaye-test-ca` and not the other one, so a chart left
   # on its default would render an Ingress whose Certificate never issues.
-  clusterIssuer: cafaye-test-ca
+  clusterIssuer: anywaye-test-ca
   tls: true
   path: /
   pathType: Prefix

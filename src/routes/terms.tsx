@@ -6,7 +6,7 @@ import { LegalPlaceholder, ProsePage } from "@/components/ui";
  * `/terms` — the terms of service page.
  *
  * A placeholder, deliberately, and this is the fleet's own recorded decision
- * rather than this file's: cafaye has not published terms of service, and a
+ * rather than this file's: anywaye has not published terms of service, and a
  * website that invented them would be printing claims nobody made — so the
  * page says so, and points the operator at the policy generators the precedent
  * suggests. See `LegalPlaceholder` for the body and `ProsePage` for the

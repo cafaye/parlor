@@ -25,7 +25,7 @@ Both trees were compared as route families and screens, not file counts:
 
 | # | parlor family | website counterpart | Verdict | Reason (one line) |
 |---|---|---|---|---|
-| 1 | `/` landing (`src/app/page.tsx`) | exists | **already-in-website** | website's is the marketing home and is ahead: Cafaye brand, W0-P1 pricing, meta description, brand-titles test. |
+| 1 | `/` landing (`src/app/page.tsx`) | exists | **already-in-website** | website's is the marketing home and is ahead: Anywaye brand, W0-P1 pricing, meta description, brand-titles test. |
 | 2 | `/register` | exists | **already-in-website** | `register-form.tsx` is byte-identical; page wrapper identical. |
 | 3 | `/login` | exists | **already-in-website** | `login-form.tsx` is byte-identical; page wrapper identical. |
 | 4 | `/forgot-password` | exists | **already-in-website** | `forgot-password-form.tsx` is byte-identical. |
@@ -33,7 +33,7 @@ Both trees were compared as route families and screens, not file counts:
 | 6 | `/verify-email`, `/verify-email/confirm` | exist | **already-in-website** | both forms byte-identical; page wrappers identical. |
 | 7 | `/accounts` | exists | **already-in-website** | `accounts-screen.tsx` is byte-identical. |
 | 8 | `/accounts/[accountId]` | exists | **already-in-website** | website is *ahead*: adds `AccountEntitlementPanel` (conductor-backed) and a token-gated sign-in check; parlor has nothing website lacks. |
-| 9 | `/invitations/[token]` | exists | **already-in-website** | the only diff is the brand word (`parlor` → `Cafaye`). |
+| 9 | `/invitations/[token]` | exists | **already-in-website** | the only diff is the brand word (`parlor` → `Anywaye`). |
 | 10 | `/admin` | exists | **already-in-website** | website is *ahead*: `EntitlementOps` (list/grant/revoke Kit entitlements via conductor) is 300+ lines parlor's console does not have; parlor's has nothing website lacks. |
 | 11 | `/settings` (+ `mfa-section.tsx`) | exists | **already-in-website** | both files byte-identical. |
 | 12 | `/terms`, `/privacy` | exist | **already-in-website** | brand-only diffs (title + placeholder name). |

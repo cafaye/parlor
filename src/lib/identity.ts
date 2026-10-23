@@ -29,7 +29,7 @@
  * accidents otherwise.
  *
  * 1. Errors are parsed from RFC 9457 problem+json, as `core` requires every
- *    cafaye service to answer (core/docs/openapi-conventions.md). The brief
+ *    anywaye service to answer (core/docs/openapi-conventions.md). The brief
  *    for identity-02 writes the failure body as `{error:{…}}`, which is a
  *    different shape for the same thing. Until the manager picks one, both are
  *    read and both produce the same `IdentityError`. See `parseError`.

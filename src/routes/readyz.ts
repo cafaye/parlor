@@ -15,7 +15,7 @@ import { GET as readyz } from "@/app/readyz/route";
  * drift apart.
  *
  * A real dependency check is its own packet. Nothing here has changed shape,
- * and the response keys are the platform contract's (see `cafaye.yml`).
+ * and the response keys are the platform contract's (see `anywaye.yml`).
  */
 export const Route = createFileRoute("/readyz")({
   server: {

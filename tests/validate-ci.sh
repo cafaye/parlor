@@ -36,15 +36,15 @@ WF="$ROOT/ci/ci.yml"
 PRIME="$ROOT/bin/prime"
 PKG="$ROOT/package.json"
 MISE="$ROOT/mise.toml"
-MANIFEST="$ROOT/cafaye.yml"
+MANIFEST="$ROOT/anywaye.yml"
 # The path kit documents for a caller. GitHub resolves a reusable workflow at
 # {owner}/{repo}/ci/{file}@{ref} and documents that
 # subdirectories of the workflows directory are unsupported, so the older
-# `cafaye/kit/workflows/ci.reusable.yml@master` resolves to nothing and every
+# `anywaye/kit/workflows/ci.reusable.yml@master` resolves to nothing and every
 # caller using it has a red build. kit-04 moves the file; this is the only
 # spelling that can ever work.
-USES_LINE='uses: cafaye/kit/ci/ci.reusable.yml@master'
-DEAD_USES='cafaye/kit/workflows/ci.reusable.yml@'
+USES_LINE='uses: anywaye/kit/ci/ci.reusable.yml@master'
+DEAD_USES='anywaye/kit/workflows/ci.reusable.yml@'
 # The lockfile `npm ci` consumes. CI fails when the gate moves it; see the
 # prime job in the workflow for why that is the desired failure.
 LOCKFILE=package-lock.json
@@ -101,7 +101,7 @@ no() {
 # caller that hands this a second argument means it, and a helper that silently
 # drops it leaves a reason computed and invisible. The manifest check below is
 # the one that passes one — whether caf is absent is the whole content of that
-# skip, and "SKIP cafaye.yml is a document caf can open" on its own reads as a
+# skip, and "SKIP anywaye.yml is a document caf can open" on its own reads as a
 # check that gave up rather than a machine that cannot ask.
 skipped() {
   skip=$((skip + 1))
@@ -135,7 +135,7 @@ pkg_has_script() {
 # places, which is three pins unless something holds them together — these
 # functions and the checks below are that something.
 #
-# It used to be four: cafaye.yml recorded the major line too. It does not
+# It used to be four: anywaye.yml recorded the major line too. It does not
 # anymore, and that is not this file losing interest. Core's manifest schema
 # sets additionalProperties:false and has no `runtime` key, so the draft
 # manifest's `spec.runtime.node` was a violation rather than a mirror — the file
@@ -153,18 +153,18 @@ pin_in_workflow() {
   sed -n "s/.*\"node\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" "$WF" | head -1
 }
 
-# Does cafaye.yml PARSE? Not "does it declare what we expect" — every check in
+# Does anywaye.yml PARSE? Not "does it declare what we expect" — every check in
 # this file reads the manifest with `sed` line matching, and a document that is
 # not valid YAML still matches every line pattern they use. So all of them can
-# pass on a manifest no cafaye tool can open.
+# pass on a manifest no anywaye tool can open.
 #
 # This is not hypothetical. parlor-25 removed the quotes from `description`,
-# which makes the value `The cafaye web app: App Router shell...`. An unquoted
+# which makes the value `The anywaye web app: App Router shell...`. An unquoted
 # YAML scalar may contain a colon only when no space follows it, so YAML reads
 # the remainder as a nested mapping and stops there:
 #
 #   $ cafe dev --dry-run
-#   caf: cafe dev: INVALID cafaye.yml: invalid YAML: [21:14] mapping value is not
+#   cafe: cafe dev: INVALID anywaye.yml: invalid YAML: [21:14] mapping value is not
 #   allowed in this context
 #
 # and every other check in this file stayed green. A check that reports on a
@@ -185,9 +185,9 @@ pin_in_workflow() {
 # declare that dependency, and adding one to prove a file parses is not worth
 # the lockfile.
 #
-# `cd "$ROOT"` is load-bearing and not tidiness. caf resolves cafaye.yml from
+# `cd "$ROOT"` is load-bearing and not tidiness. caf resolves anywaye.yml from
 # the CURRENT DIRECTORY -- run it from elsewhere and it reports "no manifest: no
-# cafaye.yml in ." -- and this script never changes directory, so without the cd
+# anywaye.yml in ." -- and this script never changes directory, so without the cd
 # it inspects whatever directory the caller happened to be in. The first version
 # of this check had no cd and PASSED on a manifest caf had just refused, which
 # is how a check written to catch this bug ended up not catching it.
@@ -199,7 +199,7 @@ manifest_parses() {
   local out
   out="$(cd "$ROOT" && cafe dev --dry-run 2>&1)" || true
   case "$out" in
-    *"INVALID cafaye.yml"*)
+    *"INVALID anywaye.yml"*)
       printf '%s\n' "$out" | head -1
       return 1
       ;;
@@ -210,14 +210,14 @@ manifest_parses() {
 manifest_parses_rc=0
 manifest_err="$(manifest_parses)" || manifest_parses_rc=$?
 case "$manifest_parses_rc" in
-  0) ok "cafaye.yml is a document caf can open (asked caf, not line-matched)" ;;
-  2) skipped "cafaye.yml is a document caf can open" \
-        "${manifest_err:-caf is not on PATH; nothing here can read the manifest}" ;;
-  *) no "cafaye.yml is a document caf can open (asked caf, not line-matched)" \
+  0) ok "anywaye.yml is a document caf can open (asked caf, not line-matched)" ;;
+  2) skipped "anywaye.yml is a document caf can open" \
+        "${manifest_err:-cafe is not on PATH; nothing here can read the manifest}" ;;
+  *) no "anywaye.yml is a document caf can open (asked caf, not line-matched)" \
         "${manifest_err:-caf refused it without saying why}" ;;
 esac
 
-# Whether cafaye.yml declares `key` as a real key, printing "yes" or nothing.
+# Whether anywaye.yml declares `key` as a real key, printing "yes" or nothing.
 #
 # Comments are stripped first, and that is not tidiness. This manifest now
 # records the facts it dropped *inside prose*, at length — a comment naming
@@ -237,7 +237,7 @@ manifest_declares() {
 # The message every one of these four checks shares: the key is absent from
 # core's schema, so writing it here is drift the moment someone adds it back.
 manifest_is_core_owned() {
-  printf 'cafaye.yml has a `%s:` key; core'"'"'s manifest schema has no place for it, and the fact belongs in the file named above' "$1"
+  printf 'anywaye.yml has a `%s:` key; core'"'"'s manifest schema has no place for it, and the fact belongs in the file named above' "$1"
 }
 
 # The workflow with its comments stripped, so every command check below reads
@@ -443,25 +443,25 @@ fi
 # and compared it, and needed four lines of comment to explain why a missing line
 # had to be handled separately. This one cannot pass by accident.
 if [ -z "$(manifest_declares node)" ]; then
-  ok "cafaye.yml declares no node pin, so the pin stays in its three homes"
+  ok "anywaye.yml declares no node pin, so the pin stays in its three homes"
 else
-  no "cafaye.yml declares no node pin, so the pin stays in its three homes" \
+  no "anywaye.yml declares no node pin, so the pin stays in its three homes" \
     "$(manifest_is_core_owned node)"
 fi
 
 # THE MANIFEST IS A YAML DOCUMENT, AND THIS IS THE ONLY CHECK THAT PARSES IT
 # ---------------------------------------------------------------------------
-# Every other check in this file reads `cafaye.yml` with `manifest_declares`,
+# Every other check in this file reads `anywaye.yml` with `manifest_declares`,
 # which is `sed` matching `^key:` — a LINE PATTERN, not a parser. So a manifest
 # that is not valid YAML at all passes all of them, and this repository's did:
 # `description:` held an unquoted colon followed by a space, which YAML reads as
 # a nested mapping, and the document stopped there.
 #
 #   $ cafe dev --dry-run
-#   caf: cafe dev: INVALID cafaye.yml: invalid YAML: [52:14] mapping value is not
+#   cafe: cafe dev: INVALID anywaye.yml: invalid YAML: [52:14] mapping value is not
 #   allowed in this context
 #
-# That is the whole of what cafaye's own tool could say about this repository.
+# That is the whole of what anywaye's own tool could say about this repository.
 # `cafe dev`, `caf contract`, `caf deploy` and `caf env` all open this file and
 # all of them failed, while `bin/prime` reported 48 passed, 0 failed. A gate
 # that is green on a file the toolchain cannot read is not slow, it is
@@ -586,15 +586,15 @@ fi
 # as authoritative to anyone who reads the manifest first, and bin/prime would
 # keep passing, because the workflow check is looking at the workflow.
 if [ -z "$(manifest_declares prime)" ]; then
-  ok "cafaye.yml declares no gate command, so bin/prime is the only answer"
+  ok "anywaye.yml declares no gate command, so bin/prime is the only answer"
 else
-  no "cafaye.yml declares no gate command, so bin/prime is the only answer" \
+  no "anywaye.yml declares no gate command, so bin/prime is the only answer" \
     "$(manifest_is_core_owned prime)"
 fi
 if [ -z "$(manifest_declares test)" ]; then
-  ok "cafaye.yml declares no test command, so bin/prime is the only answer"
+  ok "anywaye.yml declares no test command, so bin/prime is the only answer"
 else
-  no "cafaye.yml declares no test command, so bin/prime is the only answer" \
+  no "anywaye.yml declares no test command, so bin/prime is the only answer" \
     "$(manifest_is_core_owned test)"
 fi
 
@@ -1002,7 +1002,7 @@ else
 fi
 
 # --- the e2e gateway healthcheck matches the shipped Go image ----------------
-# The live `parlor-e2e-gateway-1` image is `cafaye/gateway:e2e`: Go on
+# The live `parlor-e2e-gateway-1` image is `anywaye/gateway:e2e`: Go on
 # `gcr.io/distroless/static-debian12:nonroot` — no shell, no curl, no wget, no
 # bun (gateway's Dockerfile says so at the same line). The overlay once probed
 # it with `bun -e fetch(...)`, which answered `exec: "bun": executable file not
@@ -1228,7 +1228,7 @@ fi
 # The Dockerfile's own header claims "One pin, four mirrors, and the image is the
 # fourth — see tests/validate-ci.sh", and until now this script checked three of
 # the four: package.json, mise.toml and ci.yml. The fourth drifted silently. The
-# builder stage said `node:22.22.2-slim` and the runner stage said
+# builder stage said `node:22.23.4-slim` and the runner stage said
 # `node:22-slim`, so an image BUILT on the pin RAN on whatever the floating tag
 # resolved to that week — measured with `docker manifest inspect node:22-slim`,
 # which resolves a moving multi-arch index. For a service with no database the
@@ -1392,7 +1392,7 @@ fi
 # green on the machine that made the mistake and red on the one that clones.
 #
 # That is not hypothetical: this fleet shipped a launch blocker of exactly this
-# shape. Commit 89553a8 grew vendor/cafaye-ts-0.0.0.tgz and updated its
+# shape. Commit 89553a8 grew vendor/anywaye-ts-0.0.0.tgz and updated its
 # manifest, and left package-lock.json's integrity naming the bytes the tarball
 # used to be. The image could not be built, so nothing could be deployed. The
 # hash here is computed straight from the file rather than through npm, so the
@@ -1588,7 +1588,7 @@ fi
 # and loud is the direction this file is willing to be wrong in.
 #
 # caf: `manifest_parses` asks `cafe dev --dry-run` and is the ONLY check that
-# can see an unquoted colon in `cafaye.yml`, because every other check reads the
+# can see an unquoted colon in `anywaye.yml`, because every other check reads the
 # manifest with `sed` line matching and a document YAML cannot parse still
 # matches every line pattern they use. With no `caf`, that breakage has no
 # witness, and the honest report is "unprovable here" rather than "a check that
@@ -1670,7 +1670,7 @@ self_test() {
     cp "$PRIME" "$SANDBOX/bin/prime"
     cp "$PKG" "$SANDBOX/package.json"
     cp "$MISE" "$SANDBOX/mise.toml"
-    cp "$MANIFEST" "$SANDBOX/cafaye.yml"
+    cp "$MANIFEST" "$SANDBOX/anywaye.yml"
     cp "$ROOT/$LOCKFILE" "$SANDBOX/$LOCKFILE"
     cp "$WF" "$SANDBOX/ci/ci.yml"
     # The local stack's catalog, for the same reason: a sandbox without it is red
@@ -1742,12 +1742,12 @@ self_test() {
     local n=0 proof
     for proof in \
     "rm-workflow|rm -f '$SANDBOX/ci/ci.yml'" \
-    "dead-uses-path|sed_i 's|cafaye/kit/ci/ci\.reusable|cafaye/kit/workflows/ci.reusable|' '$SANDBOX/ci/ci.yml'" \
+    "dead-uses-path|sed_i 's|anywaye/kit/ci/ci\.reusable|anywaye/kit/workflows/ci.reusable|' '$SANDBOX/ci/ci.yml'" \
     "language-bun|sed_i 's|language: node|language: bun|' '$SANDBOX/ci/ci.yml'" \
     "pin-drifts-into-ci|sed_i 's|\"node\":\"[^\"]*\"|\"node\":\"24.0.0\"|' '$SANDBOX/ci/ci.yml'" \
     "pin-drifts-in-mise|sed_i 's|^node = .*|node = \"20.11.0\"|' '$SANDBOX/mise.toml'" \
-    "manifest-reintroduces-a-node-pin|printf 'node: \"20\"\n' >>'$SANDBOX/cafaye.yml'" \
-    "an-unquoted-colon-in-the-manifest|sed_i 's|^description: \"The cafaye web app|description: The cafaye web app|; s|live contracts\.\"$|live contracts.|' '$SANDBOX/cafaye.yml'" \
+    "manifest-reintroduces-a-node-pin|printf 'node: \"20\"\n' >>'$SANDBOX/anywaye.yml'" \
+    "an-unquoted-colon-in-the-manifest|sed_i 's|^description: \"The anywaye web app|description: The anywaye web app|; s|live contracts\.\"$|live contracts.|' '$SANDBOX/anywaye.yml'" \
     "npm-install-in-ci|sed_i 's|npm ci|npm install \\&\\& npm ci|' '$SANDBOX/ci/ci.yml'" \
     "no-lockfile-guard|sed_i '/git diff --exit-code/d' '$SANDBOX/ci/ci.yml'" \
     "stale-script-name|sed_i 's|npm run typecheck|npm run typecheckp|' '$SANDBOX/ci/ci.yml'" \
@@ -1755,11 +1755,11 @@ self_test() {
     "npm-install-in-prime|sed_i 's|^npm ci\$|npm install|' '$SANDBOX/bin/prime'" \
     "no-build-in-prime|sed_i '/^npm run build\$/d' '$SANDBOX/bin/prime'" \
     "no-typecheck-in-prime|sed_i '/^npm run typecheck\$/d' '$SANDBOX/bin/prime'" \
-    "manifest-reintroduces-a-gate-command|printf 'prime: ./bin/other\n' >>'$SANDBOX/cafaye.yml'" \
+    "manifest-reintroduces-a-gate-command|printf 'prime: ./bin/other\n' >>'$SANDBOX/anywaye.yml'" \
     "no-engines-field|node -e 'const f=process.argv[1];const p=require(f);delete p.engines;require(\"fs\").writeFileSync(f,JSON.stringify(p,null,2))' '$SANDBOX/package.json'" \
-    "range-instead-of-a-pin|sed_i 's|\"node\": \"22.22.2\"|\"node\": \"^22\"|' '$SANDBOX/package.json'" \
+    "range-instead-of-a-pin|sed_i 's|\"node\": \"22.23.4\"|\"node\": \"^22\"|' '$SANDBOX/package.json'" \
     "package-manager-is-not-npm|node -e 'const f=process.argv[1];const p=require(f);p.packageManager=\"pnpm@10.9.7\";require(\"fs\").writeFileSync(f,JSON.stringify(p,null,2))' '$SANDBOX/package.json'" \
-    "manifest-reintroduces-a-test-command|printf 'test: npm run other\n' >>'$SANDBOX/cafaye.yml'" \
+    "manifest-reintroduces-a-test-command|printf 'test: npm run other\n' >>'$SANDBOX/anywaye.yml'" \
     "no-e2e-workflow|rm -f '$SANDBOX/ci/e2e.yml'" \
     "e2e-in-the-per-commit-gate|printf '      - run: ./bin/e2e\n' >>'$SANDBOX/ci/ci.yml'" \
     "e2e-in-bin-prime|printf 'npm run e2e\n' >>'$SANDBOX/bin/prime'" \
@@ -1788,12 +1788,12 @@ self_test() {
     "a-service-address-out-of-env-clear|sed_i 's|^    IDENTITY_URL: <%= identity_url %>||' '$SANDBOX/config/deploy.yml'" \
     "a-service-address-back-in-the-bundle|echo 'const url = process.env.NEXT_PUBLIC_IDENTITY_URL;' >>'$SANDBOX/src/lib/identity.ts'" \
     "a-service-address-back-in-the-dockerfile|echo 'ENV NEXT_PUBLIC_IDENTITY_URL=https://identity.example.com' >>'$SANDBOX/Dockerfile'" \
-    "an-unpinned-node-base|sed_i 's|^FROM node:22.22.2-slim AS runner|FROM node:22-slim AS runner|' '$SANDBOX/Dockerfile'" \
+    "an-unpinned-node-base|sed_i 's|^FROM node:22.23.4-slim AS runner|FROM node:22-slim AS runner|' '$SANDBOX/Dockerfile'" \
     "the-deploy-tier-is-not-executable|chmod -x '$SANDBOX/bin/deploy-config'" \
     "no-service-catalog|rm -f '$SANDBOX/cafe.dev.json'" \
-    "a-misspelled-key-in-the-catalog|sed_i 's|\"image\": \"cafaye/identity:dev\"|\"imag\": \"cafaye/identity:dev\"|' '$SANDBOX/cafe.dev.json'" \
+    "a-misspelled-key-in-the-catalog|sed_i 's|\"image\": \"anywaye/identity:dev\"|\"imag\": \"anywaye/identity:dev\"|' '$SANDBOX/cafe.dev.json'" \
     "an-entry-named-for-another-service|sed_i 's|\"name\": \"identity\"|\"name\": \"parlor\"|' '$SANDBOX/cafe.dev.json'" \
-    "a-catalog-entry-with-no-image|sed_i 's|\"image\": \"cafaye/identity:dev\",||' '$SANDBOX/cafe.dev.json'" \
+    "a-catalog-entry-with-no-image|sed_i 's|\"image\": \"anywaye/identity:dev\",||' '$SANDBOX/cafe.dev.json'" \
     "a-healthcheck-with-no-test|sed_i 's|\"test\": \[\"CMD\", \"/app/service\", \"-healthcheck\"\],||' '$SANDBOX/cafe.dev.json'" \
     "the-lockfile-does-not-know-the-tarball|node -e 'const fs=require(\"fs\"),p=require(\"path\"),c=require(\"crypto\");const f=process.argv[1];const root=p.dirname(f);const l=JSON.parse(fs.readFileSync(f,\"utf8\"));const rel=\"vendor/thing-1.0.0.tgz\";fs.mkdirSync(p.join(root,\"vendor\"),{recursive:true});fs.writeFileSync(p.join(root,rel),\"a tarball\");l.packages[\"node_modules/thing\"]={version:\"1.0.0\",resolved:\"file:\"+rel,integrity:\"sha512-AAAA\"+c.createHash(\"sha512\").update(\"different bytes\").digest(\"base64\")};fs.writeFileSync(f,JSON.stringify(l,null,2)+\"\\n\")' '$SANDBOX/package-lock.json'" \
     "a-tally-helper-that-is-not-a-function|node -e 'const fs=require(\"fs\");const f=process.argv[1];const s=fs.readFileSync(f,\"utf8\");const m=/\\nexit 0\\n$/;if(!m.test(s))throw new Error(\"this script no longer ends in a bare exit 0\");fs.writeFileSync(f,s.replace(m,\"\\nskip \\\"a tally helper that is not a function\\\"\\nexit 0\\n\"))' '$SANDBOX/tests/validate-ci.sh'"

@@ -21,28 +21,28 @@ real DNS (PLAN-names-urls-rollout §3 L8).
 
 ## The two files that touch the cluster itself
 
-- **`clusterissuer-cafaye-test.yaml`** — a self-signed CA ClusterIssuer named
-  `cafaye-test-ca`. Local deployments point `ingress.clusterIssuer` at it.
+- **`clusterissuer-anywaye-test.yaml`** — a self-signed CA ClusterIssuer named
+  `anywaye-test-ca`. Local deployments point `ingress.clusterIssuer` at it.
   The issuer is created ONCE PER CLUSTER and the charts only NAME it, which
   is the same discipline the substrate's ACME issuers follow and the same
   one `imagePullSecrets` follows: the chart names the secret, it does not
   contain the credential.
 - **`coredns-rewrite.yaml`** — the CoreDNS ConfigMap rewrite that makes
-  `*.svc.cafaye.test` resolve **cluster-internally, and only there**.
+  `*.svc.anywaye.test` resolve **cluster-internally, and only there**.
 
 ## The values file
 
 **`values.local.yaml`** holds the `.test` host overrides the local
 deployment applies with `-f`. The charts' own `values.yaml` defaults are
-untouched: the chart's default host (`app.cafaye.com` for parlor,
-`api.cafaye.com` for gateway) stays the reference shape, per
-PLAN-names-urls-rollout §1's URL map — `app.cafaye.com` is "the Parlor chart
+untouched: the chart's default host (`app.anywaye.com` for parlor,
+`api.anywaye.com` for gateway) stays the reference shape, per
+PLAN-names-urls-rollout §1's URL map — `app.anywaye.com` is "the Parlor chart
 default only; never a product face".
 
 ## Applying it, in order
 
 ```sh
-kubectl apply -f deploy/local/clusterissuer-cafaye-test.yaml
+kubectl apply -f deploy/local/clusterissuer-anywaye-test.yaml
 kubectl apply -f deploy/local/coredns-rewrite.yaml      # then: -n kube-system rollout restart deployment coredns
 helm upgrade --install gateway   <gateway-chart>  -n gateway   -f deploy/local/values.local.yaml
 helm upgrade --install identity  <identity-chart> -n identity  -f deploy/local/values.local.yaml

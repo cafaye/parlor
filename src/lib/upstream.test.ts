@@ -487,7 +487,7 @@ describe("the allow-list", () => {
       () =>
         new Response(
           JSON.stringify({
-            type: "https://docs.cafaye.com/errors/account_locked",
+            type: "https://docs.anywaye.com/errors/account_locked",
             title: "Locked",
             status: 423,
             code: "account_locked",
@@ -1462,7 +1462,7 @@ describe("the account boundary at the forwarder", () => {
       // inventing a different answer, and a forwarder that mapped 404 to 200
       // would hand back the very rows the refusal withholds.
       const refusal = JSON.stringify({
-        type: "https://docs.cafaye.com/errors/not_found",
+        type: "https://docs.anywaye.com/errors/not_found",
         title: "Account not found.",
         status: 404,
         code: "not_found",
@@ -2202,7 +2202,7 @@ describe("the operator surface", () => {
       () =>
         new Response(
           JSON.stringify({
-            type: "https://docs.cafaye.com/errors/forbidden",
+            type: "https://docs.anywaye.com/errors/forbidden",
             title: "Staff only.",
             status: 403,
             code: "forbidden",

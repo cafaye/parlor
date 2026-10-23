@@ -14,7 +14,7 @@
  *   PATCH  /v1/customers/{id}   200 Customer   | 404 | 422
  *
  * `/v1/webhooks/stripe` is the sixth and is deliberately absent: it is not a
- * cafaye client surface, it authenticates by signature over the raw body
+ * anywaye client surface, it authenticates by signature over the raw body
  * rather than by token, and the contract says it must never grow a token check.
  *
  * The subscription paths are here, as of billing 2.4.0: the production checkout
@@ -22,12 +22,12 @@
  * nothing — the row arrives on the processor's webhook), the reads, the two
  * mutations, the upcoming-invoice projection, and the portal URL. `/v1/
  * webhooks/stripe` is the one path this client deliberately does not speak: it
- * is not a cafaye client surface and authenticates by signature over the raw
+ * is not a anywaye client surface and authenticates by signature over the raw
  * body rather than by token.
  *
  * Like `src/lib/identity.ts`, the transport is a parameter rather than `fetch`,
  * and billing has its own error type because it is a different service with its
- * own codes. The envelope is the same shape — core requires every cafaye service
+ * own codes. The envelope is the same shape — core requires every anywaye service
  * to answer `application/problem+json` — but the two clients are independent on
  * purpose: a change to identity's contract should not be a change to billing's.
  */

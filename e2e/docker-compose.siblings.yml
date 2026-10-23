@@ -30,7 +30,7 @@
 # ---------------------------------------------------------------------------
 # WHY THE LOCAL `image:` IS THE SAME TAG
 # ---------------------------------------------------------------------------
-# Both this file and the main one say `cafaye/identity:e2e`; only the prefix
+# Both this file and the main one say `anywaye/identity:e2e`; only the prefix
 # differs. That is deliberate and it is the reason this file is small.
 #
 # Compose merges a service's `image:` — last file wins — so if this file named a
@@ -43,7 +43,7 @@
 # hatch does not race the registry for the same tag.
 #
 # A consequence worth stating rather than leaving to be discovered: running the
-# hatch overwrites the local `cafaye/identity:e2e` image that the registry path
+# hatch overwrites the local `anywaye/identity:e2e` image that the registry path
 # would otherwise use, so a subsequent default run on the same machine may
 # start the sibling build instead of pulling. `bin/e2e-stack publish-siblings`
 # is what puts the registry tag back in charge, and it is one command. This is
@@ -74,7 +74,7 @@ services:
       dockerfile: Dockerfile
       args:
         SERVICE_NAME: identity
-    image: "cafaye/identity:e2e"
+    image: "anywaye/identity:e2e"
 
   gateway:
     build:
@@ -82,7 +82,7 @@ services:
       dockerfile: Dockerfile
       args:
         BUN_VERSION: "1.3.12"
-    image: "cafaye/gateway:e2e"
+    image: "anywaye/gateway:e2e"
 
   # oauth-stub is Go, and it is worth reading rather than skimming, because the
   # natural move here is to copy pantry's or identity's stanza and the copy is
@@ -109,7 +109,7 @@ services:
       context: ../oauth-stub
       dockerfile: Dockerfile
       args: {}
-    image: "cafaye/oauth-stub:e2e"
+    image: "anywaye/oauth-stub:e2e"
 
   # THE SECOND INSTANCE GETS ITS OWN STANZA, and it is not a copy for tidiness: the
   # two services carry DIFFERENT `image:` lines in the default document (one is
@@ -124,4 +124,4 @@ services:
       context: ../oauth-stub
       dockerfile: Dockerfile
       args: {}
-    image: "cafaye/oauth-stub:e2e"
+    image: "anywaye/oauth-stub:e2e"

@@ -6,7 +6,7 @@
  * ---------------------------------------------------------------------------
  * `parlor` has no database. There is no SQL in this repository, no ORM, no query
  * builder and no migration; `identity` and `billing` hold the rows and `parlor`
- * calls them over HTTP. So the question `cafaye/notes/debt.md` D18 asks — "can account A read
+ * calls them over HTTP. So the question `anywaye/notes/debt.md` D18 asks — "can account A read
  * account B's data" — cannot be answered here in the form it is answered in
  * `identity`, where a transaction and a real row decide it. What it CAN be
  * answered here is the half of the question this repository owns:

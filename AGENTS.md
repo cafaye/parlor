@@ -1,13 +1,13 @@
 # AGENTS.md — working rules for this repo
 
 Orientation for agents and humans changing `parlor`. The operating contract
-lives in the house rules — SSH remotes for the repositories cafaye owns, and
+lives in the house rules — SSH remotes for the repositories anywaye owns, and
 tests first: write the test, watch it fail, then implement. This file is the
 parlor-specific part.
 
 ## What this repo is
 
-The cafaye web app: file-based routes under `src/routes/` (TanStack Start),
+The anywaye web app: file-based routes under `src/routes/` (TanStack Start),
 the screens and handler modules they render under `src/app/`, Tailwind v4, theme
 tokens, health surfaces, test rig — and the screens built against identity's and
 billing's real contracts.
@@ -35,14 +35,14 @@ doing so on purpose; text that tells you how to add a screen describes
 mise install      # node version from mise.toml
 ```
 
-- **`npm run lint` needs `cafaye/kit` checked out BESIDE this repository**, and
+- **`npm run lint` needs `anywaye/kit` checked out BESIDE this repository**, and
   that is not this repository's quirk — it is how kit's shared lint configs are
   delivered, and `e2e/docker-compose.yml` bind-mounts `../kit` for the same
   reason. `./bin/lint` will find it at `../kit` and say so if it cannot. It is
   NOT in `bin/prime`, because a fresh clone does not have it; see "The lint
   standard".
 
-- **The runtime pin of record is `engines.node` in `package.json`** (22.22.2 —
+- **The runtime pin of record is `engines.node` in `package.json`** (22.23.4 —
   the floor jsdom@30 demands; bump the pin rather than downgrading the test
   rig). `packageManager` records the npm that ships with it, and `.npmrc`'s
   `engine-strict=true` is what makes `npm ci` fail on a Node that does not
@@ -126,10 +126,10 @@ e2e/no-token-artifacts.ts global teardown: no artifact holds a session token,
   DIRECTORY rather than failing, so initdb runs no script, the cluster comes up
   with the superuser the image created and nothing else, and `pg_isready` says it
   is fine. Sixty seconds later identity's `migrations/00016_account_isolation.sql`
-  dies at `select cafaye.protect_table('account_users')` with
+  dies at `select anywaye.protect_table('account_users')` with
 
   ```
-  ERROR:  cafaye.protect_table(account_users, identity_app):
+  ERROR:  anywaye.protect_table(account_users, identity_app):
           identity_app is not a LOGIN role on this cluster. (SQLSTATE 42704)
   ```
 
@@ -217,7 +217,7 @@ back, and this job does not set it.
   `pantry` appears nowhere in this tree, and adding it is not a widening but a
   red build: `publish_siblings`' `case` has recipes for identity, gateway and
   oauth-stub and a `*)` arm that dies with "no build recipe for sibling pantry",
-  on the default path, in CI. (`cafaye/site`'s list has four entries and that is
+  on the default path, in CI. (`anywaye/site`'s list has four entries and that is
   right for `site`.) Adding a service to this tier is four edits in one commit — a
   `publish_siblings` recipe, a `build:` context in
   `e2e/docker-compose.siblings.yml`, the entry in `SIBLING_SERVICES`, and a
@@ -240,13 +240,13 @@ back, and this job does not set it.
   overrides it for a developer testing an unmerged double.
 
 - **`publish_siblings` builds from a NAMED REF, not from the checkout directory,
-  and `verify-sibling-images` is how you find out.** This is `cafaye/site`'s
+  and `verify-sibling-images` is how you find out.** This is `anywaye/site`'s
   measured defect, not a preference: a stack built from a sibling checkout parked
   on another agent's unmerged branch came up green with every readiness probe
   passing, and the one request the tier exists to prove answered 401. The build
   context is `git archive <sha> | tar -x` into a temp directory (not
   `git worktree add`, which would leave a trace in another session's repository),
-  and the image carries `cafaye.e2e.source`/`.revision`/`.dirty` — not
+  and the image carries `anywaye.e2e.source`/`.revision`/`.dirty` — not
   `org.opencontainers.*`, which on gateway's image belongs to bun and satisfies
   `--verify` with a confident false answer. `ensure_sibling_artifacts`' fast path
   runs the check too: "published and cached" is not "right".
@@ -490,7 +490,7 @@ in the repository. The format, the checker and the reasoning are `core`'s —
   finding it expects, then one documented blind spot asserted to stay green. It
   is deliberately **not** in `bin/prime`: the checker is `core`'s and is not
   vendored here, and the proof cases each run the whole gate. It needs `core`
-  beside this repository or `CAFAYE_CORE_HARNESS`; without either it exits 2,
+  beside this repository or `ANYWAYE_CORE_HARNESS`; without either it exits 2,
   never 0.
 - **THE CONTROL RUNS TWICE, and the second run guards something else now.** Once
   as before, and once with `FORCE_COLOR=1` in the environment the checker
@@ -825,7 +825,7 @@ Non-negotiable, because it is the property the screen exists to protect:
   than a pass: the rollout gate is this route, and it must not fail open.
   Keep the response keys stable: the platform contract reads them.
 - Both are `no-store`. If you change either shape, change the tests and
-  `cafaye.yml` in the same commit.
+  `anywaye.yml` in the same commit.
 
 ## Deploying to Node with Kamal
 
@@ -1035,7 +1035,7 @@ src/test/           vitest setup + support/ (stubs, render helper)
   the only place client-only context is mounted, and `__root.tsx` renders the
   `<html>` document with `HeadContent` and `Scripts` beside `Outlet`.
 - `src/components/ui/index.ts` is the single import path for primitives. The
-  primitives are cafaye's own design, not a wrapper over a library; call sites
+  primitives are anywaye's own design, not a wrapper over a library; call sites
   do not move when one is added or restyled.
 - `docs/design-system.md` is the guide for building a screen: which component
   to reach for, what the variants mean, and what is deliberately absent.

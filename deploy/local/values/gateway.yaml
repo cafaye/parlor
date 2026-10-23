@@ -1,14 +1,14 @@
-# Local (`cafaye-local`) values for the gateway chart. The `.test` front door.
+# Local (`anywaye-local`) values for the gateway chart. The `.test` front door.
 #
-# The chart's own `charts/gateway/values.yaml` names `api.cafaye.com` and
+# The chart's own `charts/gateway/values.yaml` names `api.anywaye.com` and
 # `letsencrypt-prod` — the launch shape. This file changes the host and the
 # issuer for the local cluster and nothing else; the chart keeps its default
 # for production. See deploy/local/values/README.md for the key-name table.
 image:
-  repository: cafaye/gateway
+  repository: anywaye/gateway
   tag: k8s-local
   # `Never`: the image is in the cluster's containerd store because
-  # `bin/local-cluster` ran `k3d image import cafaye/gateway:k8s-local`. A
+  # `bin/local-cluster` ran `k3d image import anywaye/gateway:k8s-local`. A
   # pull from ghcr.io would both fail (no credential on a dev cluster) and
   # defeat the point of a locally built image.
   pullPolicy: Never
@@ -18,13 +18,13 @@ replicaCount: 1
 ingress:
   enabled: true
   className: traefik
-  # §1's URL map: api.cafaye.test is gateway.
-  host: api.cafaye.test
-  # `cafaye-test-ca`, the local self-signed ClusterIssuer
-  # (`deploy/local/clusterissuer-cafaye-test.yaml`). The chart's default names
+  # §1's URL map: api.anywaye.test is gateway.
+  host: api.anywaye.test
+  # `anywaye-test-ca`, the local self-signed ClusterIssuer
+  # (`deploy/local/clusterissuer-anywaye-test.yaml`). The chart's default names
   # `letsencrypt-prod`, which this cluster does not have — see the file's own
   # comment on why the name is a contract.
-  clusterIssuer: cafaye-test-ca
+  clusterIssuer: anywaye-test-ca
   tls:
     enabled: true
     secretName: gateway-tls
@@ -35,11 +35,11 @@ env:
   # EDGE (the same origin a browser would use, because that is the host the
   # issuer's `iss` claim is checked against), and sessions by in-cluster
   # Service name (`http://identity:8080` — inside a cluster `localhost` is
-  # gateway itself). Production's `https://identity.cafaye.com` becomes
-  # `http://auth.cafaye.test` here, which is the whole reason the `.test` URL
+  # gateway itself). Production's `https://identity.anywaye.com` becomes
+  # `http://auth.anywaye.test` here, which is the whole reason the `.test` URL
   # map is exercised at all: one hop is a public-looking issuer check and the
   # other is a service discovery, and the chart carries both.
-  IDENTITY_ISSUER: "http://auth.cafaye.test"
+  IDENTITY_ISSUER: "http://auth.anywaye.test"
   # MEASURED. The chart's default is `http://identity:8080` and its comment says
   # it "must match identity's own chart (release `identity` in this namespace)".
   # That comment describes a SINGLE-NAMESPACE deployment, and the fleet is not

@@ -101,7 +101,7 @@ DECLARATION="$ROOT/gate.yml"
 # Where `core`'s harness is. Overridable because a worktree, a checkout in
 # ~/src, and a CI runner all put this repository somewhere different, and a
 # hardcoded path is a script that only works on the machine that wrote it.
-HARNESS="${CAFAYE_CORE_HARNESS:-$ROOT/../core/harness}"
+HARNESS="${ANYWAYE_CORE_HARNESS:-$ROOT/../core/harness}"
 GATE_CHECK="$HARNESS/bin/gate-check"
 
 pass=0
@@ -134,7 +134,7 @@ skipped() {
 # resolves it. `gate-check` is stdlib-only and needs 3.11 because it reads
 # mise.toml with tomllib; this script drives that same interpreter to do its
 # edits, so it is one dependency rather than two.
-PY="${CAFAYE_GATE_PYTHON:-}"
+PY="${ANYWAYE_GATE_PYTHON:-}"
 if [ -z "$PY" ]; then
   for candidate in python3 python3.13 python3.12 python3.11 python; do
     command -v "$candidate" >/dev/null 2>&1 || continue
@@ -147,16 +147,16 @@ if [ -z "$PY" ]; then
 fi
 if [ -z "$PY" ]; then
   echo "gate-declaration-self-test: no python >= 3.11 on PATH." >&2
-  echo "  Set CAFAYE_GATE_PYTHON. core's gate-check needs 3.11 because it reads" >&2
+  echo "  Set ANYWAYE_GATE_PYTHON. core's gate-check needs 3.11 because it reads" >&2
   echo "  mise.toml with tomllib, which is stdlib from 3.11." >&2
   exit 2
 fi
 
 if [ ! -r "$GATE_CHECK" ]; then
   echo "gate-declaration-self-test: core's gate checker is not at $GATE_CHECK" >&2
-  echo "  This is not a cafaye/core checkout beside this repository, and the" >&2
-  echo "  checker is not vendored here. Point CAFAYE_CORE_HARNESS at it:" >&2
-  echo "    CAFAYE_CORE_HARNESS=/path/to/core/harness bash tests/gate-declaration-self-test.sh" >&2
+  echo "  This is not a anywaye/core checkout beside this repository, and the" >&2
+  echo "  checker is not vendored here. Point ANYWAYE_CORE_HARNESS at it:" >&2
+  echo "    ANYWAYE_CORE_HARNESS=/path/to/core/harness bash tests/gate-declaration-self-test.sh" >&2
   echo "  This exits 2 and not 0: nothing below ran." >&2
   exit 2
 fi
@@ -1056,7 +1056,7 @@ fi
 #
 # `selfContained: true` with an empty requirements list is a perfectly valid
 # declaration of a perfectly false thing: this gate needs the npm registry and
-# a Node 22.22.2, and the checker reads the DECLARATION, not the machine and
+# a Node 22.23.4, and the checker reads the DECLARATION, not the machine and
 # not the network. Nothing in the tree can prove the absence of a fetch, so no
 # breakage of gate.yml will ever turn this red. It is `external` being
 # load-bearing in one direction only: the schema can insist that "not

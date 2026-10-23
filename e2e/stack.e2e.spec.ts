@@ -115,7 +115,7 @@ test("the gateway refuses a caller that cannot prove who they are", async ({ pag
   // rejected token never reaches the rate limiter, and a rejected token costs no
   // key fetch (gateway/AGENTS.md, "The bucket is the strongest identity the
   // request has"). The rendered body is core's problem document, which is the
-  // contract `cafaye.yml` and core's conventions fix and which a stubbed test
+  // contract `anywaye.yml` and core's conventions fix and which a stubbed test
   // in gateway's own suite asserts against a fake identity.
   await page.goto(`${gatewayBaseUrl}/v1/me`);
   await expect(rendered(page)).toContainText('"status":401');

@@ -14,12 +14,12 @@ export default function Home() {
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center gap-10 px-6 py-16">
       <div className="flex flex-col gap-3">
-        <p className="font-mono text-xs tracking-[0.2em] text-cafaye-600 uppercase dark:text-cafaye-400">
-          cafaye
+        <p className="font-mono text-xs tracking-[0.2em] text-anywaye-600 uppercase dark:text-anywaye-400">
+          anywaye
         </p>
         <h1 className="text-4xl font-semibold tracking-tight">parlor</h1>
         <p className="max-w-prose text-pretty text-muted">
-          Accounts, invitations and billing, against the cafaye services&apos; real
+          Accounts, invitations and billing, against the anywaye services&apos; real
           contracts. You own the code — clone it, read it, change it, ship it. No
           lock-in, no black box.
         </p>
@@ -35,7 +35,7 @@ export default function Home() {
 function Card({ href, name, body }: { href: string; name: string; body: string }) {
   return (
     <Link
-      className="flex flex-col gap-1 rounded-lg border border-border bg-surface-raised px-4 py-3 hover:border-cafaye-300"
+      className="flex flex-col gap-1 rounded-lg border border-border bg-surface-raised px-4 py-3 hover:border-anywaye-300"
       to={href}
     >
       <span className="font-medium">{name}</span>

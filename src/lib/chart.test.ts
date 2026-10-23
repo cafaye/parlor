@@ -178,16 +178,16 @@ describe("helm template against the committed values", () => {
     const ingress = rendered.slice(rendered.indexOf("kind: Ingress"));
     const document = ingress.slice(0, ingress.indexOf("---", 5));
 
-    // Parlor's one host is app.cafaye.com — the host the fleet's own
+    // Parlor's one host is app.anywaye.com — the host the fleet's own
     // fixtures name (billing/test/fixtures/stripe/
     // checkout.session.completed*.json carries
-    // `https://app.cafaye.com/welcome`). The apex (cafaye.com) and www
-    // belong to cafaye/website, which deploys with exactly those two
+    // `https://app.anywaye.com/welcome`). The apex (anywaye.com) and www
+    // belong to anywaye/website, which deploys with exactly those two
     // hosts; two Ingresses claiming one host is a silent misroute, so
     // parlor claims only its own.
-    expect(document).toContain("host: app.cafaye.com");
-    expect(document).not.toContain("host: cafaye.com");
-    expect(document).not.toContain("host: www.cafaye.com");
+    expect(document).toContain("host: app.anywaye.com");
+    expect(document).not.toContain("host: anywaye.com");
+    expect(document).not.toContain("host: www.anywaye.com");
     expect(document).toContain("ingressClassName: traefik");
     expect(document).toContain(
       "cert-manager.io/cluster-issuer: letsencrypt-prod",
@@ -195,7 +195,7 @@ describe("helm template against the committed values", () => {
     // `spec.tls` — one entry, one secret (Traefik pattern); without it
     // there is no TLS: a secret nothing writes.
     expect(document).toContain("tls:");
-    expect(document).toContain("secretName: parlor-tls-app-cafaye-com");
+    expect(document).toContain("secretName: parlor-tls-app-anywaye-com");
     // Exactly one host and one TLS entry — a second host claimed here is
     // a host the website already serves, and Traefik picks one Ingress
     // with nobody knowing which.
@@ -222,7 +222,7 @@ describe("helm template against the committed values", () => {
   });
 
   it("legacy host still renders a single-host Ingress when hosts is empty", () => {
-    // Back-compat: an existing values file with `host: app.cafaye.com` and no
+    // Back-compat: an existing values file with `host: app.anywaye.com` and no
     // `hosts` still renders. Proved able to fail: deleting the fallback
     // turns this green path into the silent-misroute failure above.
     const rendered = helmTemplate([
@@ -336,11 +336,11 @@ function expectPublishLoop(
   // it, and a fix in kit's publish.reusable.yml stops landing here.
   if (
     !workflowYaml.includes(
-      "uses: cafaye/kit/ci/publish.reusable.yml@master",
+      "uses: anywaye/kit/ci/publish.reusable.yml@master",
     )
   ) {
     throw new Error(
-      "the publish caller must call kit's composed publish workflow — `uses: cafaye/kit/ci/publish.reusable.yml@master` — and not inline the steps: the composition lives in kit, and a caller that inlines it has forked it, so a fix in kit stops landing here",
+      "the publish caller must call kit's composed publish workflow — `uses: anywaye/kit/ci/publish.reusable.yml@master` — and not inline the steps: the composition lives in kit, and a caller that inlines it has forked it, so a fix in kit stops landing here",
     );
   }
   // THE GRANT IS THE CALLER'S TO MAKE. A reusable workflow can request a
@@ -393,7 +393,7 @@ describe("the publish caller", () => {
     // call to kit's composed publish workflow deleted. The file-read half is
     // the green test's readFileSync throwing ENOENT — the same red.
     const workflowYaml = readFileSync(publishWorkflowPath, "utf8").replace(
-      /^ {4}uses: cafaye\/kit\/\.github\/workflows\/publish\.reusable\.yml@master\n/m,
+      /^ {4}uses: anywaye\/kit\/\.github\/workflows\/publish\.reusable\.yml@master\n/m,
       "",
     );
     expect(() => expectPublishLoop(workflowYaml, "chart", chartYaml)).toThrow(

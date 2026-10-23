@@ -1,4 +1,4 @@
-# The cafaye design system
+# The anywaye design system
 
 How to build a screen in this app. Read this before writing a new one; it is
 shorter than the code it replaces.
@@ -59,7 +59,7 @@ need it and shipping a `1px`-clip helper at that point would be worse.
 
 ### The ground is paper. The text is ink.
 
-cafaye's product is a ledger: accounts, memberships, invitations, plans, money.
+anywaye's product is a ledger: accounts, memberships, invitations, plans, money.
 So `neutral` is a **warm** low-chroma grey (hue 38), not the cold blue-grey
 that infrastructure products ship by default, and the primary text is a soft
 black-brown rather than a neutral grey.

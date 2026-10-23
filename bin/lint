@@ -47,7 +47,7 @@ if [ ! -f .kit/lint/eslint.config.mjs ]; then
   if [ ! -f "$kit_checkout/lint/eslint.config.mjs" ]; then
     echo "::error::kit's lint config is not at .kit/lint and no kit checkout is" >&2
     echo "::error::beside this repository (looked in $kit_checkout)." >&2
-    echo "::error::Check out cafaye/kit beside it, or set KIT_CHECKOUT." >&2
+    echo "::error::Check out anywaye/kit beside it, or set KIT_CHECKOUT." >&2
     exit 2
   fi
   # `sparse-checkout lint` is what the `ci` job does; the subdirectory has to

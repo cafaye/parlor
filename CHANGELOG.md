@@ -8,8 +8,8 @@ All notable changes to parlor are recorded here. The format follows
 
 ### Changed
 
-- **Every RFC 9457 error `type` URI is `https://docs.cafaye.com/errors/<code>`**
-  (PLAN-names-urls-rollout §3 L3 retires `errors.cafaye.com`). The base moved
+- **Every RFC 9457 error `type` URI is `https://docs.anywaye.com/errors/<code>`**
+  (PLAN-names-urls-rollout §3 L3 retires `errors.anywaye.com`). The base moved
   and every slug stayed the last segment, so core's harness rule
   `openapi.problem-code-matches-type` (type slug == `code`) keeps holding and
   nothing about the contract changed: same statuses, same bodies, same codes.
@@ -29,7 +29,7 @@ All notable changes to parlor are recorded here. The format follows
 - **`LICENSE` is a Business Source License 1.1, and both manifests say
   `BUSL-1.1`** (OPS-D2 puts the services under BSL: free to run, free to
   self-host, never to offer a competing service). `LICENSE` is the
-  SPDX-registered BUSL-1.1 text with Licensor `Cafaye`, Licensed Work
+  SPDX-registered BUSL-1.1 text with Licensor `Anywaye`, Licensed Work
   `parlor`, Change Date `2030-10-10`, Change Licence `Apache-2.0` and no
   Additional Use Grant — the licence's Covenants of Licensor forbid
   modifying the text any other way, so the grant is the standard one and the
@@ -75,7 +75,7 @@ All notable changes to parlor are recorded here. The format follows
   application-owned modal machinery); it now composes the shadcn/ui Base UI
   primitives in the new `src/components/ui/dialog.tsx` wrapper (`Root`,
   `Portal`, `Viewport`, `Backdrop`, `Popup`, `Title`, `Description`), keeping
-  every Cafaye token, the `ConfirmDialog` public API, all copy/labels/styling
+  every Anywaye token, the `ConfirmDialog` public API, all copy/labels/styling
   and all call sites. New modal property the div never provided: while open,
   the page behind is hidden from assistive interaction (`aria-hidden` on
   outside content) with focus trapped, scroll locked and outside press never
@@ -94,7 +94,7 @@ All notable changes to parlor are recorded here. The format follows
 ### Fixed
 
 - **The E2E gateway healthcheck probes the shipped Go image binary** (P-08).
-  The overlay probed `cafaye/gateway:e2e` with `bun -e fetch(...)`, a stale
+  The overlay probed `anywaye/gateway:e2e` with `bun -e fetch(...)`, a stale
   TypeScript-era check against a Go distroless image with no shell, curl,
   wget or bun — every probe failed with `exec: "bun": executable file not
   found in $PATH` while the process served traffic. The overlay now uses the
@@ -147,9 +147,9 @@ All notable changes to parlor are recorded here. The format follows
   kit's composed `publish.reusable.yml`, which builds and pushes the image
   `config/deploy.yml` deploys and packages and pushes the chart the Argo
   CD `Application` pulls. The image lands at
-  `ghcr.io/cafaye/parlor:sha-<full 40 chars>` (plus `<branch>`, plus
+  `ghcr.io/anywaye/parlor:sha-<full 40 chars>` (plus `<branch>`, plus
   `latest` on the default branch); the chart lands at
-  `oci://ghcr.io/cafaye/charts/parlor:0.1.0`. The chart's `version` IS the
+  `oci://ghcr.io/anywaye/charts/parlor:0.1.0`. The chart's `version` IS the
   OCI tag — `chart.reusable.yml` reads name and version from `Chart.yaml`
   and never takes them as inputs — so `Chart.yaml`'s `version` is the tag
   the substrate's `Application` must match (`targetRevision: 0.1.0`): a
@@ -164,14 +164,14 @@ All notable changes to parlor are recorded here. The format follows
   `Chart.yaml` version equals the tag — with four red controls, one per
   fact, each shown red at the tree level before green.
 
-- **parlor's Helm chart, and the Ingress that makes `app.cafaye.com`
+- **parlor's Helm chart, and the Ingress that makes `app.anywaye.com`
   reach it** (`worker/parlor-w86b-chart`, absorbing the old `m93`).
-  `cafe gen chart` wrote six files from `cafaye.yml` — `Chart.yaml`,
+  `cafe gen chart` wrote six files from `anywaye.yml` — `Chart.yaml`,
   `values.yaml`, and the Deployment/Service/Ingress templates — and
   `values.yaml` turns the Ingress on: `enabled: true`, `host:
-  app.cafaye.com` (the host the fleet's own fixtures name —
+  app.anywaye.com` (the host the fleet's own fixtures name —
   `billing/test/fixtures/stripe/checkout.session.completed*.json`
-  carries `https://app.cafaye.com/welcome`), `clusterIssuer:
+  carries `https://app.anywaye.com/welcome`), `clusterIssuer:
   letsencrypt-prod` (the issuer kit's install creates once per
   cluster; the chart names it and never creates it), `tls: true`, so
   cert-manager provisions `parlor-tls`. Without this packet the
@@ -217,7 +217,7 @@ All notable changes to parlor are recorded here. The format follows
   when it is not), `openapi.page-envelope` on the two billing listings (the
   `{data, page}` envelope is billing's contract), and
   `openapi.errors-are-problems` on the social start leg's 302 (a redirect is
-  not a problem document). `cafaye.yml` now declares `exposes.api:
+  not a problem document). `anywaye.yml` now declares `exposes.api:
   openapi/v1.yaml`; the old omission block — 27 lines arguing that parlor can
   declare neither `api` nor `events` — was written before the BFF route landed
   and is replaced by what is now true. `events` stays omitted: parlor
@@ -407,7 +407,7 @@ All notable changes to parlor are recorded here. The format follows
 - **The end-to-end tier runs past its migrations, so the row-level-security
   boundary it was assembled to test is now enforcing rather than merely
   declared.** The tier was red at `../identity/migrations/00016_account_isolation.sql`
-  with `ERROR: cafaye.protect_table(account_users, identity_app): identity_app is
+  with `ERROR: anywaye.protect_table(account_users, identity_app): identity_app is
   not a LOGIN role on this cluster. (SQLSTATE 42704)`, reproduced on this machine
   against a container built exactly the way `e2e/docker-compose.yml` described it,
   message and SQLSTATE included.
@@ -506,7 +506,7 @@ All notable changes to parlor are recorded here. The format follows
   results, one per dependency probed. Ten of the seventeen tests in
   `src/app/readyz/route.test.ts` fail against the old placeholder route.
 
-- **`cafaye.yml` no longer describes the app as Next.js.** It is TanStack Start on
+- **`anywaye.yml` no longer describes the app as Next.js.** It is TanStack Start on
   Cloudflare Workers: no `next` dependency, `dev`/`build` are `vite dev` and
   `vite build`. The second of the two claims was the more consequential — the file
   said "the routes are Next.js App Router files, so the router is the source of
@@ -611,7 +611,7 @@ All notable changes to parlor are recorded here. The format follows
   already hold the bytes under the old key, which is why it can be green on the
   machine that made the mistake and red on the one that clones. That is not
   hypothetical: commit `89553a8` in this repository's sibling `site` grew
-  `vendor/cafaye-ts-0.0.0.tgz` and updated its manifest, and left the lockfile's
+  `vendor/anywaye-ts-0.0.0.tgz` and updated its manifest, and left the lockfile's
   integrity naming the bytes the tarball used to be. The deployable image could
   not be built. The hash here is computed straight from the file rather than
   through npm, so the check cannot inherit the disagreement it is looking for.
@@ -646,7 +646,7 @@ All notable changes to parlor are recorded here. The format follows
   identity client code (`src/lib/identity.ts`, `src/lib/auth.tsx`, sign in, sign
   out, register, accounts, invitations) and no way to run identity. `mise run
   dev` started a Next.js server and nothing else, so every authenticated route
-  failed against an origin that was not there — and `cafaye.yml` calls identity
+  failed against an origin that was not there — and `anywaye.yml` calls identity
   `required: true`, which made that failure a contradiction with the manifest
   rather than a surprise.
 
@@ -663,7 +663,7 @@ All notable changes to parlor are recorded here. The format follows
     replace this repository's Dockerfile with a pull of an image that does not
     exist. A generated service needs no self-entry; this is the trap the
     `x-self` key exists to prevent.
-  - **`-port 3000` in `mise run stack` is not a preference.** `cafaye.yml`
+  - **`-port 3000` in `mise run stack` is not a preference.** `anywaye.yml`
     declares no `exposes.api` (for the reason given in that file: this app
     ships no OpenAPI document, and writing one would be a second copy of the
     router that drifts), so `cafe dev` cannot tell a Next.js app serves HTTP and
@@ -686,7 +686,7 @@ All notable changes to parlor are recorded here. The format follows
     dropped. Verified: the rendered `cafe.dev.compose.yaml` contains
     `start_period: 5s`, so the translation happens and the key was accepted.
 
-  billing is deliberately absent. `cafaye.yml` declares it `required: false`,
+  billing is deliberately absent. `anywaye.yml` declares it `required: false`,
   which cafe treats as soft, so the stack starts without it and prints why:
   `skipped billing: optional dependency, and the local registry does not know
   how to run it`. Adding it would start a service that is not going out on
@@ -711,7 +711,7 @@ All notable changes to parlor are recorded here. The format follows
   "deps":"postgres"}`.
 
   **What this task does not do, stated rather than discovered later:** it does
-  not migrate. Migrations are a deploy step in every cafaye service, by policy
+  not migrate. Migrations are a deploy step in every anywaye service, by policy
   (`e2e/docker-compose.yml:39-42`), so nothing in this stack migrates on boot.
   Against the database cafe provisions, a first registration returns `500
   relation "users" does not exist` while `/readyz` reports healthy — both are
@@ -825,7 +825,7 @@ All notable changes to parlor are recorded here. The format follows
   gate the app is proven to serve.** Every other service in the fleet deploys and
   this one could not — there was no config to deploy from, no accessory story,
   and nothing `kamal` could act on. `config/deploy.yml` is a copy of
-  `templates/kamal/deploy.yml.erb` from `cafaye/kit` at kit commit `b9d8a30`
+  `templates/kamal/deploy.yml.erb` from `anywaye/kit` at kit commit `b9d8a30`
   (measured with `git log -1 -- templates/kamal/deploy.yml.erb`, not the tip), and
   it differs from it in exactly five places, each argued at the line it is on and
   listed in the file's header so a diff against the template shows five
@@ -915,7 +915,7 @@ All notable changes to parlor are recorded here. The format follows
   execute and pass. `tsc --noEmit` is the only thing in this repository that
   reads a declaration rather than an expression.
 
-  Cafaye/site carried **29 type errors** behind a passing local gate for as long
+  Anywaye/site carried **29 type errors** behind a passing local gate for as long
   as the migration ran, and the argument is the same one the build step's entry
   below makes: a check that only runs on a runner is a check its author watches
   fail from a distance. Measured on this tree: `npm run typecheck` is 4.7s and
@@ -958,7 +958,7 @@ All notable changes to parlor are recorded here. The format follows
   to be a client component, and the only Server Components are `.test.tsx`
   files. It is one Server Component away from red. CI *does* have a
   `typecheck + build` job and *did* go red, which is the argument rather than a
-  defence: cafaye/site forked this template, inherited the trap, and sat with a
+  defence: anywaye/site forked this template, inherited the trap, and sat with a
   green local gate and a red CI build for months, because a developer who
   trusts the gate they can run has no reason to go read a runner's output. A
   check that only runs somewhere else is a check its author watches fail from a
@@ -975,7 +975,7 @@ All notable changes to parlor are recorded here. The format follows
   every check proven able to fail.
 
 - **The Dockerfile's runner stage is pinned.** `FROM node:22-slim` became
-  `FROM node:22.22.2-slim`, so the image is *built* on the pin and *runs* on it.
+  `FROM node:22.23.4-slim`, so the image is *built* on the pin and *runs* on it.
   The file's own header has claimed "One pin, four mirrors, and the image is the
   fourth — see tests/validate-ci.sh" while `tests/validate-ci.sh` checked three of
   the four; measured with `docker manifest inspect node:22-slim`, the floating tag
@@ -1133,7 +1133,7 @@ All notable changes to parlor are recorded here. The format follows
   fail again.
 
 - **A real design system, replacing the placeholder palette.** `tokens.css` was
-  explicitly a "PLACEHOLDER PALETTE … NOT the cafaye brand" — a neutral graphite
+  explicitly a "PLACEHOLDER PALETTE … NOT the anywaye brand" — a neutral graphite
   ramp chosen only so the shell had something coherent. It is now a designed
   system: a warm paper-and-ink neutral (hue 38) because the product is a ledger,
   and one chromatic voice (`seal`, a deep petrol-teal) reserved for the things
@@ -1248,14 +1248,14 @@ All notable changes to parlor are recorded here. The format follows
   misspelled helper has already killed the process before any tally could be
   read.
 
-- **This template's `cafaye.yml` was not a YAML document, so no cafaye command
+- **This template's `anywaye.yml` was not a YAML document, so no anywaye command
   could read it — and every repository generated from this file inherited that.**
-  `description:` held an unquoted colon followed by a space ("The cafaye web
+  `description:` held an unquoted colon followed by a space ("The anywaye web
   app: App Router shell"), which YAML reads as a nested mapping, and the document
   stops there:
 
       $ cafe dev --dry-run
-      cafe: cafe dev: INVALID cafaye.yml: invalid YAML: [21:14] mapping value is
+      cafe: cafe dev: INVALID anywaye.yml: invalid YAML: [21:14] mapping value is
       not allowed in this context
 
   In a template this is worse than in a service. The whole point of the template
@@ -1276,7 +1276,7 @@ All notable changes to parlor are recorded here. The format follows
   check claiming to validate YAML without a YAML parser would be the same
   false-green in a new place.
 
-  The same fix went into `site` in the same window (`cafaye/site@0aa7494`).
+  The same fix went into `site` in the same window (`anywaye/site@0aa7494`).
   Both were unquoted sentences written by a person editing prose, which is the
   argument for the check rather than for the quoting.
 
@@ -1361,7 +1361,7 @@ All notable changes to parlor are recorded here. The format follows
 
 - **`src/components/ui/index.ts` no longer says "shadcn/ui later".** It
   described the barrel as a staging post for a library install that is not
-  happening; the primitives here are cafaye's own and the file now says so. The
+  happening; the primitives here are anywaye's own and the file now says so. The
   same correction is in `AGENTS.md` and `README.md`.
 
 - **`LICENSE`, and `"license": "MIT"` in `package.json`.** parlor shipped no
@@ -1374,7 +1374,7 @@ All notable changes to parlor are recorded here. The format follows
   parlor is a platform consumed through the service registry, so MIT is what
   keeps a consumer's own licensing situation unchanged when they add it. The
   copyright line matches the three repositories that already shipped a licence
-  exactly: `Copyright (c) 2026 cafaye`.
+  exactly: `Copyright (c) 2026 anywaye`.
 
 ### Fixed (kit-18 D12 sweep)
 
@@ -1406,14 +1406,14 @@ All notable changes to parlor are recorded here. The format follows
   the npm registry once, and no Node is vendored. Both requirements name a
   command you can paste and what "unmet" looks like, and the toolchain one is
   demonstrated rather than asserted — with `.npmrc`'s `engine-strict=true`, a
-  Node that is not 22.22.2 makes `npm ci` exit 1 with `npm error code
+  Node that is not 22.23.4 makes `npm ci` exit 1 with `npm error code
   EBADENGINE`, so the pin is a red `bin/prime` and not a suite that quietly
   passed on a different runtime.
 - **Three `proof` floors, because `bin/prime` runs three separately-countable
   things and "exited 0" says nothing about any of them:** 377 vitest tests,
   the 35 checks in `tests/validate-ci.sh`, and the 34 breakages in its
   self-test. A run that skipped one and exited zero is `gate.proof-missing`,
-  which is a failure — the `cafaye-rb` defect, where a tier never executed once
+  which is a failure — the `anywaye-rb` defect, where a tier never executed once
   and the run printed `ok`. The floors are decrease-detectors, not budgets:
   they are today's counts, so a suite that quietly lost forty tests cannot
   report itself as passing. Note what this repository does **not** have, which
@@ -1509,7 +1509,7 @@ All notable changes to parlor are recorded here. The format follows
   it is destroyed), `no-token-artifacts.ts` (the teardown).
 
 - `.github/workflows/ci.yml` — three jobs. `ci` calls kit's reusable workflow
-  at `cafaye/kit/.github/workflows/ci.reusable.yml@master` with
+  at `anywaye/kit/.github/workflows/ci.reusable.yml@master` with
   `language: node`, so the shared install/lint/test contract lands here
   without a copy. `prime` runs `./bin/prime` — the command a developer runs —
   and then `git diff --exit-code -- package-lock.json`. `build` deletes
@@ -1520,12 +1520,12 @@ All notable changes to parlor are recorded here. The format follows
 - `tests/validate-ci.sh` — the half of the gate that checks the gate. Eighteen
   checks over the runtime pin, the lockfile contract, the gate command, the
   npm scripts the workflow calls, and the agreement between `package.json`,
-  `mise.toml`, the workflow and `cafaye.yml`. `--self-test` breaks a
+  `mise.toml`, the workflow and `anywaye.yml`. `--self-test` breaks a
   throwaway copy 16 ways and asserts each one goes red, plus the opposite
   case: a comment that merely *mentions* `npm install` must not fail the check
   that forbids it. It reads the workflow as text with anchored greps, so it
   needs no PyYAML, no yq and no jq.
-- The runtime pin, in `package.json`: `engines.node` 22.22.2 and
+- The runtime pin, in `package.json`: `engines.node` 22.23.4 and
   `packageManager` npm@10.9.7. There was no `engines` and no `packageManager`
   before, so nothing in the repository pinned the runtime — `mise.toml` did,
   but mise is a workstation tool and a CI runner never reads it. The same
@@ -1669,7 +1669,7 @@ All notable changes to parlor are recorded here. The format follows
   `NODE_ENV=production` into a production-only install (`npm ci --include=dev`,
   which is what puts `@tailwindcss/postcss` and `typescript` back); `.npmrc` is
   copied into the build context, so `engine-strict=true` is enforced there and
-  not only on the host; the base is `node:22.22.2-slim`, the pin
+  not only on the host; the base is `node:22.23.4-slim`, the pin
   `package.json` declares, rather than `node:22-slim` which resolved to
   22.23.3 and would have shipped a different runtime than the suite verifies
   on; and the runner no longer copies a `/app/public` this repository does not
@@ -1849,7 +1849,7 @@ recorded so it is not rediscovered from a UI symptom.
   Measured by reading `.github/workflows/ci.yml`: three jobs — kit's `node` job,
   `./bin/prime`, and typecheck + `next build` — and none runs `docker build`,
   `docker push` or `kamal build`. The only place this image is built is
-  `e2e/docker-compose.yml`, which tags it `cafaye/e2e-parlor:local` and pushes
+  `e2e/docker-compose.yml`, which tags it `anywaye/e2e-parlor:local` and pushes
   it nowhere. The consequence is that kit's `builder` block, whose stated reason
   for existing is that building on the host competes with the running service
   for memory, is currently the wrong shape for this repository: on a fresh host

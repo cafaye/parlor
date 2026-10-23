@@ -1,11 +1,11 @@
-# Local (`cafaye-local`) values for the parlor chart — the web front.
+# Local (`anywaye-local`) values for the parlor chart — the web front.
 #
-# The chart's default host stays `app.cafaye.com`, which PLAN §1's URL map
+# The chart's default host stays `app.anywaye.com`, which PLAN §1's URL map
 # keeps as "the Parlor chart default only; never a product face". Locally the
-# front is `cafaye.test`, per the same map, so the local deployment overrides
+# front is `anywaye.test`, per the same map, so the local deployment overrides
 # the host and the generated file is not edited.
 image:
-  repository: cafaye/parlor
+  repository: anywaye/parlor
   tag: k8s-local
   # `Never`: `bin/local-cluster` imported this image into the cluster with
   # `k3d image import`. ghcr.io is unreachable from a dev cluster and is not
@@ -15,9 +15,9 @@ image:
 ingress:
   enabled: true
   className: traefik
-  # §1's URL map: cafaye.test is the website/parlor front.
-  host: cafaye.test
-  clusterIssuer: cafaye-test-ca
+  # §1's URL map: anywaye.test is the website/parlor front.
+  host: anywaye.test
+  clusterIssuer: anywaye-test-ca
   tls: true
   path: /
   pathType: Prefix

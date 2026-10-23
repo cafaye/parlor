@@ -4,9 +4,9 @@ service: parlor
 # account_scope.yml — every entry point `parlor` mounts, and which of them can
 # reach another account's data.
 #
-# Checked by cafaye/core's contract harness:
+# Checked by anywaye/core's contract harness:
 #
-#     /Users/kaka/Code/any/cafaye/core/harness/bin/account-scope-check .
+#     /Users/kaka/Code/any/anywaye/core/harness/bin/account-scope-check .
 #
 # THE ANSWER IS "NONE OF THEM", AND THAT IS A DECLARATION RATHER THAN A COMMENT.
 #

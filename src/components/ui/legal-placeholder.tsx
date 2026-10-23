@@ -7,10 +7,10 @@ import { linkClasses } from "./link";
  * ---------------------------------------------------------------------------
  * WHY THIS SAYS "PLACEHOLDER" OUT LOUD
  * ---------------------------------------------------------------------------
- * cafaye has not published terms of service or a privacy policy, and inventing
+ * anywaye has not published terms of service or a privacy policy, and inventing
  * either would be printing claims nobody made — that is the failure mode this
  * component exists to avoid, and it is named in the fleet's own precedent (the
- * retired `cafaye/site`, whose `REPORT-site-legal-01` records the decision
+ * retired `anywaye/site`, whose `REPORT-site-legal-01` records the decision
  * and what was ruled out).
  *
  * So the body says the page is a placeholder, tells the operator to update the
@@ -51,7 +51,7 @@ export function LegalPlaceholder({ document }: LegalPlaceholderProps) {
   return (
     <>
       <p className="text-muted">
-        This page is a placeholder. Cafaye has not published its {document.toLowerCase()} yet, and
+        This page is a placeholder. Anywaye has not published its {document.toLowerCase()} yet, and
         what follows is the honest state of that — not a draft of it.
       </p>
       <p className="text-muted">

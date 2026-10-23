@@ -29,7 +29,7 @@
  * name, the trim and the trailing slash; they differ only in what an unset
  * value means, and that difference is the point.
  *
- * Shape reserved for cafaye's platform contract; see cafaye.yml.
+ * Shape reserved for anywaye's platform contract; see anywaye.yml.
  */
 
 /** How long one dependency gets to answer. Short, and well under any proxy's own probe timeout. */

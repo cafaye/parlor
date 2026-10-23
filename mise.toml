@@ -1,6 +1,6 @@
 [tools]
-# 22.12.0 was the local machine's version, but the jsdom test rig (jsdom@30,
-# @asamuzakjp/*, w3c-xmlserializer) now requires ^22.22.2. Pin that floor so
+# 22.23.4 was the local machine's version, but the jsdom test rig (jsdom@30,
+# @asamuzakjp/*, w3c-xmlserializer) now requires ^22.23.4. Pin that floor so
 # `npm ci` installs warning-free. Stays on the Node 22 LTS line, matching the
 # `node:22-slim` base in the Dockerfile.
 #
@@ -10,7 +10,7 @@
 # disagreeing into a red build instead of a surprise.
 # `tests/validate-ci.sh` fails when they drift apart. Change the number in
 # package.json and here, in the same commit.
-node = "22.22.2"
+node = "22.23.4"
 
 [tasks.test]
 description = "Run the vitest suite once"
@@ -47,7 +47,7 @@ run = "npm run dev"
 # `identity` dependency and no stack starts at all.
 #
 # `-port 3000` publishes this service on the host, and the reason is in the
-# manifest rather than in taste. `cafaye.yml` declares no `exposes.api` (see the
+# manifest rather than in taste. `anywaye.yml` declares no `exposes.api` (see the
 # comment there: this app ships no OpenAPI document, and inventing one would be
 # a second copy of the router), so `cafe dev` cannot tell that a Next.js app
 # serves HTTP and leaves its host port unpublished. Without `-port`, caf prints
@@ -61,7 +61,7 @@ run = "npm run dev"
 # stack of its own).
 #
 # WHAT THIS TASK DOES NOT DO: it does not migrate. Migrations are a deploy step
-# in every cafaye service, by policy, so nothing in this stack migrates on boot.
+# in every anywaye service, by policy, so nothing in this stack migrates on boot.
 # Against the database caf provisions, a first `/register` therefore returns
 # `500 relation "users" does not exist` while `/readyz` reports healthy — both
 # are correct, and the fix is to run identity's migrations as their own step.

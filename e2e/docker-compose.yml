@@ -1,5 +1,5 @@
 ---
-# The whole cafaye stack, for the end-to-end suite. This is the topology the
+# The whole anywaye stack, for the end-to-end suite. This is the topology the
 # Playwright specs in this directory drive; `bin/e2e` is the only thing that
 # brings it up.
 #
@@ -10,7 +10,7 @@
 # places three directories away, and this file is a thin overlay on both:
 #
 #   ../kit/templates/compose/docker-compose.yml   the local infrastructure a
-#       cafaye service joins: Postgres, NATS, Redis, the OTel collector. kit
+#       anywaye service joins: Postgres, NATS, Redis, the OTel collector. kit
 #       owns those images, their pins and their healthchecks, and the pins
 #       there are exact tags. Nothing in this file restates a kit image except
 #       where the harness needs a different one and says so.
@@ -52,7 +52,7 @@
 #      say so: a warm full build here is 13.81s and invalidating identity costs
 #      20.40s (measured on this machine). The old
 #      `build:` stanzas did not cost minutes. What they cost was that
-#      `cafaye/e2e-identity:local` was built from whatever happened to be in
+#      `anywaye/e2e-identity:local` was built from whatever happened to be in
 #      the sibling checkout at the instant the suite ran, pushed nowhere, and
 #      nameable by nothing outside that docker daemon — so the verification
 #      tier could not be shown to test the artifact the fleet deploys, because
@@ -95,7 +95,7 @@
 #     already on. The brief for this file is that a developer's running stack
 #     must survive the harness.
 #   * Not 15xxx. That block is this workspace's observability stack
-#     (cafaye-grafana 15000, postgres 15500, nats 15600/15700, redis 15800,
+#     (anywaye-grafana 15000, postgres 15500, nats 15600/15700, redis 15800,
 #     tempo 15900, loki 15901, mimir 15902) and it is *running* right now on
 #     the machine this was written on. Two stacks that both believe they own
 #     15xxx is a collision the day somebody scales either of them.
@@ -263,12 +263,12 @@ services:
   # `/docker-entrypoint-initdb.d`. The official image therefore created exactly
   # ONE role — `identity`, a superuser — and no `identity_app`. Then
   # `../identity/migrations/00016_account_isolation.sql` reached
-  # `select cafaye.protect_table('account_users')`, which defaults its login role
+  # `select anywaye.protect_table('account_users')`, which defaults its login role
   # to `current_user || '_app'` and REFUSES to write a policy for a role that
   # cannot log in. Reproduced on this machine against a container built exactly
   # the way this block describes:
   #
-  #   ERROR:  cafaye.protect_table(account_users, identity_app):
+  #   ERROR:  anywaye.protect_table(account_users, identity_app):
   #           identity_app is not a LOGIN role on this cluster. (SQLSTATE 42704)
   #
   # Migrations 00008 through 00015 applied cleanly first, which is what made it
@@ -427,7 +427,7 @@ services:
   #
   # AN `image:` AND NO `build:`, and that absence is the contract. The image is
   # pulled by tag from the registry above, so this tier runs the artifact named
-  # `cafaye/identity:e2e` rather than a rebuild of whatever is in `../identity`
+  # `anywaye/identity:e2e` rather than a rebuild of whatever is in `../identity`
   # right now. Read the "NO SIBLING BUILD CONTEXTS" block at the top of this
   # file before changing it: the tag is not a cache, it is the claim that this
   # suite tested a specific published artifact.
@@ -439,7 +439,7 @@ services:
   # suite talks to, and a hatch that renamed the image would be a second
   # topology instead of an escape from this one.
   identity:
-    image: "${E2E_REGISTRY:-localhost:16010}/cafaye/identity:e2e"
+    image: "${E2E_REGISTRY:-localhost:16010}/anywaye/identity:e2e"
     environment:
       PORT: "8080"
       LOG_LEVEL: debug
@@ -644,10 +644,10 @@ services:
       # accepts whatever it is handed checks nothing. `oauth-stub/README.md` says it
       # outright — "a fake that accepts any `client_id` will happily complete a flow
       # whose credentials are wrong."
-      OAUTH_GOOGLE_CLIENT_ID: "cafaye-e2e-google-client"
-      OAUTH_GOOGLE_CLIENT_SECRET: "cafaye-e2e-google-secret"
-      OAUTH_GITHUB_CLIENT_ID: "cafaye-e2e-github-client"
-      OAUTH_GITHUB_CLIENT_SECRET: "cafaye-e2e-github-secret"
+      OAUTH_GOOGLE_CLIENT_ID: "anywaye-e2e-google-client"
+      OAUTH_GOOGLE_CLIENT_SECRET: "anywaye-e2e-google-secret"
+      OAUTH_GITHUB_CLIENT_ID: "anywaye-e2e-github-client"
+      OAUTH_GITHUB_CLIENT_SECRET: "anywaye-e2e-github-secret"
       # Standard base64 of EXACTLY 32 bytes, which is what identity requires
       # (settings.go refuses anything else at boot EVEN WHEN NO PROVIDER IS
       # CONFIGURED — a deployment whose key is wrong should find out at boot, not
@@ -747,7 +747,7 @@ services:
   # The same contract as identity, for the same reason and through the same
   # override: an `image:` pulled by tag, no `build:` of its own.
   gateway:
-    image: "${E2E_REGISTRY:-localhost:16010}/cafaye/gateway:e2e"
+    image: "${E2E_REGISTRY:-localhost:16010}/anywaye/gateway:e2e"
     environment:
       PORT: "8080"
       NODE_ENV: production
@@ -838,7 +838,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: cafaye/e2e-parlor:local
+    image: anywaye/e2e-parlor:local
     environment:
       PORT: "3000"
       HOSTNAME: "0.0.0.0"
@@ -900,7 +900,7 @@ services:
   # The fake identity provider, as a PUBLISHED SIBLING.
   #
   # It is a sibling and it is a test double, and both of those are load-bearing
-  # for different reasons. It is a sibling because `github.com/cafaye/oauth-stub`
+  # for different reasons. It is a sibling because `github.com/anywaye/oauth-stub`
   # has a repository, a release tag (`v0.1.0`, which `bin/e2e-stack` pins), a
   # Dockerfile and a suite — so it is consumed by tag like `identity` and
   # `gateway`, and `publish-siblings` builds and pushes it. It is a test double
@@ -935,7 +935,7 @@ services:
   #   * Point identity's client ids at the stub's DEFAULTS so one instance could
   #     take both. This compiles, boots, and tests nothing — the fixture is now
   #     agreeing with itself about a credential neither side independently holds.
-  #   * Patch the stub to accept a LIST of clients. `github.com/cafaye/oauth-stub`
+  #   * Patch the stub to accept a LIST of clients. `github.com/anywaye/oauth-stub`
   #     is a separate published repository with its own release and its own suite,
   #     and a weaker credential check is a change to the thing under test, made by
   #     the harness, to make a test pass. This repository may not modify a sibling.
@@ -945,7 +945,7 @@ services:
   # is worth it in a tier whose stated subject is "a deployment fact nothing below
   # could ever see".
   oauth-stub:
-    image: "${E2E_REGISTRY:-localhost:16010}/cafaye/oauth-stub:e2e"
+    image: "${E2E_REGISTRY:-localhost:16010}/anywaye/oauth-stub:e2e"
     environment:
       # The bind address, under the PUBLISHED repository's variable name and not
       # any older spelling. Every variable in oauth-stub is optional and ABSENT IS
@@ -960,8 +960,8 @@ services:
       # (`oauth-stub-client`) and refuse every authorize leg identity sent. No
       # harness assertion would fail; all three social tests would simply stop at
       # the provider.
-      OAUTH_STUB_CLIENT_ID: "cafaye-e2e-google-client"
-      OAUTH_STUB_CLIENT_SECRET: "cafaye-e2e-google-secret"
+      OAUTH_STUB_CLIENT_ID: "anywaye-e2e-google-client"
+      OAUTH_STUB_CLIENT_SECRET: "anywaye-e2e-google-secret"
       # The domain minted addresses are built in. `example.test` is RFC 6761's
       # reserved TLD, so a stray message to one of these accounts is a no-op
       # rather than a delivery — the same reason `session.e2e.spec.ts` mints
@@ -1018,7 +1018,7 @@ services:
   # dialects — by service name for the token and userinfo legs, by published port
   # for the authorize leg, which is a browser navigation.
   oauth-stub-github:
-    image: "${E2E_REGISTRY:-localhost:16010}/cafaye/oauth-stub:e2e"
+    image: "${E2E_REGISTRY:-localhost:16010}/anywaye/oauth-stub:e2e"
     environment:
       # The bind address, the same 8080 every application service here uses. It is
       # 8080 on BOTH instances deliberately: the container-side port is not part of
@@ -1026,8 +1026,8 @@ services:
       # internal ports would only add a way for the two to be confused.
       OAUTH_STUB_ADDR: ":8080"
       # GitHub's pair, matching identity's `OAUTH_GITHUB_CLIENT_ID`/`_SECRET`.
-      OAUTH_STUB_CLIENT_ID: "cafaye-e2e-github-client"
-      OAUTH_STUB_CLIENT_SECRET: "cafaye-e2e-github-secret"
+      OAUTH_STUB_CLIENT_ID: "anywaye-e2e-github-client"
+      OAUTH_STUB_CLIENT_SECRET: "anywaye-e2e-github-secret"
       # Same domain as the other instance, for the reason given there.
       OAUTH_STUB_EMAIL_DOMAIN: "example.test"
     ports:

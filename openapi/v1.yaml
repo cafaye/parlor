@@ -89,7 +89,7 @@
 # THE ENVELOPE, AND THE ONE CONDITIONAL FIELD
 # ---------------------------------------------------------------------------
 # parlor's own error answers are `application/problem+json` (RFC 9457) with
-# core's cafaye extensions, in the envelope `components.schemas.Problem`
+# core's anywaye extensions, in the envelope `components.schemas.Problem`
 # declares. `trace_id` is required by that schema, and the forwarder's
 # `problem()` in `src/lib/upstream.ts` includes it: the id of the trace the
 # request is being served in, which the Node target opens per request
@@ -108,7 +108,7 @@
 # ---------------------------------------------------------------------------
 # THE THREE GAPS CORE'S HARNESS REPORTS ON THIS DOCUMENT
 # ---------------------------------------------------------------------------
-# Measured, not assumed — `../core/harness/bin/cafaye-contract --core ../core
+# Measured, not assumed — `../core/harness/bin/anywaye-contract --core ../core
 # .` reports each of these by name, and they are recorded here so the next
 # reader does not rediscover them:
 #
@@ -148,7 +148,7 @@ info:
   title: parlor
   version: 1.0.0
   description: >-
-    The cafaye web app's same-origin HTTP surface: every `/v1/*` operation
+    The anywaye web app's same-origin HTTP surface: every `/v1/*` operation
     parlor's browser clients call, forwarded to identity or billing. This
     document describes the routing contract — paths, methods, upstream
     ownership, and the parameters the forwarder accepts. The request and
@@ -1249,7 +1249,7 @@ paths:
           $ref: '#/components/responses/BillingNotConfigured'
 components:
   schemas:
-    # core's error envelope (RFC 9457 with the cafaye extensions), as
+    # core's error envelope (RFC 9457 with the anywaye extensions), as
     # docs/openapi-conventions.md defines it. `errors[]` appears only on a
     # 422. parlor's own answers carry `type`, `title`, `status`, `code` and
     # `trace_id`; the upstreams' pass through with the same envelope.
@@ -1259,7 +1259,7 @@ components:
       properties:
         type:
           type: string
-          description: 'Stable URI: `https://docs.cafaye.com/errors/<code>`.'
+          description: 'Stable URI: `https://docs.anywaye.com/errors/<code>`.'
           format: uri
         title:
           type: string
@@ -1343,7 +1343,7 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
           example:
-            type: https://docs.cafaye.com/errors/upstream_unavailable
+            type: https://docs.anywaye.com/errors/upstream_unavailable
             title: The service is not reachable.
             status: 502
             detail: The upstream could not be reached. Quote the trace id when reporting this.
@@ -1360,7 +1360,7 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
           example:
-            type: https://docs.cafaye.com/errors/payload_too_large
+            type: https://docs.anywaye.com/errors/payload_too_large
             title: The request body is too large.
             status: 413
             detail: The request body is over the ceiling. Quote the trace id when reporting this.
@@ -1376,7 +1376,7 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
           example:
-            type: https://docs.cafaye.com/errors/billing_not_configured
+            type: https://docs.anywaye.com/errors/billing_not_configured
             title: Billing is not configured.
             status: 503
             detail: This deployment has no billing service. Quote the trace id when reporting this.
@@ -1391,7 +1391,7 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
           example:
-            type: https://docs.cafaye.com/errors/idempotency_key_reused
+            type: https://docs.anywaye.com/errors/idempotency_key_reused
             title: The idempotency key was reused.
             status: 409
             detail: That key was already used for a different request body.

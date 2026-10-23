@@ -204,7 +204,7 @@ const NON_TEXT_PAIRS: ReadonlyArray<readonly [string, string]> = [
   ["--color-focus-ring", "--color-surface-sunken"],
 ];
 
-describe("cafaye palette — measured contrast", () => {
+describe("anywaye palette — measured contrast", () => {
   for (const theme of ["light", "dark"] as const) {
     describe(theme, () => {
       it.each(TEXT_PAIRS)("%s on %s clears 4.5:1", (fg, bg) => {
@@ -482,7 +482,7 @@ describe("cafaye palette — measured contrast", () => {
   });
 });
 
-describe("cafaye palette — structure", () => {
+describe("anywaye palette — structure", () => {
   /**
    * A dark mode that is missing one token is not "mostly dark", it is a
    * screen with a hole in it: one element keeps the light value and reads as

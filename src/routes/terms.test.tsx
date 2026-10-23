@@ -15,7 +15,7 @@ import { renderWithRouter } from "@/test/support/render";
  * ---------------------------------------------------------------------------
  * WHAT IS NOT ASSERTED HERE, AND WHY
  * ---------------------------------------------------------------------------
- * No class names. The retired `cafaye/site` asserted
+ * No class names. The retired `anywaye/site` asserted
  * `.border-t.border-border` for the hairline rule and queried the kicker as
  * `main.querySelector("p")`; this repository's house rule is to assert on role
  * and accessible name, never on class names, because a test that checks for
@@ -80,7 +80,7 @@ describe("terms page", () => {
   it("opens with the capitalised brand kicker, the wayfinding every public page carries", () => {
     renderWithRouter(<TermsPage />);
 
-    expect(screen.getByText("Cafaye")).toBeInTheDocument();
+    expect(screen.getByText("Anywaye")).toBeInTheDocument();
   });
 
   it("prints no date on the Last updated line, because there is no agreement record to read one from", () => {

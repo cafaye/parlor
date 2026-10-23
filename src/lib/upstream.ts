@@ -782,14 +782,14 @@ export function createUpstreamForwarder(options: UpstreamOptions): UpstreamForwa
         // at the default `redirect: "follow"` the transport would chase it,
         // hand identity's `__Host-oauth-state` cookie and the whole request to
         // github.com, and return github's HTML as this app's answer to a
-        // sign-in. Measured on Node 22.22.2, that is exactly what happens.
+        // sign-in. Measured on Node 22.23.4, that is exactly what happens.
         //
         // One honest caveat, because it is the kind of thing that breaks on an
         // upgrade rather than on an edit. `redirect: "manual"` is SPECIFIED to
         // yield an opaque redirect — status 0, no headers, `type: "opaqueredirect"`
         // — which would make `relay()` throw on `new Response(body, { status: 0 })`
         // and turn the start leg into a 500. undici does not implement that
-        // clause: measured on 22.22.2 it returns a `type: "basic"` response with
+        // clause: measured on 22.23.4 it returns a `type: "basic"` response with
         // status 302 and a readable `Location` and `Set-Cookie`, which is the
         // behaviour `relay()` needs and the whole reason the hop works. So this
         // file depends on a deviation of the runtime it ships on. If a future
@@ -958,7 +958,7 @@ function relay(upstream: Response, route: Route): Response {
  * The forwarder's own answers, in the envelope the clients already parse.
  *
  * `application/problem+json` because that is what `core` requires of every
- * cafaye service and what `parseError` in both clients reads, so a 404 from the
+ * anywaye service and what `parseError` in both clients reads, so a 404 from the
  * allow-list arrives at a screen as an `IdentityError` or a `BillingError` with
  * the right status rather than as a parse failure. The `type` and the `title` are
  * fixed: neither names an upstream, and a title is a sentence for a person while
@@ -971,7 +971,7 @@ function problem(
   extra: { headers?: Record<string, string> } = {},
 ): Response {
   return Response.json(
-    { type: `https://docs.cafaye.com/errors/${code}`, title, status, code },
+    { type: `https://docs.anywaye.com/errors/${code}`, title, status, code },
     {
       status,
       headers: {

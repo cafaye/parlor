@@ -113,7 +113,7 @@ const DEFAULT_ENDPOINT = "http://otel-collector:4318";
 /**
  * The OTel spec's OWN kill switch, and the mechanism core's otel-endpoint
  * schema pins the no-op to (`noOp.implementedBy` is a `const` on this exact
- * string). Not a cafaye reimplementation: re-implementing "disabled" in six
+ * string). Not a anywaye reimplementation: re-implementing "disabled" in six
  * languages is how six services acquire six different definitions of it.
  */
 const SDK_DISABLED = "OTEL_SDK_DISABLED";

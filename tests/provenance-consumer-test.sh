@@ -79,12 +79,12 @@ ARG KIT_PROVENANCE_TEMPLATE_VERSION
 LABEL org.opencontainers.image.source="${KIT_PROVENANCE_SOURCE}"
 LABEL org.opencontainers.image.revision="${KIT_PROVENANCE_REVISION}"
 LABEL org.opencontainers.image.created="${KIT_PROVENANCE_BUILT_AT}"
-LABEL com.cafaye.kit.source.dirty="${KIT_PROVENANCE_SOURCE_DIRTY}"
-LABEL com.cafaye.kit.template.version="${KIT_PROVENANCE_TEMPLATE_VERSION}"
+LABEL com.anywaye.kit.source.dirty="${KIT_PROVENANCE_SOURCE_DIRTY}"
+LABEL com.anywaye.kit.template.version="${KIT_PROVENANCE_TEMPLATE_VERSION}"
 DOCKERFILE
 
 # The shape of a sibling image that inherits a base image's stamp — measured on
-# this machine: `cafaye/gateway:e2e` carries BUN's labels, because it is built
+# this machine: `anywaye/gateway:e2e` carries BUN's labels, because it is built
 # `FROM oven/bun` and nothing overwrites them. The stamp is present, plausible
 # and about the wrong software entirely.
 cat >"$WORK/inherited.Dockerfile" <<'DOCKERFILE'
@@ -94,7 +94,7 @@ LABEL org.opencontainers.image.revision="700fc117a2fd01ac0201deaa6fa69c5557acb04
 DOCKERFILE
 
 # No labels at all — the shape of a sibling image whose Dockerfile predates the
-# stamp. Measured: `cafaye/identity:e2e` reports `null` here.
+# stamp. Measured: `anywaye/identity:e2e` reports `null` here.
 cat >"$WORK/bare.Dockerfile" <<'DOCKERFILE'
 FROM scratch
 DOCKERFILE
@@ -109,7 +109,7 @@ build() {
 # reason about, and which the verifier reports as `<absent>`.
 build_stamped() {
   timeout 300 docker build \
-    --build-arg "KIT_PROVENANCE_SOURCE=cafaye/parlor" \
+    --build-arg "KIT_PROVENANCE_SOURCE=anywaye/parlor" \
     --build-arg "KIT_PROVENANCE_REVISION=$STAMPED_REV" \
     --build-arg "KIT_PROVENANCE_BUILT_AT=2026-04-10T03:06:38Z" \
     --build-arg "KIT_PROVENANCE_SOURCE_DIRTY=clean" \

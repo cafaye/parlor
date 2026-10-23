@@ -103,7 +103,7 @@ trap 'rm -rf "$WORK"' EXIT
 # without it is asserted in check 8b below.
 # ---------------------------------------------------------------------------
 export KIT_SERVICE=parlor
-export KIT_REGISTRY_ORG=cafaye
+export KIT_REGISTRY_ORG=anywaye
 export KIT_REPO=parlor
 export KIT_WEB_HOST=198.51.100.7      # RFC 5737 TEST-NET-2, documentation only
 export KIT_APP_DOMAIN=parlor.invalid # RFC 2606, must never resolve
@@ -168,11 +168,11 @@ bounded "$KAMAL" config -c "$RENDERED" --version latest >"$RESOLVED" 2>/dev/null
 #    `registry.server: ghcr.io` is valid YAML, `kamal config` exits 0, and the
 #    resolved repository is wrong. Only the resolved value shows it.
 # ---------------------------------------------------------------------------
-if printf '%s' "$(grep -E '^:repository:' "$RESOLVED")" | grep -q '^:repository: ghcr\.io/cafaye/parlor$'; then
+if printf '%s' "$(grep -E '^:repository:' "$RESOLVED")" | grep -q '^:repository: ghcr\.io/anywaye/parlor$'; then
   ok "kamal config  (the image name is not double-prefixed with the registry host)"
 else
   no "kamal config  (the image name is not double-prefixed with the registry host)" \
-    "expected ':repository: ghcr.io/cafaye/parlor', got '$(grep -E '^:repository:' "$RESOLVED")'"
+    "expected ':repository: ghcr.io/anywaye/parlor', got '$(grep -E '^:repository:' "$RESOLVED")'"
 fi
 
 # ---------------------------------------------------------------------------
@@ -326,8 +326,8 @@ fi
 #    a check red, then the checks above were reading their own emptiness.
 # ---------------------------------------------------------------------------
 planted_registry="$WORK/planted-registry"
-sed 's|^image: cafaye/parlor$|image: ghcr.io/cafaye/parlor|' "$RENDERED" >"$planted_registry"
-if grep -q '^image: ghcr.io/cafaye/parlor$' "$planted_registry"; then
+sed 's|^image: anywaye/parlor$|image: ghcr.io/anywaye/parlor|' "$RENDERED" >"$planted_registry"
+if grep -q '^image: ghcr.io/anywaye/parlor$' "$planted_registry"; then
   out=$(bounded "$KAMAL" config -c "$planted_registry" --version latest 2>/dev/null || true)
   if printf '%s' "$out" | grep -q '^:repository: ghcr\.io/ghcr\.io/'; then
     ok "CONTROL: a planted doubled registry host reaches the resolved document — check 3 can see it"

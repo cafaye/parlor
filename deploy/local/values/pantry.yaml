@@ -1,18 +1,18 @@
-# Local (`cafaye-local`) values for the pantry chart.
+# Local (`anywaye-local`) values for the pantry chart.
 #
 # pantry's generated `values.yaml` has `ingress.enabled: false` with an empty
 # host — pantry stays internal, because its read surface is what gateway
 # proxies and a public pantry front is not in §1's URL map. This file leaves
 # that alone. What it changes is the image: the chart defaults to
-# `ghcr.io/cafaye/pantry:0.1.0`, which a dev cluster cannot pull, so the
+# `ghcr.io/anywaye/pantry:0.1.0`, which a dev cluster cannot pull, so the
 # locally built image is what runs.
 image:
-  repository: cafaye/pantry
+  repository: anywaye/pantry
   tag: k8s-local
   pullPolicy: Never
 
 # Still off, deliberately. pantry is reached as `pantry:8080` from gateway's
-# ROUTE_TABLE and as `pantry.svc.cafaye.test` from anything that means the
+# ROUTE_TABLE and as `pantry.svc.anywaye.test` from anything that means the
 # internal zone; it has no edge host to give it.
 ingress:
   enabled: false

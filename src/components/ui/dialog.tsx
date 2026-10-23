@@ -18,7 +18,7 @@ type StringClassProps<T extends { className?: unknown }> = Omit<T, "className"> 
  * The modal primitives.
  *
  * ---------------------------------------------------------------------------
- * SHADCN PROVENANCE (structure and behavior, Cafaye tokens)
+ * SHADCN PROVENANCE (structure and behavior, Anywaye tokens)
  * ---------------------------------------------------------------------------
  * Construction follows shadcn/ui `dialog` on its current default foundation,
  * which is Base UI rather than Radix: `Root` owns the open state, `Portal`

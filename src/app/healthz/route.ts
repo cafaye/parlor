@@ -5,7 +5,7 @@
  * failing downstream service never takes the container out of the load
  * balancer. Readiness (dependency-aware) lives at /readyz.
  *
- * Shape reserved for cafaye's platform contract; see cafaye.yml.
+ * Shape reserved for anywaye's platform contract; see anywaye.yml.
  */
 export function GET() {
   return Response.json(

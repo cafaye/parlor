@@ -1,8 +1,8 @@
 # tenancy.yml — what parlor declares about its own account boundary.
 #
-# Checked by cafaye/core's contract harness:
+# Checked by anywaye/core's contract harness:
 #
-#     bash /Users/kaka/Code/any/cafaye/core/harness/bin/tenancy-check .
+#     bash /Users/kaka/Code/any/anywaye/core/harness/bin/tenancy-check .
 #
 # ## THE ANSWER IS AN HONEST ZERO, AND IT IS MEASURED RATHER THAN ASSUMED
 #
@@ -216,7 +216,7 @@
 #
 # `rls.sources` names `src` and deliberately does NOT name `e2e`, and the
 # reason is measured rather than a preference. `e2e/docker-compose.yml`
-# quotes the SIBLING's boundary — `select cafaye.protect_table('account_users')`,
+# quotes the SIBLING's boundary — `select anywaye.protect_table('account_users')`,
 # `ALTER TABLE … DISABLE ROW LEVEL SECURITY` — in the comments that explain
 # the whole-stack tier to its next reader. Naming it would earn
 # `tenancy.rls-unreadable` and a sentence claiming parlor's own database half

@@ -39,7 +39,7 @@
 #     `backends/README.md` step 2. Do not reimplement the push.
 #
 # WHAT IT NEEDS FROM THE ENVIRONMENT (backends/README.md is the contract):
-#   WORKSPACE   the directory holding cafaye/<name> checkouts
+#   WORKSPACE   the directory holding anywaye/<name> checkouts
 #   GH_TOKEN    a token that can read this project's private sources
 #   CI          1, so nothing waits on a prompt
 #   CI_DRY_RUN  1 runs the gate and ships nothing (a rehearsal)
@@ -90,7 +90,7 @@ if [ "${#PATHS[@]}" -gt 0 ]; then
 fi
 
 log "the toolchain the repository pins"
-# `mise install` materializes the versions in mise.toml (node 22.22.2);
+# `mise install` materializes the versions in mise.toml (node 22.23.4);
 # `mise exec` runs the gate under them, so a developer, a runner and this
 # sandbox all use the same compiler. `mise.toml`'s `[tasks.prime]` resolves to
 # `./bin/prime`, which is the same file this pipeline runs.
@@ -128,7 +128,7 @@ if [ -f chart/Chart.yaml ]; then
   # `--service-dir .` because we are already at the root; the tool derives the
   # image name, reads the chart's name and version from Chart.yaml, stamps the
   # chart with the PUSHED image's digest, and pushes to
-  # oci://ghcr.io/cafaye/charts. It needs a registry login already in place —
+  # oci://ghcr.io/anywaye/charts. It needs a registry login already in place —
   # see backends/README.md.
   ./bin/publish --service-dir .
   chart_name="$(sed -n 's/^name: *//p' chart/Chart.yaml | head -1)"

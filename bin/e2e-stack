@@ -49,7 +49,7 @@
 #
 # 2. READINESS, NOT SLEEPING. Nothing in this file sleeps a fixed number of
 #    seconds to hope a service is up. Every wait is a bounded poll on a
-#    `/readyz` — the endpoint every cafaye service already exposes and the
+#    `/readyz` — the endpoint every anywaye service already exposes and the
 #    platform contract fixes. The slowest container in the stack is the slowest
 #    thing in the stack, and a fixed sleep is either too short (a flake) or too
 #    long (a tax on every run).
@@ -90,7 +90,7 @@ PROJECT="${E2E_STACK_NAME:-parlor-e2e}"
 # `oauth-stub` joined the list with parlor-e2e-social-01, when the social sign-in
 # path stopped being untestable here: until then there was no way to run it
 # end to end at all, because the only provider this deployment could have been
-# pointed at was a fake carried inside this repository. `github.com/cafaye/
+# pointed at was a fake carried inside this repository. `github.com/anywaye/
 # oauth-stub` is a published, versioned repository and this tier consumes it by
 # tag like any other sibling. It is a TEST DOUBLE and it is still a sibling:
 # being a fake is a statement about what it answers, not about whether it has a
@@ -109,7 +109,7 @@ PROJECT="${E2E_STACK_NAME:-parlor-e2e}"
 # check — iterates this array, so a name added here is published, pulled and
 # checked by all of them without a second edit.
 SIBLING_SERVICES=(identity gateway oauth-stub)
-SIBLING_TAG_PREFIX="${SIBLING_TAG_PREFIX:-cafaye}"
+SIBLING_TAG_PREFIX="${SIBLING_TAG_PREFIX:-anywaye}"
 SIBLING_TAG_SUFFIX=e2e
 
 # The registry the siblings are published to and pulled from. The default is
@@ -139,7 +139,7 @@ sibling_tag() { printf '%s/%s:%s' "$SIBLING_TAG_PREFIX" "$1" "$SIBLING_TAG_SUFFI
 # HEAD somebody left in the checkout, and not from whatever directory happens to
 # be sitting next to this one.
 #
-# This is not a preference. It is the defect cafaye/site measured on the image
+# This is not a preference. It is the defect anywaye/site measured on the image
 # rather than argued from the source (a named ref, stamped into the artifact and
 # checked by `verify-sibling-images`):
 #
@@ -324,7 +324,7 @@ sibling_revision() {
 sibling_export_tree() {
   local service=$1 sha=$2 dir tmp
   dir="$ROOT/../$service"
-  tmp=$(mktemp -d "${TMPDIR:-/tmp}/cafaye-e2e-${service}-XXXXXX")
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/anywaye-e2e-${service}-XXXXXX")
   # `tar -x` from a pipe and not `git archive -o`: the pipe has no cleanup if the
   # extraction fails halfway, and a stray tarball in TMPDIR is a small thing to
   # leave behind on a machine with another agent on it.
@@ -340,9 +340,9 @@ sibling_export_tree() {
 # ---------------------------------------------------------------------------
 # Every image this harness publishes carries three labels of its own:
 #
-#   cafaye.e2e.source     the ref it was built from, verbatim
-#   cafaye.e2e.revision   the commit that ref resolved to at build time
-#   cafaye.e2e.dirty      "false" — the context was a ref, so it could not be dirty
+#   anywaye.e2e.source     the ref it was built from, verbatim
+#   anywaye.e2e.revision   the commit that ref resolved to at build time
+#   anywaye.e2e.dirty      "false" — the context was a ref, so it could not be dirty
 #
 # `docker build --label` sets these on any Dockerfile, which is why they do not
 # have to be declared in the siblings' Dockerfiles, and why adding a sibling
@@ -352,7 +352,7 @@ sibling_export_tree() {
 # fleet's own gateway image rather than guessed:
 #
 #   $ docker image inspect --format '{{json .Config.Labels}}' \
-#       localhost:16010/cafaye/gateway:e2e
+#       localhost:16010/anywaye/gateway:e2e
 #   {"org.opencontainers.image.created":"...","org.opencontainers.image.revision":
 #   "700fc117a2fd01ac0201deaa6fa69c5557acb04f","org.opencontainers.image.source":
 #   "https://github.com/oven-sh/bun", …}
@@ -368,9 +368,9 @@ sibling_export_tree() {
 sibling_label_args() {
   local service=$1 ref=$2 sha=$3
   printf '%s\n' \
-    "--label" "cafaye.e2e.source=$ref" \
-    "--label" "cafaye.e2e.revision=$sha" \
-    "--label" "cafaye.e2e.dirty=false"
+    "--label" "anywaye.e2e.source=$ref" \
+    "--label" "anywaye.e2e.revision=$sha" \
+    "--label" "anywaye.e2e.dirty=false"
 }
 
 # A short sha on stdout, and the full one on failure — a log line wants seven
@@ -533,12 +533,12 @@ check_cluster_initdb() {
     ') || die "cannot read the initdb mount of the postgres service out of $COMPOSE_FILE"
 
   [ -n "$src" ] \
-    || die "the postgres service in $COMPOSE_FILE mounts nothing over /docker-entrypoint-initdb.d, so nothing will provision this cluster: no service roles, no bounded owner, and no REVOKE. identity's migration 00016 will then fail at cafaye.protect_table with 'identity_app is not a LOGIN role on this cluster' — which is a statement about the missing mount and reads like a statement about the migration."
+    || die "the postgres service in $COMPOSE_FILE mounts nothing over /docker-entrypoint-initdb.d, so nothing will provision this cluster: no service roles, no bounded owner, and no REVOKE. identity's migration 00016 will then fail at anywaye.protect_table with 'identity_app is not a LOGIN role on this cluster' — which is a statement about the missing mount and reads like a statement about the migration."
 
   # `compose config` resolves the bind source to an absolute path, so this is the
   # directory Docker will mount rather than the string in the file.
   [ -d "$src" ] \
-    || die "the initdb bind source $src does not exist. It is a ../kit checkout: docker compose mounts a missing bind source as an EMPTY DIRECTORY rather than failing, so a healthy cluster would come up with no roles and no isolation. Check out cafaye/kit beside this repository."
+    || die "the initdb bind source $src does not exist. It is a ../kit checkout: docker compose mounts a missing bind source as an EMPTY DIRECTORY rather than failing, so a healthy cluster would come up with no roles and no isolation. Check out anywaye/kit beside this repository."
 
   # An existing but EMPTY directory is the same failure reached a different way,
   # and it is the one a plain `-d` test cannot see. Kit's directory is either
@@ -546,7 +546,7 @@ check_cluster_initdb() {
   # a partial one — and it is checked separately rather than folded into the test
   # above because the two failures have different fixes.
   [ -n "$(find "$src" -maxdepth 1 -type f -print -quit 2>/dev/null)" ] \
-    || die "the initdb directory $src is empty, which means it was created rather than found — the same missing-checkout failure as above, and equally silent. Check out cafaye/kit beside this repository, at master."
+    || die "the initdb directory $src is empty, which means it was created rather than found — the same missing-checkout failure as above, and equally silent. Check out anywaye/kit beside this repository, at master."
 
   log "the cluster's init script is present: $src"
 }
@@ -567,8 +567,8 @@ check_cluster_initdb() {
 # The measured failure, on this machine, 2026-10-05, and it cost a full stack run:
 #
 #   goose run: ERROR 00016_account_isolation.sql: failed to run SQL migration:
-#   failed to execute SQL query "select cafaye.protect_table('account_users');":
-#   ERROR: cafaye.protect_table(account_users, identity_app): identity_app is not
+#   failed to execute SQL query "select anywaye.protect_table('account_users');":
+#   ERROR: anywaye.protect_table(account_users, identity_app): identity_app is not
 #   a LOGIN role on this cluster. (SQLSTATE 42704)
 #
 # `pg_roles` on that cluster held exactly one entry. Not "the wrong roles" — one
@@ -653,8 +653,8 @@ preflight() {
   # failure that did happen is the record:
   #
   #   goose run: ERROR 00016_account_isolation.sql: failed to run SQL migration:
-  #   failed to execute SQL query "select cafaye.protect_table('account_users');":
-  #   ERROR: cafaye.protect_table(account_users, identity_app): identity_app is not
+  #   failed to execute SQL query "select anywaye.protect_table('account_users');":
+  #   ERROR: anywaye.protect_table(account_users, identity_app): identity_app is not
   #   a LOGIN role on this cluster. (SQLSTATE 42704)
   #
   # which names a missing ROLE rather than a missing CHECKOUT, sixty seconds and
@@ -992,7 +992,7 @@ publish_siblings() {
         timeout "$BUILD_TIMEOUT" docker build \
           --build-arg SERVICE_NAME=identity \
           "${label_args[@]}" \
-          --tag "cafaye/identity:$SIBLING_TAG_SUFFIX" \
+          --tag "anywaye/identity:$SIBLING_TAG_SUFFIX" \
           --tag "$REGISTRY/$tag" \
           "$ctx"
         ;;
@@ -1000,7 +1000,7 @@ publish_siblings() {
         timeout "$BUILD_TIMEOUT" docker build \
           --build-arg BUN_VERSION=1.3.12 \
           "${label_args[@]}" \
-          --tag "cafaye/gateway:$SIBLING_TAG_SUFFIX" \
+          --tag "anywaye/gateway:$SIBLING_TAG_SUFFIX" \
           --tag "$REGISTRY/$tag" \
           "$ctx"
         ;;
@@ -1008,7 +1008,7 @@ publish_siblings() {
       # this arm and the reason it does not read like identity's above.
       #
       # READ THE DOCKERFILE, DO NOT PATTERN-MATCH ON "IT IS ALSO GO". At the ref
-      # this tier pins (v0.1.0) `github.com/cafaye/oauth-stub`'s Dockerfile
+      # this tier pins (v0.1.0) `github.com/anywaye/oauth-stub`'s Dockerfile
       # declares exactly one argument, `ARG GO_VERSION=1.26`, and it is declared
       # WITH A DEFAULT. There is no `SERVICE_NAME`, because unlike identity's
       # monorepo layout the module is a single root package and the build line is
@@ -1028,7 +1028,7 @@ publish_siblings() {
       oauth-stub)
         timeout "$BUILD_TIMEOUT" docker build \
           "${label_args[@]}" \
-          --tag "cafaye/oauth-stub:$SIBLING_TAG_SUFFIX" \
+          --tag "anywaye/oauth-stub:$SIBLING_TAG_SUFFIX" \
           --tag "$REGISTRY/$tag" \
           "$ctx"
         ;;
@@ -1089,11 +1089,11 @@ publish_siblings() {
   #     `docker build` passing only the one `--build-arg` each sibling's Dockerfile
   #     declares. It passes no `KIT_PROVENANCE_*` argument, and neither
   #     `identity/Dockerfile` nor `gateway/Dockerfile` declares the stamp at all.
-  #     So `cafaye/identity:e2e` reports labels `null` and `--verify` exits 4 on
+  #     So `anywaye/identity:e2e` reports labels `null` and `--verify` exits 4 on
   #     every ordinary run of this tier. Asserting would make the e2e tier red
   #     permanently for a drift that lives in two repositories this one may not
   #     touch.
-  #   * `cafaye/gateway:e2e` is worse than unstamped: its labels are BUN's
+  #   * `anywaye/gateway:e2e` is worse than unstamped: its labels are BUN's
   #     upstream ones (`source: https://github.com/oven-sh/bun`, a revision of
   #     bun's own commit), inherited through `FROM oven/bun`. `--verify` exits 0
   #     on it and prints a confident, false answer.
@@ -1148,14 +1148,14 @@ verify_sibling_image() {
   # `docker image inspect` on a reference that is not present locally exits 1 and
   # prints a multi-line error; the label template therefore has to be the whole
   # command, and a miss has to be turned into a sentence rather than propagated.
-  stamped_sha=$(docker image inspect --format '{{index .Config.Labels "cafaye.e2e.revision"}}' "$image" 2>/dev/null || true)
-  stamped_ref=$(docker image inspect --format '{{index .Config.Labels "cafaye.e2e.source"}}' "$image" 2>/dev/null || true)
-  dirty=$(docker image inspect --format '{{index .Config.Labels "cafaye.e2e.dirty"}}' "$image" 2>/dev/null || true)
+  stamped_sha=$(docker image inspect --format '{{index .Config.Labels "anywaye.e2e.revision"}}' "$image" 2>/dev/null || true)
+  stamped_ref=$(docker image inspect --format '{{index .Config.Labels "anywaye.e2e.source"}}' "$image" 2>/dev/null || true)
+  dirty=$(docker image inspect --format '{{index .Config.Labels "anywaye.e2e.dirty"}}' "$image" 2>/dev/null || true)
 
   if [ -z "$stamped_sha" ] || [ "$stamped_sha" = "<no value>" ]; then
     printf '[e2e] FAIL: %s is not attributable\n' "$service" >&2
     printf '[e2e]   image:  %s\n' "$image" >&2
-    printf '[e2e]   it carries no cafaye.e2e.revision label, so it was not published by\n' >&2
+    printf '[e2e]   it carries no anywaye.e2e.revision label, so it was not published by\n' >&2
     printf '[e2e]   this harness and this harness cannot say what is inside it. Building and\n' >&2
     printf '[e2e]   pushing it again from a named ref is what makes it attributable:\n' >&2
     printf '[e2e]     ./bin/e2e-stack publish-siblings\n' >&2
@@ -1178,7 +1178,7 @@ verify_sibling_image() {
 
   if [ "$dirty" = "true" ]; then
     printf '[e2e] FAIL: %s was built from a DIRTY tree\n' "$service" >&2
-    printf '[e2e]   image: %s, stamped cafaye.e2e.dirty=true\n' "$image" >&2
+    printf '[e2e]   image: %s, stamped anywaye.e2e.dirty=true\n' "$image" >&2
     printf '[e2e]   A dirty tree has no ref, so "which source" has no answer for this image.\n' >&2
     return 1
   fi
@@ -1242,9 +1242,9 @@ build() {
   preflight
   if [ "$BUILD_SIBLINGS" -eq 1 ]; then
     log "building images (budget ${BUILD_TIMEOUT}s) — sibling build mode"
-    log "  identity  <- ../identity, built into cafaye/identity:e2e (NOT pushed)"
-    log "  gateway   <- ../gateway, built into cafaye/gateway:e2e (NOT pushed)"
-    log "  oauth-stub <- ../oauth-stub, built into cafaye/oauth-stub:e2e (NOT pushed)"
+    log "  identity  <- ../identity, built into anywaye/identity:e2e (NOT pushed)"
+    log "  gateway   <- ../gateway, built into anywaye/gateway:e2e (NOT pushed)"
+    log "  oauth-stub <- ../oauth-stub, built into anywaye/oauth-stub:e2e (NOT pushed)"
   else
     log "building images (budget ${BUILD_TIMEOUT}s)"
     log "  parlor    <- . (no build args: the BFF reads IDENTITY_URL at run time)"
@@ -1300,7 +1300,7 @@ ensure_sibling_artifacts() {
     # document (`e2e/docker-compose.siblings.yml`, `context: ../<name>`), and
     # compose has no way to set image labels — `labels:` on a service labels the
     # CONTAINER, not the image — so the artifacts of this path carry no
-    # `cafaye.e2e.*` stamp and cannot be reconciled against anything.
+    # `anywaye.e2e.*` stamp and cannot be reconciled against anything.
     #
     # That is acceptable here and only here, for three reasons worth stating
     # rather than assuming: the path is opt-in under a flag named after what it
@@ -1696,14 +1696,14 @@ case "${1:-}" in
   # With no argument it checks every sibling, which is what `publish_siblings`
   # and the `ensure_sibling_artifacts` fast path call. With one, it checks that
   # one. With two, the second is any image reference — a developer's own local
-  # `cafaye/oauth-stub:e2e`, say — because the question is about the image rather
+  # `anywaye/oauth-stub:e2e`, say — because the question is about the image rather
   # than about a name this harness chose.
   # The one-argument form resolves the image itself, to
   # `$REGISTRY/$(sibling_tag "$1")` — the same expression the loop over
   # SIBLING_SERVICES builds — so naming a sibling is enough and the answer cannot
   # name an image the rest of the harness does not mean. The TWO-argument form is
   # kept for the case it is always for: an image that is NOT the registry one,
-  # which is what a developer pointing this at their own `cafaye/oauth-stub:e2e`
+  # which is what a developer pointing this at their own `anywaye/oauth-stub:e2e`
   # after `E2E_BUILD_SIBLINGS=1` needs.
   verify-sibling-images)
     shift

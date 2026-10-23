@@ -365,7 +365,7 @@ describe("3. W3C trace context", () => {
       new Request("http://parlor.test/login", {
         headers: {
           traceparent: `00-${INBOUND.traceId}-${INBOUND.spanId}-01`,
-          tracestate: "cafaye=1",
+          tracestate: "anywaye=1",
         },
       }),
       () => Promise.resolve(new Response("ok", { status: 200 })),
@@ -413,7 +413,7 @@ describe("3. W3C trace context", () => {
     const exporter = installTracerForTest();
     await traceRequest(
       new Request("http://parlor.test/login", {
-        headers: { traceparent: "garbage", tracestate: "cafaye=1" },
+        headers: { traceparent: "garbage", tracestate: "anywaye=1" },
       }),
       () => Promise.resolve(new Response("ok", { status: 200 })),
     );

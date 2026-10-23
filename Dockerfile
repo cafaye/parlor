@@ -1,16 +1,16 @@
 # syntax=docker/dockerfile:1
-# parlor — the cafaye app shell.
+# parlor — the anywaye app shell.
 #
 # Multi-stage node:slim build. Tests are NOT run in the image: `bin/prime`
 # proves the checkout locally and CI gates the merge. The image only has to
 # build and run.
 #
-# The base is the PINNED runtime, `node:22.22.2-slim`, not `node:22-slim`. The
+# The base is the PINNED runtime, `node:22.23.4-slim`, not `node:22-slim`. The
 # unpinned tag resolved to 22.23.3 and the image would then have run a different
 # Node than the one `engines.node` and `bin/prime` verify. One pin, four
 # mirrors, and the image is the fourth — see tests/validate-ci.sh.
 
-FROM node:22.22.2-slim AS base
+FROM node:22.23.4-slim AS base
 ENV NODE_ENV=production
 
 # --- deps -------------------------------------------------------------------
@@ -129,7 +129,7 @@ RUN npm run build:node
 # the Node build, and `.output/` is what this image ships.
 #
 # PINNED, LIKE THE BUILDER STAGE, AND IT WAS NOT. This line said `node:22-slim`
-# while the stage above said `node:22.22.2-slim`, so the image built on the pin
+# while the stage above said `node:22.23.4-slim`, so the image built on the pin
 # and RAN on whatever `22-slim` resolved to that week — measured while writing
 # the deploy config: `docker manifest inspect node:22-slim` resolves a moving
 # multi-arch index, and the file's own header claims "One pin, four mirrors, and
@@ -138,7 +138,7 @@ RUN npm run build:node
 # boots a different Node than the one `npm test` and `bin/prime` verified. The
 # header's claim is now a check rather than a comment — `tests/validate-ci.sh`
 # fails the gate on an unpinned `FROM node:` anywhere in this file.
-FROM node:22.22.2-slim AS runner
+FROM node:22.23.4-slim AS runner
 WORKDIR /app
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0

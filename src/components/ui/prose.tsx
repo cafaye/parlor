@@ -39,7 +39,7 @@ export type ProsePageProps = {
   title: string;
   /**
    * The mono kicker above the heading — the section wayfinding every public
-   * page carries ("Cafaye" here). It reuses the existing product name, so no
+   * page carries ("Anywaye" here). It reuses the existing product name, so no
    * new copy is written.
    */
   kicker?: string;
@@ -56,7 +56,7 @@ export type ProsePageProps = {
 
 export function ProsePage({
   title,
-  kicker = "Cafaye",
+  kicker = "Anywaye",
   updated = "this page is a placeholder",
   children,
 }: ProsePageProps) {

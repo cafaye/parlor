@@ -1,5 +1,5 @@
 /**
- * cafaye's design system.
+ * anywaye's design system.
  *
  * One component per file, named export, re-exported here, so a screen has one
  * import path and never two ways to reach the same button.

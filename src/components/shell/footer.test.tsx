@@ -19,7 +19,7 @@ import { renderWithRouter } from "@/test/support/render";
  * provider there and renders real `<a href>`s, which is what lets these
  * assertions be about where a link GOES rather than that it exists.
  *
- * The retired `cafaye/site` got this wrong first and fixed it in its own
+ * The retired `anywaye/site` got this wrong first and fixed it in its own
  * packet; the fix is ported rather than rediscovered.
  */
 describe("shell footer", () => {

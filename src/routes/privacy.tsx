@@ -5,7 +5,7 @@ import { LegalPlaceholder, ProsePage } from "@/components/ui";
 /**
  * `/privacy` — the privacy policy page.
  *
- * A placeholder, deliberately, and for the reason `/terms` is: cafaye has not
+ * A placeholder, deliberately, and for the reason `/terms` is: anywaye has not
  * published a privacy policy, and a website that invented one would be
  * printing claims nobody made. See `LegalPlaceholder` for the body and
  * `ProsePage` for the layout; neither carries legal text, and adding any is a

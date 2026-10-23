@@ -233,7 +233,7 @@ async function handle(request: Request, context: RouteContext): Promise<Response
 
 function notFound(): Response {
   return Response.json(
-    { type: "https://docs.cafaye.com/errors/not_found", title: "No such route.", status: 404, code: "not_found" },
+    { type: "https://docs.anywaye.com/errors/not_found", title: "No such route.", status: 404, code: "not_found" },
     { status: 404, headers: { "content-type": "application/problem+json", "cache-control": "no-store" } },
   );
 }

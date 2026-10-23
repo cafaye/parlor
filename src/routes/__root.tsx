@@ -55,7 +55,7 @@ export const Route = createRootRoute({
       {
         name: "description",
         content:
-          "The cafaye app shell. Layout primitives, theme tokens and health surfaces — you own the code.",
+          "The anywaye app shell. Layout primitives, theme tokens and health surfaces — you own the code.",
       },
     ],
   }),

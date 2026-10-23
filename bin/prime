@@ -41,7 +41,7 @@
 # is written down; start there before changing anything under it.
 #
 # CI DID catch it — there is a `typecheck + build` job and it went red. That is
-# not the same as catching it. cafaye/site forked this template and inherited
+# not the same as catching it. anywaye/site forked this template and inherited
 # the trap; its local gate was green, its CI build job was red, and it stayed
 # that way for months because a developer who trusts the gate they can run has
 # no reason to open a browser tab and read CI. A check that only runs on a
@@ -62,7 +62,7 @@
 # tree. `tsc --noEmit` is the only thing in this repository that reads a
 # declaration instead of an expression.
 #
-# Cafaye/site — the fork built from this template — carried 29 type errors
+# Anywaye/site — the fork built from this template — carried 29 type errors
 # behind a green local gate for as long as the migration ran. Nothing about the
 # 29 was subtle: they were ordinary drift accumulated by a tree whose only
 # compiler ran in a job nobody opens unless they are already suspicious. The
